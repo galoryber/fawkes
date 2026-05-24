@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"syscall"
@@ -37,9 +36,9 @@ type MakeTokenParams struct {
 // Execute implements Xenon's TokenMake function from Token.c (lines 189-264)
 // and Apollo's SetIdentity from IdentityManager.cs
 func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
-	var params MakeTokenParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Failed to parse parameters: %v", err)
+	params, parseErr := unmarshalParams[MakeTokenParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&params.Password)
 
@@ -100,6 +99,10 @@ func makeTokenImpersonate(params MakeTokenParams) structs.CommandResult {
 	if err != nil {
 		return errorf("Token created but failed to verify identity: %v", err)
 	}
+
+	// Record identity transition for history
+	RecordIdentityTransition("maketoken", oldIdentity, newIdentity,
+		fmt.Sprintf("%s\\%s", params.Domain, params.Username))
 
 	// Format output
 	output := fmt.Sprintf("Successfully impersonated %s", newIdentity)
@@ -173,17 +176,17 @@ func makeTokenSpawn(params MakeTokenParams) structs.CommandResult {
 func logonUser(username, domain, password string, logonType int) (windows.Token, error) {
 	usernamePtr, err := syscall.UTF16PtrFromString(username)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert username: %v", err)
+		return 0, fmt.Errorf("failed to convert username: %w", err)
 	}
 
 	domainPtr, err := syscall.UTF16PtrFromString(domain)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert domain: %v", err)
+		return 0, fmt.Errorf("failed to convert domain: %w", err)
 	}
 
 	passwordPtr, err := syscall.UTF16PtrFromString(password)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert password: %v", err)
+		return 0, fmt.Errorf("failed to convert password: %w", err)
 	}
 
 	// Select provider based on logon type

@@ -26,7 +26,7 @@ func readProcessEnviron(pid int) ([]string, string, error) {
 	// Read environment from /proc/<pid>/environ
 	data, err := os.ReadFile(filepath.Join(procDir, "environ"))
 	if err != nil {
-		return nil, processName, fmt.Errorf("cannot read environ: %v", err)
+		return nil, processName, fmt.Errorf("cannot read environ: %w", err)
 	}
 
 	result := parseEnvironBlock(data)

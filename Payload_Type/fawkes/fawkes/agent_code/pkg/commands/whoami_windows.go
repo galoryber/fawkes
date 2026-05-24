@@ -97,13 +97,13 @@ func getCurrentToken() (windows.Token, string, error) {
 	// Fall back to process token
 	processHandle, err := windows.GetCurrentProcess()
 	if err != nil {
-		return 0, "", fmt.Errorf("GetCurrentProcess: %v", err)
+		return 0, "", fmt.Errorf("GetCurrentProcess: %w", err)
 	}
 
 	var processToken windows.Token
 	err = windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &processToken)
 	if err != nil {
-		return 0, "", fmt.Errorf("OpenProcessToken: %v", err)
+		return 0, "", fmt.Errorf("OpenProcessToken: %w", err)
 	}
 
 	return processToken, "Primary (process)", nil
@@ -149,7 +149,7 @@ func getTokenIntegrityLevel(token windows.Token) (string, error) {
 	buf := make([]byte, needed)
 	err := windows.GetTokenInformation(token, tokenIntegrityLevel, &buf[0], needed, &needed)
 	if err != nil {
-		return "", fmt.Errorf("GetTokenInformation: %v", err)
+		return "", fmt.Errorf("GetTokenInformation: %w", err)
 	}
 
 	// TOKEN_MANDATORY_LABEL structure: first field is SID_AND_ATTRIBUTES
@@ -194,7 +194,7 @@ func getTokenGroups(token windows.Token) ([]groupInfo, error) {
 	buf := make([]byte, needed)
 	err := windows.GetTokenInformation(token, tokenGroupsClass, &buf[0], needed, &needed)
 	if err != nil {
-		return nil, fmt.Errorf("GetTokenInformation: %v", err)
+		return nil, fmt.Errorf("GetTokenInformation: %w", err)
 	}
 
 	// TOKEN_GROUPS: GroupCount uint32, then SID_AND_ATTRIBUTES array
@@ -277,7 +277,7 @@ func getTokenPrivileges(token windows.Token) ([]privilegeInfo, error) {
 	buf := make([]byte, needed)
 	err := windows.GetTokenInformation(token, tokenPrivileges, &buf[0], needed, &needed)
 	if err != nil {
-		return nil, fmt.Errorf("GetTokenInformation: %v", err)
+		return nil, fmt.Errorf("GetTokenInformation: %w", err)
 	}
 
 	// TOKEN_PRIVILEGES: PrivilegeCount uint32, Privileges []LUID_AND_ATTRIBUTES

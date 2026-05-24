@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "diff",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "diff_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Compare two files and show differences in unified diff format.",
 		HelpString:          "diff -file1 /etc/passwd -file2 /tmp/passwd.bak\ndiff -file1 config.old -file2 config.new -context 5",
 		Version:             1,
@@ -65,6 +70,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC: Comparing two files (T1083). Both files will be read — access timestamps updated on each. Useful for detecting config changes or file tampering.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{

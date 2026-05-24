@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"sort"
@@ -36,14 +35,13 @@ type scanResult struct {
 }
 
 func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
-	var args portScanArgs
-
 	if task.Params == "" {
 		return errorResult("Error: hosts parameter is required")
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[portScanArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Hosts == "" {

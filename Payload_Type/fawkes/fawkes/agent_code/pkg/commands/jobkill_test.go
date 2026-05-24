@@ -29,7 +29,7 @@ func TestJobkillBadJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Error("Expected error for bad JSON")
 	}
-	if !strings.Contains(result.Output, "Failed to parse") {
+	if !strings.Contains(result.Output, "Error parsing parameters") {
 		t.Errorf("Expected parse error, got: %s", result.Output)
 	}
 }

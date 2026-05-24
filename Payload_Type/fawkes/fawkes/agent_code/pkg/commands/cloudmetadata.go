@@ -93,8 +93,22 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 		return successResult(awsPersist(timeout))
 	case "azure-persist":
 		return successResult(azurePersist(timeout))
+	case "aws-ssm":
+		return successResult(awsGetSSMSecrets(timeout))
+	case "azure-keyvault", "azure-vault":
+		return successResult(azureGetKeyVaultSecrets(timeout))
+	case "gcp-secrets", "gcp-secretmanager":
+		return successResult(gcpGetSecretManager(timeout))
+	case "storage":
+		return cloudStorage(args.Provider, timeout)
+	case "aws-s3", "aws-storage":
+		return successResult(awsListBuckets(timeout))
+	case "azure-blob", "azure-storage":
+		return successResult(azureListStorageContainers(timeout))
+	case "gcp-gcs", "gcp-storage":
+		return successResult(gcpListBuckets(timeout))
 	default:
-		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist")
+		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network, storage, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets, aws-s3, azure-blob, gcp-gcs")
 	}
 }
 
@@ -299,6 +313,31 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 			sb.WriteString(gcpGetNetwork(timeout))
 		case "digitalocean":
 			sb.WriteString(doGetNetwork(timeout))
+		}
+	}
+
+	return successResult(sb.String())
+}
+
+func cloudStorage(provider string, timeout time.Duration) structs.CommandResult {
+	var sb strings.Builder
+	sb.WriteString("=== Cloud Storage Enumeration ===\n\n")
+
+	providers := resolveProviders(provider, timeout)
+	if len(providers) == 0 {
+		return successResult("[-] No cloud metadata service detected")
+	}
+
+	for _, p := range providers {
+		switch p {
+		case "aws":
+			sb.WriteString(awsListBuckets(timeout))
+		case "azure":
+			sb.WriteString(azureListStorageContainers(timeout))
+		case "gcp":
+			sb.WriteString(gcpListBuckets(timeout))
+		case "digitalocean":
+			sb.WriteString("[-] DigitalOcean: Spaces API not accessible via metadata service\n")
 		}
 	}
 

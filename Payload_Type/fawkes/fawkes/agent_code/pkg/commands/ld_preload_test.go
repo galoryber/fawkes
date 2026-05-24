@@ -72,34 +72,39 @@ func TestLdPreloadInstall_InvalidTarget(t *testing.T) {
 }
 
 func TestLdPreloadInstall_BashrcTarget(t *testing.T) {
-	// Create a temp dir to simulate home
 	tmpDir, err := os.MkdirTemp("", "test-home-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create temp library
+	origHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
 	tmpLib, err := os.CreateTemp(tmpDir, "test-lib-*.so")
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmpLib.Close()
 
-	// Create a .bashrc file in the temp dir
 	bashrcPath := filepath.Join(tmpDir, ".bashrc")
 	os.WriteFile(bashrcPath, []byte("# existing content\n"), 0644)
 
-	// We can't easily override $HOME in this test, but we can test the validation logic
-	// Just verify the library exists check passes
 	result := ldPreloadInstall(ldPreloadArgs{
 		LibPath: tmpLib.Name(),
 		Target:  "bashrc",
 	})
-	// This will try to write to real ~/.bashrc — may succeed or fail depending on permissions
-	// Just verify it doesn't panic and returns a reasonable result
-	if result.Status != "success" && result.Status != "error" {
-		t.Errorf("unexpected status: %s", result.Status)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+
+	content, err := os.ReadFile(bashrcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "LD_PRELOAD="+tmpLib.Name()) {
+		t.Error("expected LD_PRELOAD line in temp .bashrc")
 	}
 }
 

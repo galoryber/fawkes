@@ -23,6 +23,7 @@ func init() {
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -83,6 +84,12 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "" {
+				action = "check"
+			}
+			display := action
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Registry Read", "Sysmon service/driver registry keys + event channels")
 			return response
 		},

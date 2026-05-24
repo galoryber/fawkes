@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -43,13 +42,9 @@ type sshExecArgs struct {
 }
 
 func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -host <target> -username <user> [-password <pass> | -key_path <path>] -command <cmd>")
-	}
-
-	var args sshExecArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[sshExecArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Host == "" || args.Username == "" {
@@ -60,6 +55,11 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	action := strings.ToLower(args.Action)
 	if action == "" {
 		action = "exec"
+	}
+
+	// Handle check action
+	if action == "check" {
+		return sshExecCheck(args)
 	}
 
 	// Handle tunnel-list and tunnel-stop without SSH connection
@@ -102,11 +102,11 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	validActions := map[string]bool{
-		"exec": true, "push": true,
+		"exec": true, "push": true, "check": true,
 		"tunnel-local": true, "tunnel-remote": true, "tunnel-dynamic": true,
 	}
 	if !validActions[action] {
-		return errorf("Error: unknown action %q. Valid: exec, push, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
+		return errorf("Error: unknown action %q. Valid: exec, push, check, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
 	}
 
 	// Set defaults for tunnel params

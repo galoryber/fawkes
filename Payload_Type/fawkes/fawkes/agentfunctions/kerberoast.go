@@ -349,3 +349,37 @@ func kerbSweepComplete(
 
 	return response
 }
+
+// kerberoastEntry represents a single Kerberoast result from agent output.
+type kerberoastEntry struct {
+	Account string `json:"account"`
+	SPN     string `json:"spn"`
+	Etype   string `json:"etype"`
+	Hash    string `json:"hash"`
+	Status  string `json:"status"`
+}
+
+// parseKerberoastEntries parses the JSON response from the kerberoast command.
+func parseKerberoastEntries(responseText string) ([]kerberoastEntry, error) {
+	var entries []kerberoastEntry
+	if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// filterRoastedEntries returns only successfully roasted entries with non-empty hashes.
+func filterRoastedEntries(entries []kerberoastEntry) []kerberoastEntry {
+	var roasted []kerberoastEntry
+	for _, e := range entries {
+		if e.Status == "roasted" && e.Hash != "" {
+			roasted = append(roasted, e)
+		}
+	}
+	return roasted
+}
+
+// countRoastedInText counts occurrences of "roasted" status in raw response text.
+func countRoastedInText(text string) int {
+	return strings.Count(text, `"roasted"`)
+}

@@ -56,9 +56,9 @@ type triageResult struct {
 }
 
 func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
-	var args triageArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Failed to parse arguments: %v", err)
+	args, parseErr := unmarshalParams[triageArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -41,11 +40,9 @@ func (c *ProcdumpCommand) Description() string {
 // procdumpArgs is defined in procdump_helpers.go (cross-platform)
 
 func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
-	var args procdumpArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[procdumpArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -180,7 +177,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 func findProcessByName(name string) (uint32, string, error) {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return 0, "", fmt.Errorf("CreateToolhelp32Snapshot: %v", err)
+		return 0, "", fmt.Errorf("CreateToolhelp32Snapshot: %w", err)
 	}
 	defer windows.CloseHandle(snapshot)
 
@@ -189,7 +186,7 @@ func findProcessByName(name string) (uint32, string, error) {
 
 	err = windows.Process32First(snapshot, &entry)
 	if err != nil {
-		return 0, "", fmt.Errorf("Process32First: %v", err)
+		return 0, "", fmt.Errorf("Process32First: %w", err)
 	}
 
 	for {

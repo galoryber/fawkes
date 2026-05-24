@@ -11,6 +11,9 @@ function(task, responses){
         for(let i = 0; i < responses.length; i++){
             combined += responses[i];
         }
+        if(combined.includes("=== Share Sweep Chain Complete")){
+            return renderChainTable(combined, "Share Sweep Chain");
+        }
         let lines = combined.split("\n");
         // Detect mode: shares listing vs directory listing
         let isDir = combined.includes("Size") && combined.includes("Modified") && combined.includes("Name");
@@ -103,6 +106,59 @@ function(task, responses){
             }
             return {"table": [{"headers": headers, "rows": rows, "title": title || "SMB Shares \u2014 " + shares.length}]};
         }
+        // Detect taint result (JSON with action:"taint")
+        try {
+            let parsed = JSON.parse(combined);
+            if(parsed.action === "taint"){
+                let tables = [];
+                // Planted files table
+                if(parsed.planted && parsed.planted.length > 0){
+                    let pHeaders = [
+                        {"plaintext": "Share", "type": "string", "width": 150},
+                        {"plaintext": "Path", "type": "string", "fillWidth": true},
+                        {"plaintext": "Size", "type": "string", "width": 80},
+                        {"plaintext": "Timestomped", "type": "string", "width": 110},
+                        {"plaintext": "Stomp Source", "type": "string", "width": 200},
+                    ];
+                    let pRows = [];
+                    for(let j = 0; j < parsed.planted.length; j++){
+                        let p = parsed.planted[j];
+                        pRows.push({
+                            "Share": {"plaintext": p.share, "copyIcon": true, "cellStyle": {"fontWeight": "bold"}},
+                            "Path": {"plaintext": p.path, "copyIcon": true, "cellStyle": {"fontFamily": "monospace"}},
+                            "Size": {"plaintext": p.size + " B"},
+                            "Timestomped": {"plaintext": p.timestomped ? "\u2705 Yes" : "\u274c No",
+                                "cellStyle": {"color": p.timestomped ? "#4caf50" : "#f44336"}},
+                            "Stomp Source": {"plaintext": p.stomp_source || "\u2014"},
+                            "rowStyle": {"backgroundColor": "rgba(76,175,80,0.08)"},
+                        });
+                    }
+                    tables.push({"headers": pHeaders, "rows": pRows,
+                        "title": "\ud83d\udea9 Taint: " + parsed.planted.length + " file(s) planted on \\\\" + parsed.host});
+                }
+                // Skipped shares table
+                if(parsed.skipped && parsed.skipped.length > 0){
+                    let sHeaders = [
+                        {"plaintext": "Share", "type": "string", "width": 150},
+                        {"plaintext": "Reason", "type": "string", "fillWidth": true},
+                    ];
+                    let sRows = [];
+                    for(let k = 0; k < parsed.skipped.length; k++){
+                        let s = parsed.skipped[k];
+                        sRows.push({
+                            "Share": {"plaintext": s.share},
+                            "Reason": {"plaintext": s.reason, "cellStyle": {"color": "#888"}},
+                        });
+                    }
+                    tables.push({"headers": sHeaders, "rows": sRows,
+                        "title": "Skipped Shares (" + parsed.skipped.length + ")"});
+                }
+                if(tables.length > 0){
+                    return {"table": tables};
+                }
+                return {"plaintext": "Taint complete on " + parsed.host + ": " + parsed.shares_tested + " shares tested, 0 planted."};
+            }
+        } catch(e) { /* not JSON, fall through */ }
         // Fallback: plaintext
         return {"plaintext": combined};
     } catch(error) {
@@ -112,4 +168,51 @@ function(task, responses){
         }
         return {"plaintext": combined};
     }
+}
+
+function renderChainTable(text, chainName){
+    let lines = text.split("\n");
+    let headers = [
+        {"plaintext": "Status", "type": "string", "width": 100},
+        {"plaintext": "Command", "type": "string", "width": 200},
+        {"plaintext": "Detail", "type": "string", "fillWidth": true},
+    ];
+    let rows = [];
+    let successCount = 0;
+    let errorCount = 0;
+    for(let i = 0; i < lines.length; i++){
+        let line = lines[i].trim();
+        if(!line || line.match(/^={3,}$/)) continue;
+        let stepMatch = line.match(/^\[Step (\d+\/\d+)\]\s+(.*)/);
+        if(stepMatch){
+            rows.push({
+                "Status": {"plaintext": stepMatch[1], "cellStyle": {"fontWeight": "bold", "color": "#2196f3"}},
+                "Command": {"plaintext": "Progress"},
+                "Detail": {"plaintext": stepMatch[2]},
+                "rowStyle": {"backgroundColor": "rgba(33,150,243,0.08)"},
+            });
+            continue;
+        }
+        let taskMatch = line.match(/^\[(success|error|unknown)\]\s+(\S+)\s+(.*)/);
+        if(taskMatch){
+            let status = taskMatch[1].toUpperCase();
+            let isSuccess = status === "SUCCESS";
+            if(isSuccess) successCount++;
+            else if(status === "ERROR") errorCount++;
+            rows.push({
+                "Status": {"plaintext": status, "cellStyle": {"fontWeight": "bold", "color": isSuccess ? "#4caf50" : (status === "ERROR" ? "#f44336" : "#9e9e9e")}},
+                "Command": {"plaintext": taskMatch[2]},
+                "Detail": {"plaintext": taskMatch[3]},
+                "rowStyle": {"backgroundColor": isSuccess ? "rgba(76,175,80,0.08)" : (status === "ERROR" ? "rgba(244,67,54,0.08)" : "")},
+            });
+            continue;
+        }
+        if(line.startsWith("Total:") || line.startsWith("=== ")) continue;
+    }
+    let title = chainName;
+    if(successCount + errorCount > 0){
+        title += " — " + successCount + " success";
+        if(errorCount > 0) title += ", " + errorCount + " errors";
+    }
+    return {"table": [{"headers": headers, "rows": rows, "title": title}]};
 }

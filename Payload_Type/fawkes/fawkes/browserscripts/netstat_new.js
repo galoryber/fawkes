@@ -16,6 +16,7 @@ function(task, responses){
             return {"plaintext": "No active connections found"};
         }
         let headers = [
+            {"plaintext": "actions", "type": "button", "width": 80, "disableSort": true},
             {"plaintext": "proto", "type": "string", "width": 70},
             {"plaintext": "local", "type": "string", "fillWidth": true},
             {"plaintext": "remote", "type": "string", "fillWidth": true},
@@ -35,7 +36,25 @@ function(task, responses){
             } else if(conn["state"] === "ESTABLISHED"){
                 rowStyle = {"backgroundColor": "rgba(33,150,243,0.1)"};
             }
+            // Kill button for connections with a known PID
+            let actionCell;
+            if(conn["pid"] > 0){
+                actionCell = {
+                    "button": {
+                        "name": "Kill",
+                        "type": "task",
+                        "ui_feature": "process_browser:kill",
+                        "startIcon": "kill",
+                        "getConfirmation": true,
+                        "hoverText": "Kill process " + conn["pid"],
+                        "parameters": {"pid": String(conn["pid"])},
+                    }
+                };
+            } else {
+                actionCell = {"plaintext": ""};
+            }
             rows.push({
+                "actions": actionCell,
                 "proto": {"plaintext": conn["proto"]},
                 "local": {"plaintext": localAddr, "copyIcon": true},
                 "remote": {"plaintext": remoteAddr, "copyIcon": true},

@@ -35,6 +35,15 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC: Querying system uptime and boot time (T1082). Low-noise system information query. Reveals how long the system has been running.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
 			response := agentstructs.PTTaskProcessResponseMessageResponse{
 				TaskID:  processResponse.TaskData.Task.ID,

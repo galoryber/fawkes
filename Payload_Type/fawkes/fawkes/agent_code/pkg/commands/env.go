@@ -106,7 +106,7 @@ func envSet(name, value string) structs.CommandResult {
 
 	oldValue, existed := os.LookupEnv(name)
 	if err := os.Setenv(name, value); err != nil {
-		return errorf("Error setting %s: %v", name, err)
+		return errorf("Error: cannot set environment variable '%s' (invalid name or restricted)", name)
 	}
 
 	if existed {

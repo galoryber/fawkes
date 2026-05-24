@@ -168,6 +168,7 @@ done:
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
 		TaskingSize: -1,
+		Seq:         t.nextSeq(),
 		Socks:       outboundSocks,
 		Delegates:   delegates,
 		PayloadUUID: t.getActiveUUID(agent),
@@ -294,6 +295,7 @@ doneEdges:
 
 	responseMsg := structs.PostResponseMessage{
 		Action:    "post_response",
+		Seq:       t.nextSeq(),
 		Responses: []structs.Response{response},
 		Socks:     socks,
 		Delegates: delegates,

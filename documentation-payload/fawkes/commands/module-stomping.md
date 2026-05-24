@@ -42,6 +42,9 @@ Select a shellcode file already registered in Mythic, or upload a new shellcode 
 #### Target PID
 The process ID to inject shellcode into.
 
+#### Stack Spoof (`stack_spoof`)
+Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`.
+
 #### Sacrificial DLL
 The DLL to load from `C:\Windows\System32` and overwrite (default: `xpsservices.dll`). The DLL's `.text` section must be larger than the shellcode. Good candidates:
 - **xpsservices.dll** (default) — XPS Services, ~1.8 MB .text, rarely loaded

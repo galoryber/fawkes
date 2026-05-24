@@ -144,29 +144,8 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			var entries []struct {
-				Account string `json:"account"`
-				Etype   string `json:"etype"`
-				Hash    string `json:"hash"`
-				Status  string `json:"status"`
-			}
-			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
-				return response
-			}
-			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
 			realm := processResponse.TaskData.Callback.Host
-			for _, e := range entries {
-				if e.Status != "roasted" || e.Hash == "" {
-					continue
-				}
-				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-					CredentialType: "hash",
-					Realm:          realm,
-					Account:        e.Account,
-					Credential:     e.Hash,
-					Comment:        fmt.Sprintf("asrep-roast (%s)", e.Etype),
-				})
-			}
+			creds := parseASREPHashes(responseText, realm)
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			if len(creds) > 0 {
 				logOperationEvent(processResponse.TaskData.Task.ID,
@@ -205,4 +184,31 @@ func init() {
 			return response
 		},
 	})
+}
+
+// parseASREPHashes extracts AS-REP roasted credential hashes from JSON response.
+func parseASREPHashes(responseText, realm string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	var entries []struct {
+		Account string `json:"account"`
+		Etype   string `json:"etype"`
+		Hash    string `json:"hash"`
+		Status  string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+		return nil
+	}
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, e := range entries {
+		if e.Status != "roasted" || e.Hash == "" {
+			continue
+		}
+		creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+			CredentialType: "hash",
+			Realm:          realm,
+			Account:        e.Account,
+			Credential:     e.Hash,
+			Comment:        fmt.Sprintf("asrep-roast (%s)", e.Etype),
+		})
+	}
+	return creds
 }

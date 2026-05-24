@@ -166,3 +166,172 @@ func TestVmDetectLinuxProcesses(t *testing.T) {
 		t.Error("vmDetectLinuxProcesses should return at least one evidence item")
 	}
 }
+
+// --- Sandbox Detection Tests ---
+
+func TestSandboxCheckCPUCount(t *testing.T) {
+	check := sandboxCheckCPUCount()
+	if check.Name != "CPU Count" {
+		t.Errorf("expected 'CPU Count', got %q", check.Name)
+	}
+	if check.Category != "hardware" {
+		t.Errorf("expected category 'hardware', got %q", check.Category)
+	}
+	// On any real machine, CPUs should be a positive number
+	if check.Details == "" {
+		t.Error("details should not be empty")
+	}
+}
+
+func TestSandboxCheckHostname(t *testing.T) {
+	check := sandboxCheckHostname()
+	if check.Name != "Hostname" {
+		t.Errorf("expected 'Hostname', got %q", check.Name)
+	}
+	if check.Details == "" {
+		t.Error("hostname should be populated")
+	}
+}
+
+func TestSandboxCheckUsername(t *testing.T) {
+	check := sandboxCheckUsername()
+	if check.Name != "Username" {
+		t.Errorf("expected 'Username', got %q", check.Name)
+	}
+}
+
+func TestSandboxCheckSleepDrift(t *testing.T) {
+	check := sandboxCheckSleepDrift()
+	if check.Name != "Sleep Timing" {
+		t.Errorf("expected 'Sleep Timing', got %q", check.Name)
+	}
+	if check.Category != "timing" {
+		t.Errorf("expected category 'timing', got %q", check.Category)
+	}
+	// On a normal machine, sleep should be reasonably accurate
+	if check.Details == "" {
+		t.Error("details should include timing info")
+	}
+}
+
+func TestSandboxCheckProcessCount(t *testing.T) {
+	check := sandboxCheckProcessCount()
+	if check.Name != "Process Count" {
+		t.Errorf("expected 'Process Count', got %q", check.Name)
+	}
+	// On a real machine with a full OS, we should have processes
+	if check.Details == "" {
+		t.Error("details should be populated")
+	}
+}
+
+func TestSandboxCheckUptime(t *testing.T) {
+	check := sandboxCheckUptime()
+	if check.Name != "System Uptime" {
+		t.Errorf("expected 'System Uptime', got %q", check.Name)
+	}
+	if check.Category != "timing" {
+		t.Errorf("expected category 'timing', got %q", check.Category)
+	}
+}
+
+func TestSandboxCheckRAM(t *testing.T) {
+	check := sandboxCheckRAM()
+	if check.Name != "Total RAM" {
+		t.Errorf("expected 'Total RAM', got %q", check.Name)
+	}
+}
+
+func TestSandboxCheckDisk(t *testing.T) {
+	check := sandboxCheckDisk()
+	if check.Name != "Disk Size" {
+		t.Errorf("expected 'Disk Size', got %q", check.Name)
+	}
+}
+
+func TestVmSandboxDetect(t *testing.T) {
+	result := vmSandboxDetect()
+	if result.TotalScore < 0 || result.TotalScore > 100 {
+		t.Errorf("score should be 0-100, got %d", result.TotalScore)
+	}
+	if result.Verdict == "" {
+		t.Error("verdict should not be empty")
+	}
+	validVerdicts := map[string]bool{"clean": true, "suspicious": true, "likely_sandbox": true, "sandbox": true}
+	if !validVerdicts[result.Verdict] {
+		t.Errorf("invalid verdict: %q", result.Verdict)
+	}
+	if len(result.Checks) == 0 {
+		t.Error("should have at least one check")
+	}
+}
+
+func TestFormatSandboxResult(t *testing.T) {
+	result := sandboxResult{
+		TotalScore: 25,
+		Verdict:    "suspicious",
+		Checks: []sandboxCheck{
+			{Name: "Test", Category: "test", Score: 25, Details: "test details"},
+		},
+	}
+	output := formatSandboxResult(result)
+	if output == "" {
+		t.Error("output should not be empty")
+	}
+	if !strings.Contains(output, "suspicious") {
+		t.Error("output should contain verdict")
+	}
+	if !strings.Contains(output, "25") {
+		t.Error("output should contain score")
+	}
+}
+
+func TestIsNumericString(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"123", true},
+		{"0", true},
+		{"abc", false},
+		{"12a3", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		got := isNumericString(tt.input)
+		if got != tt.want {
+			t.Errorf("isNumericString(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestVmDetectSandboxAction(t *testing.T) {
+	c := &VmDetectCommand{}
+	params := `{"action":"sandbox"}`
+	result := c.Execute(structs.Task{Params: params})
+	if result.Status != "success" {
+		t.Errorf("sandbox action failed: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "total_score") {
+		t.Error("output should contain JSON with total_score")
+	}
+}
+
+func TestVmDetectDefaultAction(t *testing.T) {
+	c := &VmDetectCommand{}
+	result := c.Execute(structs.Task{Params: ""})
+	if result.Status != "success" {
+		t.Errorf("default action failed: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Hypervisor") {
+		t.Error("output should contain VM detection results")
+	}
+}
+
+func TestVmDetectInvalidAction(t *testing.T) {
+	c := &VmDetectCommand{}
+	result := c.Execute(structs.Task{Params: `{"action":"invalid"}`})
+	if result.Status != "error" {
+		t.Errorf("expected error for invalid action, got %s", result.Status)
+	}
+}

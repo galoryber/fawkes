@@ -5,13 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
-	"github.com/oiweiwei/go-msrpc/dcerpc"
 	"github.com/oiweiwei/go-msrpc/msrpc/rrp/winreg/v1"
-	"github.com/oiweiwei/go-msrpc/ssp"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -39,11 +36,9 @@ type remoteRegArgs struct {
 }
 
 func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
-	var args remoteRegArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[remoteRegArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 	defer structs.ZeroString(&args.Hash)
@@ -76,62 +71,50 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Timeout = 30
 	}
 
-	switch strings.ToLower(args.Action) {
-	case "query":
-		return remoteRegQuery(args)
-	case "enum":
-		return remoteRegEnum(args)
-	case "set":
-		return remoteRegSet(args)
-	case "delete":
-		return remoteRegDelete(args)
-	default:
+	action := strings.ToLower(args.Action)
+
+	opMap := map[string]string{
+		"query":  "winreg-query",
+		"enum":   "winreg-enum",
+		"set":    "winreg-set",
+		"delete": "winreg-delete",
+	}
+	op, ok := opMap[action]
+	if !ok {
 		return errorf("Unknown action: %s\nAvailable: query, enum, set, delete", args.Action)
 	}
-}
 
-// remoteRegConnect establishes a DCE-RPC connection to the remote winreg service
-// and opens the specified hive. Returns the client, hive key handle, context, and cancel func.
-func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, context.Context, context.CancelFunc, func(), error) {
-	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
-	structs.ZeroString(&args.Password)
-	structs.ZeroString(&args.Hash)
-	if credErr != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("%v for remote registry access", credErr)
+	if args.Password == "" && args.Hash == "" {
+		return errorf("Either -password or -hash is required for remote registry access")
 	}
 
-	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
+	params, _ := json.Marshal(winregParams{
+		Hive:    args.Hive,
+		Path:    args.Path,
+		Name:    args.Name,
+		Data:    args.Data,
+		RegType: args.RegType,
+	})
 
-	cc, err := dcerpc.Dial(ctx, args.Server,
-		dcerpc.WithEndpoint("ncacn_np:[winreg]"),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.SPNEGO),
-		dcerpc.WithMechanism(ssp.NTLM),
-	)
+	output, err := rpcViaSubprocess(rpcHelperRequest{
+		Operation: op,
+		Server:    args.Server,
+		Username:  args.Username,
+		Password:  args.Password,
+		Hash:      args.Hash,
+		Domain:    args.Domain,
+		Timeout:   args.Timeout,
+		Params:    params,
+	})
 	if err != nil {
-		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
+		return errorf("Error: %v", err)
 	}
 
-	cli, err := winreg.NewWinregClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
-	if err != nil {
-		cc.Close(ctx)
-		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create WinReg client: %v", err)
+	var result winregResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return errorf("Error parsing result: %v", err)
 	}
-
-	cleanup := func() {
-		cc.Close(ctx)
-	}
-
-	hiveKey, err := openRemoteHive(ctx, cli, args.Hive)
-	if err != nil {
-		cleanup()
-		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open hive %s: %v", args.Hive, err)
-	}
-
-	return cli, hiveKey, ctx, cancel, cleanup, nil
+	return successResult(result.Text)
 }
 
 func openRemoteHive(ctx context.Context, cli winreg.WinregClient, hive string) (*winreg.Key, error) {

@@ -5,43 +5,92 @@ weight = 105
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-Execute raw shellcode in the current agent process. The shellcode is loaded into a new memory allocation (VirtualAlloc) and executed in a new thread (CreateThread) within the agent process.
+Execute raw shellcode in the current agent process. The shellcode is loaded into a new memory allocation and executed in a new thread within the agent process.
 
-Unlike process injection commands (vanilla-injection, apc-injection, etc.), this runs shellcode in the agent's own process without crossing process boundaries. This avoids cross-process injection detection but means the shellcode shares the agent's address space.
+Unlike process injection commands (vanilla-injection, apc-injection, etc.), this runs shellcode in the agent's own process without crossing process boundaries.
+
+### Platform Details
+
+| Platform | Technique | Allocation | Execution | Notes |
+|----------|-----------|-----------|-----------|-------|
+| Windows | (default) | VirtualAlloc (RW) + VirtualProtect (RX) | CreateThread | Standard W^X allocation |
+| Linux | `mmap` (default) | Anonymous mmap (RW) + mprotect (RX) | New goroutine | Standard anonymous mapping |
+| Linux | `memfd` | memfd_create + mmap (RX) | New goroutine | fd-backed mapping evades anonymous RX detection |
+| macOS (ARM64) | (default) | mmap with MAP_JIT | pthread_jit_write_protect_np | Apple Silicon requires MAP_JIT |
+| macOS (x86_64) | (default) | mmap (RW) + mprotect (RX) | New goroutine | Same pattern as Linux mmap |
+
+### Technique Details (Linux)
+
+**mmap (default):** Creates an anonymous private mapping with PROT_READ|PROT_WRITE, copies shellcode, then transitions to PROT_READ|PROT_EXEC. The memory appears as an anonymous executable region in /proc/self/maps.
+
+**memfd:** Uses memfd_create(2) to create an anonymous file descriptor, writes shellcode to it, seals it read-only, then mmaps the fd with PROT_READ|PROT_EXEC. The resulting memory appears as a file-backed executable region rather than an anonymous one, evading detection rules that flag anonymous RX mappings.
 
 ## Arguments
-
-Shellcode can be provided via Mythic file upload (UI) or base64-encoded string (API).
 
 | Argument | Required | Description |
 |----------|----------|-------------|
 | filename | Yes (Default group) | Select a shellcode file already registered in Mythic |
 | file | Yes (New File group) | Upload a new shellcode file |
 | shellcode_b64 | Yes (CLI group) | Base64-encoded raw shellcode bytes |
+| technique | No | `mmap` (default) or `memfd` (Linux only). Selects the memory allocation technique. |
+| encoding | No | Shellcode encoding: `none` (default), `xor` (repeating XOR key), `aes` (AES-256-CTR, first 16 bytes = IV) |
+| key | No | Hex-encoded decryption key. For XOR: any length. For AES: exactly 32 bytes (64 hex chars). |
+| stack_spoof | No | Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`. |
 
 ## Usage
 
 ```
-# From Mythic UI: select a previously uploaded shellcode file from the dropdown
+# From Mythic UI: select shellcode, optionally set technique
 execute-shellcode -filename my_shellcode.bin
 
-# From API: provide base64-encoded shellcode
-execute-shellcode -shellcode_b64 "kJBQ..."
+# Linux: use memfd technique to evade anonymous mapping detection
+execute-shellcode -filename my_shellcode.bin -technique memfd
+
+# From API
+execute-shellcode -shellcode_b64 "kJBQ..." -technique memfd
+
+# XOR-encoded shellcode (key=0xDEADBEEF repeating)
+execute-shellcode -shellcode_b64 "<xor-encoded-b64>" -encoding xor -key deadbeef
+
+# AES-256-CTR encoded (first 16 bytes of shellcode = IV, rest = ciphertext)
+execute-shellcode -shellcode_b64 "<aes-encoded-b64>" -encoding aes -key 0011223344556677...  # 64 hex chars
+```
+
+### Encoding Shellcode (Operator Prep)
+
+XOR encode shellcode before sending (Python example):
+```python
+import base64
+key = bytes.fromhex("deadbeef")
+shellcode = open("payload.bin", "rb").read()
+encoded = bytes(b ^ key[i % len(key)] for i, b in enumerate(shellcode))
+print(base64.b64encode(encoded).decode())
+```
+
+AES-256-CTR encode shellcode (Python example):
+```python
+import base64, os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+key = bytes.fromhex("0011223344556677...")  # 32 bytes
+iv = os.urandom(16)
+cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+ciphertext = cipher.encryptor().update(shellcode)
+print(base64.b64encode(iv + ciphertext).decode())
 ```
 
 ## OPSEC Considerations
 
-- VirtualAlloc with PAGE_READWRITE followed by VirtualProtect to PAGE_EXECUTE_READ
-- CreateThread API call is monitored by many EDR products
+- **Windows:** VirtualAlloc + VirtualProtect + CreateThread — monitored by most EDR
+- **Linux (mmap):** Anonymous RX region in /proc/self/maps; auditable via seccomp/auditd
+- **Linux (memfd):** fd-backed RX region appears more legitimate; memfd_create itself may be monitored
+- **macOS (ARM64):** MAP_JIT allocations visible to Endpoint Security framework
 - Shellcode runs in the agent process — if it crashes, the agent dies
-- No cross-process artifacts (no OpenProcess, no WriteProcessMemory)
-- Memory allocation and thread creation are in the agent's own process
+- No cross-process artifacts
 
 ## MITRE ATT&CK Mapping
 
-- **T1059.006** — Command and Scripting Interpreter: Python (shellcode execution)
-- **T1055.012** — Process Injection: Process Hollowing (memory allocation + execution)
+- **T1027** — Obfuscated Files or Information (XOR/AES shellcode encoding)
+- **T1059.006** — Command and Scripting Interpreter (shellcode execution)
+- **T1620** — Reflective Code Loading (memfd technique)

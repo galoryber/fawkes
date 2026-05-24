@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -35,11 +34,9 @@ type memScanMatch struct {
 }
 
 func (c *MemScanCommand) Execute(task structs.Task) structs.CommandResult {
-	var args memScanArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[memScanArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Pattern == "" {

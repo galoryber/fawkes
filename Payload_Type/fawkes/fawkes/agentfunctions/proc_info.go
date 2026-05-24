@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -19,6 +20,7 @@ func init() {
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Linux"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -52,6 +54,7 @@ func init() {
 				},
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "procinfo_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

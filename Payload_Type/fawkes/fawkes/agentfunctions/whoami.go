@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -23,7 +24,7 @@ func init() {
 			CommandIsSuggested: true,
 		},
 		CommandParameters:       []agentstructs.CommandParameter{},
-		AssociatedBrowserScript: nil,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "whoami_new.js"), Author: "@galoryber"},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 					TaskID:             taskData.Task.ID,

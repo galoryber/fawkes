@@ -16,7 +16,7 @@ func listProcessModules(pid int) ([]ModuleInfo, error) {
 	mapsPath := fmt.Sprintf("/proc/%d/maps", pid)
 	data, err := os.ReadFile(mapsPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %v", mapsPath, err)
+		return nil, fmt.Errorf("reading %s: %w", mapsPath, err)
 	}
 	defer structs.ZeroBytes(data)
 

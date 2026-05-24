@@ -41,7 +41,11 @@ Example: `content_types=application/json,text/plain,application/x-www-form-urlen
 
 ### TLS Fingerprinting
 
-Set `tls_fingerprint` to spoof browser JA3 fingerprints: `chrome`, `firefox`, `safari`, `edge`, `random`, `go` (default).
+Set `tls_fingerprint` to spoof browser JA3 fingerprints:
+- `chrome`, `firefox`, `safari`, `edge` — fixed browser fingerprint (same JA3 every connection)
+- `rotate` — randomly selects Chrome/Firefox/Safari/Edge per-connection (prevents JA3-based correlation)
+- `random` — fully randomized fingerprint (not browser-matching)
+- `go` — default Go TLS stack (no spoofing)
 
 ### Domain Fronting
 
@@ -51,11 +55,38 @@ Set `host_header` to override the HTTP Host header for CDN domain fronting (e.g.
 
 Set `fallback_hosts` to comma-separated backup URLs. If the primary C2 is unreachable, the agent automatically rotates through fallback URLs.
 
+## HTTP/2 Support
+
+When the C2 server uses HTTPS, the agent automatically probes for HTTP/2 (h2) support on the first request. If h2 is negotiated, all subsequent requests are multiplexed on a single persistent connection, matching modern browser behavior. If the server doesn't support h2, the agent transparently falls back to HTTP/1.1.
+
+This works with all TLS fingerprinting modes — uTLS connections advertise h2 in ALPN, and the agent correctly routes to the h2 transport when h2 is negotiated. No configuration needed.
+
+## Forward Secrecy (ECDH Key Rotation)
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `key_rotation_interval` | Check-ins between key rotations | `0` (disabled) |
+
+When enabled, the agent performs X25519 ECDH key exchange every N check-ins:
+
+1. Agent generates ephemeral X25519 keypair, sends public key in check-in message
+2. Server generates its own ephemeral keypair, responds with its public key
+3. Both sides derive a new AES-256 key via HKDF-SHA256
+4. Old key is zeroed after the new key is confirmed
+
+This limits the blast radius of key compromise — even if an attacker extracts the current session key, they cannot decrypt past traffic. Recommended value: `100` for long-term implants.
+
+## Replay Protection
+
+Each outbound message includes a monotonic sequence number (`seq` field inside the encrypted JSON envelope). The counter starts at 1 and increments per message. This enables server-side replay detection: any message with `seq` <= the last-seen value for that callback is a replay.
+
+Since the sequence is inside the encrypted envelope, a MitM cannot modify it without breaking the HMAC-SHA256 authentication tag.
+
 ## Encryption
 
 All messages use AES-256-CBC encryption with HMAC-SHA256 authentication:
 
-1. JSON message is serialized
+1. JSON message is serialized (includes monotonic sequence number)
 2. AES-256-CBC encryption with random 16-byte IV
 3. HMAC-SHA256 computed over IV + ciphertext
 4. Format: `[IV (16B)][Ciphertext][HMAC (32B)]`
@@ -63,18 +94,43 @@ All messages use AES-256-CBC encryption with HMAC-SHA256 authentication:
 6. Base64 encoded
 7. Body transforms applied (if configured)
 
+## Proxy Support
+
+Fawkes supports routing C2 traffic through HTTP proxies, including enterprise proxies that require authentication.
+
+| Parameter | Description |
+|-----------|-------------|
+| `proxy_url` | Proxy URL (e.g., `http://proxy:8080` or `socks5://127.0.0.1:1080`) |
+| `proxy_user` | Proxy authentication username |
+| `proxy_pass` | Proxy authentication password |
+| `proxy_domain` | NTLM domain (e.g., `CORP`). When set, uses NTLM authentication instead of Basic |
+
+**Authentication modes:**
+- **No auth**: Leave `proxy_user` empty. Proxy is used without credentials.
+- **Basic auth**: Set `proxy_user` and `proxy_pass`. Credentials are sent via standard `Proxy-Authorization: Basic` header.
+- **NTLM auth**: Set `proxy_user`, `proxy_pass`, and `proxy_domain`. The agent performs a full NTLM handshake (Type1→Type2→Type3) during the CONNECT tunnel establishment. Required for enterprise proxies using Windows domain authentication.
+
+**System proxy detection (Windows):** When `proxy_url` is empty, the agent queries WinHTTP for system proxy settings, including PAC file and WPAD auto-detection. On non-Windows platforms, `HTTP_PROXY`/`HTTPS_PROXY` environment variables are used.
+
+**uTLS compatibility:** NTLM proxy authentication works with TLS fingerprinting — the proxy tunnel is established first, then the uTLS handshake occurs over the tunnel.
+
 ## OPSEC Considerations
 
 - TLS fingerprinting prevents JA3-based detection
+- HTTP/2 multiplexing matches modern browser connection patterns
 - URI randomization prevents static path signatures
 - Content-Type cycling varies request appearance
 - Body transforms disguise encrypted blobs as legitimate content
 - Config vault encrypts C2 parameters in memory (AES-256-GCM)
 - Sleep mask encrypts all agent data during sleep cycles
 - Domain fronting hides true C2 destination from network observers
+- Proxy credentials are XOR-encrypted in the binary (with `obfuscate_strings`)
+- Forward secrecy limits blast radius of key compromise
+- Sequence numbers prevent message replay attacks
 
 ## MITRE ATT&CK Mapping
 
 - **T1071.001** — Application Layer Protocol: Web Protocols
 - **T1573.001** — Encrypted Channel: Symmetric Cryptography
+- **T1090.002** — Proxy: External Proxy
 - **T1090.004** — Proxy: Domain Fronting

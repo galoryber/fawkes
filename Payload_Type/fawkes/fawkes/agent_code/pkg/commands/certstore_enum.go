@@ -28,7 +28,7 @@ func enumCertsInStore(storeName string, locationFlag uint32, locationName, filte
 		uintptr(unsafe.Pointer(storeNameUTF16)),
 	)
 	if storeHandle == 0 {
-		return nil, fmt.Errorf("CertOpenStore failed: %v", sysErr)
+		return nil, fmt.Errorf("CertOpenStore failed: %w", sysErr)
 	}
 	defer procCertCloseStore.Call(storeHandle, 0)
 

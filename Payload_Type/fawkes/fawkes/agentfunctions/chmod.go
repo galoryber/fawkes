@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -14,6 +15,10 @@ func init() {
 		HelpString:          "chmod -path /tmp/payload -mode 755\nchmod -path ./script.sh -mode +x\nchmod -path /var/data -mode 644 -recursive true\nchmod -path /tmp -mode u+rwx,go+rx",
 		Version:             1,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "chmod_new.js"),
+			Author:     "@galoryber",
+		},
 		MitreAttackMappings: []string{"T1222"},
 		SupportedUIFeatures: []string{"file_browser:upload"},
 		CommandAttributes: agentstructs.CommandAttribute{

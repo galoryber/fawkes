@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sort",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sort_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Sort lines of a file. Supports alphabetic, numeric, reverse, and unique modes.",
 		HelpString:          "sort -path /tmp/data.txt\nsort -path /var/log/auth.log -reverse true\nsort -path results.txt -numeric true -unique true",
 		Version:             1,
@@ -75,6 +80,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC: Reading and sorting file contents (T1005, T1083). File access timestamps updated. Low-noise text processing operation.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{

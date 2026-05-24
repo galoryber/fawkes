@@ -51,14 +51,20 @@ func (c *CpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Open source file
 	sourceFile, err := os.Open(args.Source)
 	if err != nil {
-		return errorf("Error opening source file: %v", err)
+		if os.IsNotExist(err) {
+			return errorf("Error: source file not found: %s", args.Source)
+		}
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to source file %s — check privileges", args.Source)
+		}
+		return errorf("Error: cannot open source file %s", args.Source)
 	}
 	defer sourceFile.Close()
 
 	// Get source file info
 	sourceInfo, err := sourceFile.Stat()
 	if err != nil {
-		return errorf("Error getting source file info: %v", err)
+		return errorf("Error: cannot read source file metadata for %s", args.Source)
 	}
 
 	if sourceInfo.IsDir() {
@@ -68,19 +74,25 @@ func (c *CpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create destination file
 	destFile, err := os.Create(args.Destination)
 	if err != nil {
-		return errorf("Error creating destination file: %v", err)
+		if os.IsPermission(err) {
+			return errorf("Error: access denied writing to %s — check privileges", args.Destination)
+		}
+		if os.IsNotExist(err) {
+			return errorf("Error: destination directory does not exist for %s", args.Destination)
+		}
+		return errorf("Error: cannot create destination file %s", args.Destination)
 	}
 	defer destFile.Close() // Safety net for panics; explicit Close below catches flush errors
 	// Copy the file contents
 	bytesCopied, err := io.Copy(destFile, sourceFile)
 	if err != nil {
 		destFile.Close()
-		return errorf("Error copying file: %v", err)
+		return errorf("Error: write failed during copy (disk full or I/O error)")
 	}
 
 	// Close destination file explicitly to flush writes and catch errors
 	if err := destFile.Close(); err != nil {
-		return errorf("Error finalizing destination file: %v", err)
+		return errorf("Error: failed to finalize %s (disk full or I/O error)", args.Destination)
 	}
 
 	// Set permissions on destination file to match source

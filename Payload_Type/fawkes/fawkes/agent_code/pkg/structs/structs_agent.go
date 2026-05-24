@@ -21,6 +21,7 @@ type Agent struct {
 	ProcessName       string `json:"process_name"`
 	SleepInterval     int    `json:"sleep_interval"`
 	Jitter            int    `json:"jitter"`
+	JitterProfile     string `json:"-"` // uniform (default), normal, exponential
 	User              string `json:"user"`
 	Description       string `json:"description"`
 	KillDate          int64  `json:"-"` // Unix timestamp. 0 = disabled. Agent exits when time exceeds this.

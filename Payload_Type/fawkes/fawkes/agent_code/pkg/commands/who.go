@@ -28,11 +28,9 @@ type whoSessionEntry struct {
 }
 
 func (c *WhoCommand) Execute(task structs.Task) structs.CommandResult {
-	var args whoArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[whoArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	entries := whoPlatform(args)

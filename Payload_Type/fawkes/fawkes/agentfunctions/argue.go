@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "argue",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "argue_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Execute a command with spoofed process arguments. Creates process with fake command-line args (visible to Sysmon/EDR), then patches PEB to real args before resume. Defeats Event ID 1 command-line logging.",
 		HelpString:          "argue -command \"cmd.exe /c whoami\" -spoof \"cmd.exe /c echo hello\"",
 		Version:             1,
@@ -16,7 +21,7 @@ func init() {
 		MitreAttackMappings: []string{"T1564.010"}, // Process Argument Spoofing
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

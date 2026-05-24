@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -66,9 +65,9 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -action <list|links|find|all> -server <DC> -username <user@domain> -password <pass>")
 	}
 
-	var args gpoArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[gpoArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -153,7 +152,7 @@ func gpoDetectBaseDN(conn *ldap.Conn) (string, error) {
 	)
 	result, err := conn.Search(searchRequest)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 	if len(result.Entries) == 0 {
 		return "", fmt.Errorf("no RootDSE entries returned")

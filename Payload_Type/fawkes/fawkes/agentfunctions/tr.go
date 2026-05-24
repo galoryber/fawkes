@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "tr",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "tr_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Translate, squeeze, or delete characters in file content. Like Unix tr — supports character classes and ranges.",
 		HelpString:          "tr -path /tmp/data.txt -from [:lower:] -to [:upper:]\ntr -path file.txt -delete [:digit:]\ntr -path file.txt -from a-z -to A-Z\ntr -path file.txt -squeeze true",
 		Version:             1,
@@ -86,6 +91,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC: Character translation on file (T1005, T1083). File access timestamps updated. Low-noise text processing operation.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{

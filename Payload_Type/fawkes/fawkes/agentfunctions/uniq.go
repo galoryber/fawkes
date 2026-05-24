@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "uniq",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "uniq_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Filter or count duplicate consecutive lines in a file. Use with sort for global deduplication.",
 		HelpString:          "uniq -path /tmp/data.txt\nuniq -path /var/log/auth.log -count true\nuniq -path results.txt -duplicate true",
 		Version:             1,
@@ -75,6 +80,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC: Deduplicating file lines (T1005, T1083). File access timestamps updated. Low-noise text processing operation.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{

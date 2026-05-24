@@ -32,7 +32,7 @@ func TestRpfwdInvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Error("invalid JSON should return error")
 	}
-	if !strings.Contains(result.Output, "Failed to parse") {
+	if !strings.Contains(result.Output, "parsing parameters") && !strings.Contains(result.Output, "Failed to parse") {
 		t.Errorf("expected parse error, got: %s", result.Output)
 	}
 }

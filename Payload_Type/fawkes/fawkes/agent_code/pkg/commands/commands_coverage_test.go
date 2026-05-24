@@ -584,8 +584,8 @@ func TestDownloadCommand_Execute(t *testing.T) {
 			if result.Status != "success" {
 				t.Errorf("expected success, got %q: %s", result.Status, result.Output)
 			}
-			if !strings.Contains(result.Output, "Finished Downloading") {
-				t.Errorf("expected 'Finished Downloading', got: %s", result.Output)
+			if !strings.Contains(result.Output, "Downloaded") && !strings.Contains(result.Output, "Finished Downloading") {
+				t.Errorf("expected download success message, got: %s", result.Output)
 			}
 		case <-time.After(3 * time.Second):
 			t.Fatal("Timed out waiting for download result")

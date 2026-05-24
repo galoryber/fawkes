@@ -108,10 +108,17 @@ func init() {
 			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
+			deep, _ := task.Args.GetBooleanArg("deep")
+			display := "scan"
+			if deep {
+				display = "deep scan"
+			}
+			response.DisplayParams = &display
+			return response
 		},
 	})
 }

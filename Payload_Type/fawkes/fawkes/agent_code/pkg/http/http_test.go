@@ -3,17 +3,60 @@ package http
 import (
 	"bytes"
 	"crypto/aes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"fawkes/pkg/structs"
 )
+
+// generateTestCertPEM creates a self-signed certificate and key pair for testing.
+func generateTestCertPEM(t *testing.T) (certPEM, keyPEM string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{Organization: []string{"Test"}},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+
+	certBuf := &bytes.Buffer{}
+	pem.Encode(certBuf, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	keyBuf := &bytes.Buffer{}
+	pem.Encode(keyBuf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	return certBuf.String(), keyBuf.String()
+}
 
 // --- pkcs7Pad Tests ---
 
@@ -451,25 +494,21 @@ func TestGetString_NonStringValue(t *testing.T) {
 
 // --- NewHTTPProfile Tests ---
 
+func testConfig(baseURL string) ProfileConfig {
+	return ProfileConfig{
+		BaseURL:       baseURL,
+		UserAgent:     "TestAgent/1.0",
+		MaxRetries:    10,
+		SleepInterval: 5,
+		Jitter:        10,
+		GetEndpoint:   "/get",
+		PostEndpoint:  "/post",
+		TLSVerify:     "none",
+	}
+}
+
 func TestNewHTTPProfile_BasicConfig(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"none",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	p := NewHTTPProfile(testConfig("http://localhost:80"))
 
 	if p.BaseURL != "http://localhost:80" {
 		t.Errorf("BaseURL = %q, want %q", p.BaseURL, "http://localhost:80")
@@ -486,24 +525,9 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 }
 
 func TestNewHTTPProfile_WithProxy(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"http://proxy:8080",
-		"none",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://proxy:8080"
+	p := NewHTTPProfile(cfg)
 
 	if p.client == nil {
 		t.Error("client should not be nil even with proxy")
@@ -511,24 +535,9 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 }
 
 func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://realserver:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"fronted.example.com",
-		"",
-		"none",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	cfg := testConfig("http://realserver:80")
+	cfg.HostHeader = "fronted.example.com"
+	p := NewHTTPProfile(cfg)
 
 	if p.HostHeader != "fronted.example.com" {
 		t.Errorf("HostHeader = %q, want %q", p.HostHeader, "fronted.example.com")
@@ -539,24 +548,11 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 	key := make([]byte, 32)
 	keyB64 := base64.StdEncoding.EncodeToString(key)
 
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		keyB64,
-		10,
-		5,
-		10,
-		true,
-		"/get",
-		"/post",
-		"",
-		"",
-		"system-ca",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	cfg := testConfig("http://localhost:80")
+	cfg.EncryptionKey = keyB64
+	cfg.Debug = true
+	cfg.TLSVerify = "system-ca"
+	p := NewHTTPProfile(cfg)
 
 	if p.EncryptionKey != keyB64 {
 		t.Errorf("EncryptionKey not set correctly")
@@ -568,27 +564,82 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 
 func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 	// Invalid proxy URL should not crash — silently ignored
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"://not-a-valid-url",
-		"none",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "://not-a-valid-url"
+	p := NewHTTPProfile(cfg)
 
 	if p.client == nil {
 		t.Error("client should not be nil even with invalid proxy")
+	}
+}
+
+func TestNewHTTPProfile_WithMTLS(t *testing.T) {
+	// Generate a self-signed cert/key pair for testing
+	certPEM, keyPEM := generateTestCertPEM(t)
+
+	// mTLS with valid cert — should not crash, client should be configured
+	cfg := testConfig("https://localhost:443")
+	cfg.MTLSCertPEM = certPEM
+	cfg.MTLSKeyPEM = keyPEM
+	p := NewHTTPProfile(cfg)
+
+	if p == nil {
+		t.Fatal("NewHTTPProfile with mTLS returned nil")
+	}
+	if p.client == nil {
+		t.Fatal("client should not be nil with mTLS")
+	}
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport is not *http.Transport")
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("TLSClientConfig should not be nil")
+	}
+	if len(transport.TLSClientConfig.Certificates) != 1 {
+		t.Errorf("expected 1 client certificate, got %d", len(transport.TLSClientConfig.Certificates))
+	}
+}
+
+func TestNewHTTPProfile_WithInvalidMTLS(t *testing.T) {
+	// Invalid cert/key — should not crash, just skip mTLS
+	cfg := testConfig("https://localhost:443")
+	cfg.MTLSCertPEM = "invalid-cert"
+	cfg.MTLSKeyPEM = "invalid-key"
+	p := NewHTTPProfile(cfg)
+
+	if p == nil {
+		t.Fatal("NewHTTPProfile with invalid mTLS returned nil")
+	}
+	if p.client == nil {
+		t.Fatal("client should not be nil")
+	}
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport is not *http.Transport")
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("TLSClientConfig should not be nil")
+	}
+	// Invalid cert should result in no client certificates
+	if len(transport.TLSClientConfig.Certificates) != 0 {
+		t.Errorf("expected 0 client certificates with invalid PEM, got %d", len(transport.TLSClientConfig.Certificates))
+	}
+}
+
+func TestNewHTTPProfile_WithEmptyMTLS(t *testing.T) {
+	// Empty cert/key — no mTLS configured
+	p := NewHTTPProfile(testConfig("https://localhost:443"))
+
+	if p == nil {
+		t.Fatal("NewHTTPProfile returned nil")
+	}
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport is not *http.Transport")
+	}
+	if len(transport.TLSClientConfig.Certificates) != 0 {
+		t.Errorf("expected 0 client certificates, got %d", len(transport.TLSClientConfig.Certificates))
 	}
 }
 
@@ -1130,25 +1181,21 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 	}))
 	defer backup.Close()
 
-	p := NewHTTPProfile(
-		"http://127.0.0.1:1", // unreachable port
-		"TestAgent/1.0",
-		"",
-		1, 5, 0, false,
-		"/test", "/test",
-		"", "", "none", "",
-		[]string{backup.URL}, // fallback,
-		nil,
-		0,
-	)
+	pcfg := testConfig("http://127.0.0.1:1") // unreachable port
+	pcfg.MaxRetries = 1
+	pcfg.Jitter = 0
+	pcfg.GetEndpoint = "/test"
+	pcfg.PostEndpoint = "/test"
+	pcfg.FallbackURLs = []string{backup.URL}
+	p := NewHTTPProfile(pcfg)
 
-	cfg := &sensitiveConfig{
+	scfg := &sensitiveConfig{
 		BaseURL:      "http://127.0.0.1:1",
 		FallbackURLs: []string{backup.URL},
 		UserAgent:    "TestAgent/1.0",
 	}
 
-	resp, err := p.makeRequest("GET", "/test", nil, cfg)
+	resp, err := p.makeRequest("GET", "/test", nil, scfg)
 	if err != nil {
 		t.Fatalf("makeRequest should succeed via fallback, got: %v", err)
 	}
@@ -1163,17 +1210,13 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 }
 
 func TestMakeRequest_AllFail(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://127.0.0.1:1",
-		"TestAgent/1.0",
-		"",
-		1, 5, 0, false,
-		"/test", "/test",
-		"", "", "none", "",
-		[]string{"http://127.0.0.1:2"},
-		nil,
-		0,
-	)
+	pcfg := testConfig("http://127.0.0.1:1")
+	pcfg.MaxRetries = 1
+	pcfg.Jitter = 0
+	pcfg.GetEndpoint = "/test"
+	pcfg.PostEndpoint = "/test"
+	pcfg.FallbackURLs = []string{"http://127.0.0.1:2"}
+	p := NewHTTPProfile(pcfg)
 
 	cfg := &sensitiveConfig{
 		BaseURL:      "http://127.0.0.1:1",
@@ -1189,17 +1232,9 @@ func TestMakeRequest_AllFail(t *testing.T) {
 
 func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 	fallbacks := []string{"http://backup1:80", "http://backup2:80"}
-	p := NewHTTPProfile(
-		"http://primary:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post",
-		"", "", "none", "",
-		fallbacks,
-		nil,
-		0,
-	)
+	cfg := testConfig("http://primary:80")
+	cfg.FallbackURLs = fallbacks
+	p := NewHTTPProfile(cfg)
 
 	if len(p.FallbackURLs) != 2 {
 		t.Fatalf("FallbackURLs = %v, want 2 entries", p.FallbackURLs)
@@ -1217,17 +1252,13 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewHTTPProfile(
-		server.URL,
-		"TestAgent/1.0",
-		"",
-		1, 5, 0, false,
-		"/test", "/test",
-		"", "", "none", "",
-		[]string{server.URL + "/fb1", server.URL + "/fb2"},
-		nil,
-		0,
-	)
+	ccfg := testConfig(server.URL)
+	ccfg.MaxRetries = 1
+	ccfg.Jitter = 0
+	ccfg.GetEndpoint = "/test"
+	ccfg.PostEndpoint = "/test"
+	ccfg.FallbackURLs = []string{server.URL + "/fb1", server.URL + "/fb2"}
+	p := NewHTTPProfile(ccfg)
 
 	cfg := &sensitiveConfig{
 		BaseURL:      server.URL,
@@ -1256,31 +1287,23 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 }
 
 func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://primary:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post",
-		"", "", "none", "",
-		[]string{"http://backup:80"},
-		nil,
-		0,
-	)
+	pcfg := testConfig("http://primary:80")
+	pcfg.FallbackURLs = []string{"http://backup:80"}
+	p := NewHTTPProfile(pcfg)
 
 	if err := p.SealConfig(); err != nil {
 		t.Fatalf("SealConfig failed: %v", err)
 	}
 
-	cfg := p.getConfig()
-	if cfg == nil {
+	scfg := p.getConfig()
+	if scfg == nil {
 		t.Fatal("getConfig returned nil after seal")
 	}
-	if cfg.BaseURL != "http://primary:80" {
-		t.Errorf("BaseURL = %q after seal, want http://primary:80", cfg.BaseURL)
+	if scfg.BaseURL != "http://primary:80" {
+		t.Errorf("BaseURL = %q after seal, want http://primary:80", scfg.BaseURL)
 	}
-	if len(cfg.FallbackURLs) != 1 || cfg.FallbackURLs[0] != "http://backup:80" {
-		t.Errorf("FallbackURLs = %v after seal, want [http://backup:80]", cfg.FallbackURLs)
+	if len(scfg.FallbackURLs) != 1 || scfg.FallbackURLs[0] != "http://backup:80" {
+		t.Errorf("FallbackURLs = %v after seal, want [http://backup:80]", scfg.FallbackURLs)
 	}
 	// Struct fields should be zeroed
 	if p.BaseURL != "" {
@@ -1356,5 +1379,254 @@ func TestResolveURITokens_Empty(t *testing.T) {
 	got := resolveURITokens("")
 	if got != "" {
 		t.Errorf("resolveURITokens(\"\") = %q, want empty", got)
+	}
+}
+
+// --- Proxy Authentication Tests ---
+
+func TestNewHTTPProfile_WithProxyAuth(t *testing.T) {
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://proxy:8080"
+	cfg.ProxyUser = "proxyuser"
+	cfg.ProxyPass = "proxypass"
+	p := NewHTTPProfile(cfg)
+
+	if p.client == nil {
+		t.Fatal("client should not be nil with proxy auth")
+	}
+	// Transport should have proxy configured (can't inspect function directly,
+	// but verify transport is *http.Transport with Proxy set)
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport should be *http.Transport")
+	}
+	if transport.Proxy == nil {
+		t.Error("Proxy function should be set when proxyURL is provided")
+	}
+}
+
+func TestNewHTTPProfile_WithProxyEmbeddedCreds(t *testing.T) {
+	// Credentials embedded in the URL take precedence
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://embeduser:embedpass@proxy:8080"
+	cfg.ProxyUser = "separate-user"
+	cfg.ProxyPass = "separate-pass"
+	p := NewHTTPProfile(cfg)
+
+	if p.client == nil {
+		t.Fatal("client should not be nil")
+	}
+	transport := p.client.Transport.(*http.Transport)
+	if transport.Proxy == nil {
+		t.Error("Proxy should be set")
+	}
+}
+
+func TestNewHTTPProfile_ProxyUserOnly(t *testing.T) {
+	// proxyUser without proxyPass
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://proxy:8080"
+	cfg.ProxyUser = "onlyuser"
+	p := NewHTTPProfile(cfg)
+
+	if p.client == nil {
+		t.Fatal("client should not be nil")
+	}
+}
+
+func TestNewHTTPProfile_SystemProxy(t *testing.T) {
+	// No explicit proxy — should use systemProxyFunc()
+	p := NewHTTPProfile(testConfig("http://localhost:80"))
+
+	transport := p.client.Transport.(*http.Transport)
+	if transport.Proxy == nil {
+		t.Error("Proxy should be set to systemProxyFunc even without explicit proxy")
+	}
+}
+
+// --- Proxy Request Verification Tests ---
+
+func TestMakeRequest_ProxyAuthInTransport(t *testing.T) {
+	// Set up a test server that acts as a proxy
+	var proxyAuthHeader string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyAuthHeader = r.Header.Get("Proxy-Authorization")
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	// Create profile pointing directly at test server (simulating proxy)
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
+
+	resp, err := p.makeRequest("GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Direct connection (no proxy) — Proxy-Authorization should NOT be present
+	if proxyAuthHeader != "" {
+		t.Errorf("Proxy-Authorization should not be present on direct connection: %q", proxyAuthHeader)
+	}
+}
+
+// --- Custom Headers Integration Tests ---
+
+func TestMakeRequest_MultipleCustomHeaders(t *testing.T) {
+	var capturedHeaders http.Header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
+
+	p.CustomHeaders = map[string]string{
+		"X-Forwarded-For": "10.0.0.1",
+		"X-Request-ID":    "abc-123",
+		"Authorization":   "Bearer token123",
+	}
+
+	resp, err := p.makeRequest("GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if capturedHeaders.Get("X-Forwarded-For") != "10.0.0.1" {
+		t.Errorf("X-Forwarded-For = %q, want 10.0.0.1", capturedHeaders.Get("X-Forwarded-For"))
+	}
+	if capturedHeaders.Get("X-Request-ID") != "abc-123" {
+		t.Errorf("X-Request-ID = %q, want abc-123", capturedHeaders.Get("X-Request-ID"))
+	}
+	if capturedHeaders.Get("Authorization") != "Bearer token123" {
+		t.Errorf("Authorization = %q, want Bearer token123", capturedHeaders.Get("Authorization"))
+	}
+}
+
+func TestMakeRequest_CustomHeadersEmptyMap(t *testing.T) {
+	var capturedHeaders http.Header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
+	p.CustomHeaders = map[string]string{}
+
+	resp, err := p.makeRequest("GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Should still have default headers
+	if capturedHeaders.Get("User-Agent") == "" {
+		t.Error("User-Agent should be present even with empty custom headers")
+	}
+}
+
+func TestMakeRequest_CustomHeadersFromSealed(t *testing.T) {
+	var capturedHeaders http.Header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
+
+	p.CustomHeaders = map[string]string{
+		"X-Custom-Sealed": "vault-value",
+	}
+
+	// Seal the config — custom headers should be in the vault
+	if err := p.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	// Verify struct field is zeroed
+	if p.CustomHeaders != nil {
+		t.Error("CustomHeaders should be nil after sealing")
+	}
+
+	// Get config from vault to pass to makeRequest (simulates real usage)
+	cfg := p.getConfig()
+	if cfg == nil {
+		t.Fatal("getConfig returned nil after seal")
+	}
+
+	resp, err := p.makeRequest("GET", "/test", nil, cfg)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Custom header should still be applied from vault
+	if capturedHeaders.Get("X-Custom-Sealed") != "vault-value" {
+		t.Errorf("X-Custom-Sealed = %q, want vault-value (should come from sealed vault)", capturedHeaders.Get("X-Custom-Sealed"))
+	}
+}
+
+func TestSealConfig_CustomHeadersPreserved(t *testing.T) {
+	p := &HTTPProfile{
+		BaseURL:   "http://test:80",
+		UserAgent: "test",
+		CustomHeaders: map[string]string{
+			"X-One": "1",
+			"X-Two": "2",
+		},
+	}
+
+	if err := p.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	cfg := p.getConfig()
+	if cfg == nil {
+		t.Fatal("getConfig returned nil")
+	}
+	if len(cfg.CustomHeaders) != 2 {
+		t.Fatalf("CustomHeaders has %d entries, want 2", len(cfg.CustomHeaders))
+	}
+	if cfg.CustomHeaders["X-One"] != "1" || cfg.CustomHeaders["X-Two"] != "2" {
+		t.Errorf("CustomHeaders = %v", cfg.CustomHeaders)
+	}
+}
+
+func TestSealConfig_ContentTypesPreserved(t *testing.T) {
+	p := &HTTPProfile{
+		BaseURL:      "http://test:80",
+		ContentTypes: []string{"application/json", "text/html", "text/plain"},
+	}
+
+	if err := p.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	cfg := p.getConfig()
+	if len(cfg.ContentTypes) != 3 {
+		t.Fatalf("ContentTypes has %d entries, want 3", len(cfg.ContentTypes))
+	}
+	if cfg.ContentTypes[0] != "application/json" {
+		t.Errorf("ContentTypes[0] = %q", cfg.ContentTypes[0])
 	}
 }

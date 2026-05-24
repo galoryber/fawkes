@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unsafe"
@@ -33,9 +32,9 @@ type StealTokenParams struct {
 // Execute implements Xenon's TokenSteal function from Token.c (lines 106-183)
 // and Apollo's GetSystem/StealToken from IdentityManager.cs
 func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
-	var params StealTokenParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Failed to parse parameters: %v", err)
+	params, parseErr := requireParams[StealTokenParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.PID == 0 {
@@ -151,6 +150,10 @@ func stealTokenImpersonate(pid int) structs.CommandResult {
 	if err != nil {
 		return errorf("Token stolen but failed to verify identity: %v", err)
 	}
+
+	// Record identity transition for history
+	RecordIdentityTransition("stealtoken", oldIdentity, newIdentity,
+		fmt.Sprintf("PID %d", pid))
 
 	var output string
 	if targetIdentity != "" {

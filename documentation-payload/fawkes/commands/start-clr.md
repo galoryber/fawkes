@@ -37,7 +37,22 @@ When ETW patching is enabled (Autopatch or Ret Patch), two functions are patched
 
 ## Usage
 
-Recommended workflow with Ret Patch (simplest):
+### Single-Command Assembly Execution (recommended)
+Execute a .NET assembly with automatic CLR init + AMSI/ETW patching — equivalent to Cobalt Strike's `execute-assembly`:
+```
+start-clr -action execute-assembly -assembly <base64> -arguments "arg1 arg2"
+```
+This automatically:
+1. Initializes CLR v4 (if not already running)
+2. Patches AMSI (ret patch on AmsiScanBuffer)
+3. Patches ETW (ret patch on EtwEventWrite)
+4. Creates an isolated AppDomain (prevents assembly metadata leakage)
+5. Loads and executes the assembly
+6. Captures and returns stdout/stderr
+7. Unloads the AppDomain (cleanup — .NET reflection won't show the assembly)
+
+### Manual Workflow (CLR Init + Inline Assembly)
+For more control over patch methods:
 ```
 start-clr   (select Ret Patch for AMSI and ETW)
 inline-assembly   (load .NET assemblies)

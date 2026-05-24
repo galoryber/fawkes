@@ -1,0 +1,11 @@
+--- a/ssp/ntlm/v2.go
++++ b/ssp/ntlm/v2.go
+@@ -309,7 +309,7 @@
+
+ 	if value, ok := c.TargetInfo[AttrTimestamp]; ok {
+ 		resp.RequestMIC = true
+-		attrs[AttrFlags] = &Value{Flag: c.TargetInfo.Flag() | MICProvided}
++		attrs[AttrFlags] = &Value{Flag: attrs.Flag() | MICProvided}
+ 		respNT.NTLMv2ClientChallenge.Timestamp = value.Timestamp
+ 	} else {
+ 		respNT.NTLMv2ClientChallenge.Timestamp = TimeToFiletime(time.Now())

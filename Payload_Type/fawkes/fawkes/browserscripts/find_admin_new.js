@@ -6,11 +6,14 @@ function(task, responses){
     if(responses.length === 0){
         return {"plaintext": "No response yet from agent..."};
     }
+    let combined = "";
+    for(let i = 0; i < responses.length; i++){
+        combined += responses[i];
+    }
+    if(combined.includes("=== Lateral Movement Chain") || combined.includes("[Step ") && combined.includes("auto-move")){
+        return renderChainTable(combined, "Auto-Move Lateral Chain");
+    }
     try {
-        let combined = "";
-        for(let i = 0; i < responses.length; i++){
-            combined += responses[i];
-        }
         let data = JSON.parse(combined);
         if(data.length === 0){
             return {"plaintext": "No results — no hosts responded"};
@@ -48,10 +51,61 @@ function(task, responses){
         let title = "Admin Check (" + data.length + " hosts, " + adminCount + " admin)";
         return {"table": [{"headers": headers, "rows": rows, "title": title}]};
     } catch(error) {
-        let combined = "";
-        for(let i = 0; i < responses.length; i++){
-            combined += responses[i];
-        }
         return {"plaintext": combined};
     }
+}
+
+function renderChainTable(text, chainName){
+    let lines = text.split("\n");
+    let headers = [
+        {"plaintext": "Status", "type": "string", "width": 100},
+        {"plaintext": "Command", "type": "string", "width": 200},
+        {"plaintext": "Detail", "type": "string", "fillWidth": true},
+    ];
+    let rows = [];
+    let successCount = 0;
+    let errorCount = 0;
+    for(let i = 0; i < lines.length; i++){
+        let line = lines[i].trim();
+        if(!line || line.match(/^={3,}$/)) continue;
+        let stepMatch = line.match(/^\[Step (\d+\/\d+)\]\s+(.*)/);
+        if(stepMatch){
+            rows.push({
+                "Status": {"plaintext": stepMatch[1], "cellStyle": {"fontWeight": "bold", "color": "#2196f3"}},
+                "Command": {"plaintext": "Progress"},
+                "Detail": {"plaintext": stepMatch[2]},
+                "rowStyle": {"backgroundColor": "rgba(33,150,243,0.08)"},
+            });
+            continue;
+        }
+        let taskMatch = line.match(/^\[(success|error|unknown)\]\s+(\S+)\s+(.*)/);
+        if(taskMatch){
+            let status = taskMatch[1].toUpperCase();
+            let isSuccess = status === "SUCCESS";
+            if(isSuccess) successCount++;
+            else if(status === "ERROR") errorCount++;
+            rows.push({
+                "Status": {"plaintext": status, "cellStyle": {"fontWeight": "bold", "color": isSuccess ? "#4caf50" : (status === "ERROR" ? "#f44336" : "#9e9e9e")}},
+                "Command": {"plaintext": taskMatch[2]},
+                "Detail": {"plaintext": taskMatch[3]},
+                "rowStyle": {"backgroundColor": isSuccess ? "rgba(76,175,80,0.08)" : (status === "ERROR" ? "rgba(244,67,54,0.08)" : "")},
+            });
+            continue;
+        }
+        if(line.startsWith("Total:") || line.startsWith("=== ")) continue;
+        if(line.length > 5 && !line.startsWith("Could not")){
+            rows.push({
+                "Status": {"plaintext": "INFO", "cellStyle": {"color": "#ff9800"}},
+                "Command": {"plaintext": ""},
+                "Detail": {"plaintext": line},
+                "rowStyle": {},
+            });
+        }
+    }
+    let title = chainName;
+    if(successCount + errorCount > 0){
+        title += " — " + successCount + " success";
+        if(errorCount > 0) title += ", " + errorCount + " errors";
+    }
+    return {"table": [{"headers": headers, "rows": rows, "title": title}]};
 }

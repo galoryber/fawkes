@@ -46,9 +46,9 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -action kerberos -server <DC> -domain <DOMAIN> -users <user1\\nuser2> -password <pass>")
 	}
 
-	var args sprayArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[sprayArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password, &args.Hash)
 

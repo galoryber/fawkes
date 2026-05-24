@@ -37,8 +37,13 @@ func (c *SecurityInfoCommand) Execute(task structs.Task) structs.CommandResult {
 		params.Action = "all"
 	}
 
-	if params.Action == "edr" {
+	switch params.Action {
+	case "edr":
 		return securityInfoEDR()
+	case "minifilter-enum":
+		return securityInfoMinifilterEnum()
+	case "kernel-drivers":
+		return securityInfoKernelDrivers()
 	}
 
 	var controls []secControl

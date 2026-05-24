@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -11,13 +12,18 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "token-store",
-		Description:         "token-store -action <save|list|use|remove> [-name label] - Manage named token store for quick identity switching. Save stolen/created tokens, list all saved, switch between them, or remove entries.",
-		HelpString:          "token-store -action save -name admin    # save current token\ntoken-store -action list                 # list all saved tokens\ntoken-store -action use -name admin      # switch to saved token\ntoken-store -action remove -name admin   # remove from store",
-		Version:             1,
+		Description:         "token-store -action <save|list|use|remove|history> [-name label] - Manage named token store for quick identity switching. Save stolen/created tokens, list all saved, switch between them, remove entries, or view identity change history.",
+		HelpString:          "token-store -action save -name admin    # save current token\ntoken-store -action list                 # list all saved tokens\ntoken-store -action use -name admin      # switch to saved token\ntoken-store -action remove -name admin   # remove from store\ntoken-store -action history              # view identity transition timeline",
+		Version:             2,
 		MitreAttackMappings: []string{"T1134.001"}, // Access Token Manipulation: Token Impersonation/Theft
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "tokenstore_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -26,7 +32,7 @@ func init() {
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:   "Action to perform",
 				DefaultValue:  "list",
-				Choices:       []string{"save", "list", "use", "remove"},
+				Choices:       []string{"save", "list", "use", "remove", "history"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

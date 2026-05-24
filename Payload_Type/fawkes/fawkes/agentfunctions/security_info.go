@@ -17,9 +17,9 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "securityinfo_new.js"),
 			Author:     "@GlobeTech",
 		},
-		Description:         "Report security posture and active controls, or detect installed EDR/XDR products. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA, LSM, BPF. macOS: SIP, Gatekeeper, FileVault, MDM, TCC, SSH, JAMF, ARD. Windows: Defender, Credential Guard, UAC, BitLocker, CLM.",
-		HelpString:          "security-info [-action all|edr]",
-		Version:             4,
+		Description:         "Report security posture and active controls, detect EDR/XDR products, enumerate minifilter drivers, or list loaded kernel drivers with EDR classification. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA, LSM, BPF. macOS: SIP, Gatekeeper, FileVault, MDM, TCC, SSH, JAMF, ARD. Windows: Defender, Credential Guard, UAC, BitLocker, CLM, minifilters, kernel drivers.",
+		HelpString:          "security-info [-action all|edr|minifilter-enum|kernel-drivers]",
+		Version:             5,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1518.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -39,8 +39,8 @@ func init() {
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "all: report security posture (default). edr: detect installed EDR/XDR/AV products. stealth-prep: automated stealth chain (security-info → autopatch → etw blind).",
-				Choices:          []string{"all", "edr", "stealth-prep"},
+				Description:      "all: report security posture (default). edr: detect installed EDR/XDR/AV products. minifilter-enum: enumerate minifilter drivers with EDR classification (Windows). kernel-drivers: enumerate loaded kernel drivers with EDR/callback classification (Windows). stealth-prep: automated stealth chain (security-info → autopatch → etw blind).",
+				Choices:          []string{"all", "edr", "minifilter-enum", "kernel-drivers", "stealth-prep"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

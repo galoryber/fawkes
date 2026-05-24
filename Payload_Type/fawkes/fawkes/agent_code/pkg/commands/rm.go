@@ -44,7 +44,10 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 		if os.IsNotExist(err) {
 			return errorf("Error: Path does not exist: %s", path)
 		}
-		return errorf("Error checking path: %v", err)
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to %s — check privileges", path)
+		}
+		return errorf("Error: cannot access %s", path)
 	}
 
 	// Determine if it's a file or directory
@@ -56,7 +59,10 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	// Remove the file or directory (recursively if directory)
 	err = os.RemoveAll(path)
 	if err != nil {
-		return errorf("Error removing %s: %v", itemType, err)
+		if os.IsPermission(err) {
+			return errorf("Error: access denied — cannot remove %s %s", itemType, path)
+		}
+		return errorf("Error: cannot remove %s %s (in use or read-only filesystem)", itemType, path)
 	}
 
 	return successf("Successfully removed %s: %s", itemType, path)

@@ -18,7 +18,7 @@ func smbDecodeHash(hashStr string) ([]byte, error) {
 	hashStr = stripLMPrefix(hashStr)
 	hashBytes, err := hex.DecodeString(hashStr)
 	if err != nil {
-		return nil, fmt.Errorf("hash must be hex-encoded: %v", err)
+		return nil, fmt.Errorf("hash must be hex-encoded: %w", err)
 	}
 	if len(hashBytes) != 16 {
 		return nil, fmt.Errorf("NT hash must be 16 bytes (32 hex chars), got %d bytes", len(hashBytes))
@@ -33,7 +33,7 @@ func smbDecodeHash(hashStr string) ([]byte, error) {
 func smbDialSession(host string, port int, username, domain, password, hash string, timeout time.Duration) (*smb2.Session, net.Conn, error) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
 	if err != nil {
-		return nil, nil, fmt.Errorf("TCP connect to %s:%d: %v", host, port, err)
+		return nil, nil, fmt.Errorf("TCP connect to %s:%d: %w", host, port, err)
 	}
 
 	initiator := &smb2.NTLMInitiator{
@@ -44,7 +44,7 @@ func smbDialSession(host string, port int, username, domain, password, hash stri
 		hashBytes, err := smbDecodeHash(hash)
 		if err != nil {
 			_ = conn.Close()
-			return nil, nil, fmt.Errorf("invalid NTLM hash: %v", err)
+			return nil, nil, fmt.Errorf("invalid NTLM hash: %w", err)
 		}
 		initiator.Hash = hashBytes
 	} else {

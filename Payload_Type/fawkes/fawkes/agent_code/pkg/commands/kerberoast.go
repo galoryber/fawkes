@@ -34,13 +34,9 @@ type kerberoastArgs struct {
 }
 
 func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <DC> -realm <DOMAIN> -username <user@domain> -password <pass>")
-	}
-
-	var args kerberoastArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[kerberoastArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password)
 
@@ -194,7 +190,7 @@ func enumerateSPNs(args kerberoastArgs, timeout time.Duration) ([]spnEntry, erro
 	}
 	conn, err := ldapDial(ldapArgs.Server, ldapArgs.Port, ldapArgs.UseTLS, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("LDAP connect: %v", err)
+		return nil, fmt.Errorf("LDAP connect: %w", err)
 	}
 	defer conn.Close()
 
@@ -202,7 +198,7 @@ func enumerateSPNs(args kerberoastArgs, timeout time.Duration) ([]spnEntry, erro
 	conn.SetTimeout(timeout)
 
 	if err := conn.Bind(args.Username, args.Password); err != nil {
-		return nil, fmt.Errorf("LDAP bind: %v", err)
+		return nil, fmt.Errorf("LDAP bind: %w", err)
 	}
 
 	// Detect base DN
@@ -210,7 +206,7 @@ func enumerateSPNs(args kerberoastArgs, timeout time.Duration) ([]spnEntry, erro
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return nil, fmt.Errorf("base DN detection: %v", err)
+			return nil, fmt.Errorf("base DN detection: %w", err)
 		}
 	}
 
@@ -228,7 +224,7 @@ func enumerateSPNs(args kerberoastArgs, timeout time.Duration) ([]spnEntry, erro
 
 	result, err := conn.SearchWithPaging(searchReq, 100)
 	if err != nil {
-		return nil, fmt.Errorf("SPN search: %v", err)
+		return nil, fmt.Errorf("SPN search: %w", err)
 	}
 
 	var spns []spnEntry

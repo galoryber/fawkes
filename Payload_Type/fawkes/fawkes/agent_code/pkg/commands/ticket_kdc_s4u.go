@@ -29,7 +29,7 @@ func ticketS4U2Self(serviceUser, targetUser, realm string, etypeID int32, etypeC
 		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
 	cfg, err := config.NewFromString(cfgStr)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("config: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("config: %w", err)
 	}
 
 	// Build TGS-REQ for S4U2Self: SName = service account itself
@@ -43,7 +43,7 @@ func ticketS4U2Self(serviceUser, targetUser, realm string, etypeID int32, etypeC
 	}
 	tgsReq, err := messages.NewTGSReq(cname, realm, cfg, tgt, sessionKey, sname, false)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REQ build: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REQ build: %w", err)
 	}
 
 	// Set Forwardable flag
@@ -52,7 +52,7 @@ func ticketS4U2Self(serviceUser, targetUser, realm string, etypeID int32, etypeC
 	// Build PA-FOR-USER padata for S4U2Self
 	paForUser, err := ticketBuildPAForUser(targetUser, realm, sessionKey)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-FOR-USER: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-FOR-USER: %w", err)
 	}
 	tgsReq.PAData = append(tgsReq.PAData, paForUser)
 
@@ -69,17 +69,17 @@ func ticketS4U2Self(serviceUser, targetUser, realm string, etypeID int32, etypeC
 	// Parse TGS-REP
 	var tgsRep messages.TGSRep
 	if err := tgsRep.Unmarshal(respBuf); err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP parse: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP parse: %w", err)
 	}
 
 	// Decrypt TGS-REP EncPart using TGT session key (key usage 8)
 	plainBytes, err := crypto.DecryptEncPart(tgsRep.EncPart, sessionKey, keyusage.TGS_REP_ENCPART_SESSION_KEY)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP decrypt: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP decrypt: %w", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP EncPart parse: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP EncPart parse: %w", err)
 	}
 
 	return tgsRep.Ticket, decPart.Key, nil
@@ -129,21 +129,21 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 	// Marshal body for authenticator checksum
 	bodyBytes, err := reqBody.Marshal()
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal body: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal body: %w", err)
 	}
 
 	// Build authenticator with checksum over the body
 	auth, err := types.NewAuthenticator(realm, cname)
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("authenticator: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("authenticator: %w", err)
 	}
 	etype, err := crypto.GetEtype(sessionKey.KeyType)
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("etype: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("etype: %w", err)
 	}
 	cksum, err := etype.GetChecksumHash(sessionKey.KeyValue, bodyBytes, keyusage.TGS_REQ_PA_TGS_REQ_AP_REQ_AUTHENTICATOR_CHKSUM)
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("checksum: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("checksum: %w", err)
 	}
 	auth.Cksum = types.Checksum{
 		CksumType: etype.GetHashID(),
@@ -153,11 +153,11 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 	// Encrypt authenticator
 	authBytes, err := auth.Marshal()
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal auth: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal auth: %w", err)
 	}
 	encAuth, err := crypto.GetEncryptedData(authBytes, sessionKey, keyusage.TGS_REQ_PA_TGS_REQ_AP_REQ_AUTHENTICATOR, tgt.EncPart.KVNO)
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("encrypt auth: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("encrypt auth: %w", err)
 	}
 
 	// Build AP-REQ
@@ -170,7 +170,7 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 	}
 	apReqBytes, err := apReq.Marshal()
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal AP-REQ: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal AP-REQ: %w", err)
 	}
 
 	// Assemble TGS-REQ
@@ -198,17 +198,17 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 	// Parse TGS-REP
 	var tgsRep messages.TGSRep
 	if err := tgsRep.Unmarshal(respBuf); err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP parse: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP parse: %w", err)
 	}
 
 	// Decrypt TGS-REP using TGT session key (key usage 8)
 	plainBytes, err := crypto.DecryptEncPart(tgsRep.EncPart, sessionKey, keyusage.TGS_REP_ENCPART_SESSION_KEY)
 	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP decrypt: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP decrypt: %w", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP EncPart parse: %v", err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP EncPart parse: %w", err)
 	}
 
 	return tgsRep.Ticket, decPart, nil
@@ -279,7 +279,7 @@ func ticketBuildPAForUser(targetUser, realm string, sessionKey types.EncryptionK
 
 	pafuBytes, err := asn1.Marshal(pafu)
 	if err != nil {
-		return types.PAData{}, fmt.Errorf("marshal PA-FOR-USER: %v", err)
+		return types.PAData{}, fmt.Errorf("marshal PA-FOR-USER: %w", err)
 	}
 
 	return types.PAData{

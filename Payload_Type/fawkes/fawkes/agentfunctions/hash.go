@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "hash",
+		Name: "hash",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "hash_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Compute file hashes (MD5, SHA-1, SHA-256, SHA-512). Single files or directories with pattern filtering.",
 		HelpString:          "hash -path /etc/passwd\nhash -path C:\\Windows\\System32 -algorithm md5 -pattern *.dll -recursive true\nhash -path /tmp -algorithm sha512 -max_files 100",
 		Version:             1,
@@ -89,6 +94,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: File hashing reads file contents (T1083). Recursive directory hashing generates many file read operations which may be flagged by EDR. Access timestamps will be updated on hashed files.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
 			response := agentstructs.PTTaskProcessResponseMessageResponse{

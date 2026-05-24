@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,6 +30,7 @@ type executeMemoryArgs struct {
 	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
 	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
 	ExportName string `json:"export_name"` // (Windows only) export function to call for DLLs
+	StackSpoof bool   `json:"stack_spoof"`
 }
 
 func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
@@ -38,9 +38,9 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorResult("Error: binary_b64 parameter required (base64-encoded ELF binary)")
 	}
 
-	var args executeMemoryArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[executeMemoryArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.BinaryB64 == "" {

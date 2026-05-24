@@ -128,7 +128,7 @@ func getProcessHandle(pid int) (windows.Handle, bool, error) {
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION, false, uint32(pid))
 	if err != nil {
-		return 0, false, fmt.Errorf("OpenProcess(%d): %v", pid, err)
+		return 0, false, fmt.Errorf("OpenProcess(%d): %w", pid, err)
 	}
 	return h, true, nil
 }

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -71,9 +70,9 @@ var shareHuntHighValue = []string{
 }
 
 func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
-	var args shareHuntArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[shareHuntArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password, &args.Hash)
 
@@ -195,7 +194,7 @@ func shareHuntHost(task structs.Task, host string, args shareHuntArgs, matchExts
 	// Connect via SMB
 	session, conn, err := smbDialSession(host, 445, args.Username, args.Domain, args.Password, args.Hash, 30*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("SMB connect: %v", err)
+		return nil, fmt.Errorf("SMB connect: %w", err)
 	}
 	defer func() {
 		_ = session.Logoff()
@@ -207,7 +206,7 @@ func shareHuntHost(task structs.Task, host string, args shareHuntArgs, matchExts
 	shares, err := session.ListSharenames()
 	_ = conn.SetDeadline(time.Time{})
 	if err != nil {
-		return nil, fmt.Errorf("list shares: %v", err)
+		return nil, fmt.Errorf("list shares: %w", err)
 	}
 
 	var results []shareHuntResult

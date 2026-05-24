@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -11,10 +13,15 @@ func init() {
 		HelpString:          "read-memory amsi AmsiScanBuffer 0 8",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055"}, // Process Injection
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "readmemory_new.js"),
+			Author:     "@galoryber",
+		},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			args.SetManualArgs(input)

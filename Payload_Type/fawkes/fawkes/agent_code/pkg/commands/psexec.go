@@ -4,10 +4,11 @@
 package commands
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
+	"syscall"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -27,6 +28,7 @@ func (c *PsExecCommand) Description() string {
 }
 
 type psexecArgs struct {
+	Action  string `json:"action"`
 	Host    string `json:"host"`
 	Command string `json:"command"`
 	Name    string `json:"name"`
@@ -36,14 +38,13 @@ type psexecArgs struct {
 }
 
 func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
-	var args psexecArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required (host, command)")
+	args, parseErr := unmarshalParams[psexecArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	if args.Action == "check" {
+		return psexecCheck(args.Host, args.Timeout)
 	}
 
 	if args.Host == "" {
@@ -145,9 +146,9 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	err = windows.StartService(svcHandle, 0, nil)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("  Start result: %v\n", err))
-		// Service will fail to start if the command exits quickly — expected for
-		// cmd.exe /c. Error 1053 = "service did not respond to start or control request"
-		if strings.Contains(err.Error(), "1053") || strings.Contains(err.Error(), "service did not respond") {
+		// Error 1053 (ERROR_SERVICE_REQUEST_TIMEOUT) = command executed and exited
+		// before the SCM could read the service status. Expected for cmd.exe /c.
+		if errors.Is(err, syscall.Errno(1053)) {
 			sb.WriteString("  (Expected — command executed and exited quickly)\n")
 		}
 	} else {

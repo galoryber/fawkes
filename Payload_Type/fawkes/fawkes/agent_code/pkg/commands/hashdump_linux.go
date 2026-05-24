@@ -35,11 +35,9 @@ type shadowEntry struct {
 }
 
 func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
-	var args hashdumpLinuxArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[hashdumpLinuxArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Read /etc/shadow

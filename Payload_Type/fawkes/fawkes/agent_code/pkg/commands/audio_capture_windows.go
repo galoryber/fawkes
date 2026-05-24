@@ -63,9 +63,9 @@ type waveHdr struct {
 }
 
 func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
-	var params audioCaptureParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[audioCaptureParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	audioDefaultParams(&params)
 

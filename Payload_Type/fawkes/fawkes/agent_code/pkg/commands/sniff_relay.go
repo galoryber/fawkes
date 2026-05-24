@@ -50,9 +50,9 @@ type relayEntry struct {
 
 // executeRelayCore runs the NTLM relay server. Cross-platform core logic.
 func executeRelayCore(task structs.Task) structs.CommandResult {
-	var params sniffParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[sniffParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Parse relay-specific params from the generic fields
@@ -183,7 +183,10 @@ func handleRelayConn(ctx context.Context, conn net.Conn, target string, targetPo
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
 
-	victimAddr := conn.RemoteAddr().(*net.TCPAddr)
+	victimAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		return
+	}
 	buf := make([]byte, 16384)
 
 	entry := &relayEntry{

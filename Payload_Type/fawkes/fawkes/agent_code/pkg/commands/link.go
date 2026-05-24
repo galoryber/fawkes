@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -44,11 +43,9 @@ type linkArgs struct {
 }
 
 func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
-	var args linkArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[linkArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.ConnectionType == "" {

@@ -5,7 +5,6 @@ package commands
 
 import (
 	crand "crypto/rand"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,11 +32,9 @@ type uacBypassArgs struct {
 }
 
 func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
-	var args uacBypassArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[uacBypassArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Technique == "" {

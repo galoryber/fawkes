@@ -6,6 +6,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,9 +34,9 @@ type etwParams struct {
 }
 
 func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
-	var params etwParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[etwParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "" {
@@ -70,8 +71,7 @@ func auditRules() structs.CommandResult {
 	cmd := exec.CommandContext(ctx, "auditctl", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// auditctl may not be installed or user may lack permissions
-		if strings.Contains(string(output), "permission denied") || strings.Contains(err.Error(), "permission denied") {
+		if errors.Is(err, os.ErrPermission) || strings.Contains(string(output), "permission denied") {
 			return errorResult("Error: auditctl requires root privileges")
 		}
 		if exec.ErrNotFound != nil {

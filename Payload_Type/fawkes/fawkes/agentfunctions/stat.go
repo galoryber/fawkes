@@ -63,6 +63,15 @@ func init() {
 				fmt.Sprintf("stat %s", path))
 			return response
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC: Querying file metadata (T1083). Stat operations read attributes without modifying content. Access timestamps may be updated depending on filesystem settings.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,

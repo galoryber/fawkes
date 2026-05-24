@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -20,19 +22,26 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "mkdir_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			input = strings.TrimSpace(input)
-			// Try JSON first (e.g., {"path": "/tmp/test"} or {"full_path": "..."} from file browser)
+			// Try JSON first. Accept full_path (file browser), path, or directory
+			// (matches the documented argument name).
 			var jsonArgs map[string]interface{}
 			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
 				if fullPath, ok := jsonArgs["full_path"].(string); ok && fullPath != "" {
 					args.SetManualArgs(fullPath)
 					return nil
 				}
-				if path, ok := jsonArgs["path"].(string); ok {
+				if path, ok := jsonArgs["path"].(string); ok && path != "" {
 					args.SetManualArgs(path)
 					return nil
 				}
+				if dir, ok := jsonArgs["directory"].(string); ok && dir != "" {
+					args.SetManualArgs(dir)
+					return nil
+				}
+				return fmt.Errorf("mkdir JSON input had no recognized key (expected 'path', 'directory', or 'full_path')")
 			}
 			// Strip surrounding quotes so paths like
 			// "C:\Program Data" resolve to C:\Program Data

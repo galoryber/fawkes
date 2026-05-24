@@ -7,24 +7,11 @@ import (
 )
 
 func TestNewProfile_ReturnsHTTPProfile(t *testing.T) {
-	httpProfile := http.NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"none",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	httpProfile := http.NewHTTPProfile(http.ProfileConfig{
+		BaseURL: "http://localhost:80", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post", TLSVerify: "none",
+	})
 
 	profile := NewProfile(httpProfile)
 	if profile == nil {
@@ -38,24 +25,11 @@ func TestNewProfile_ReturnsHTTPProfile(t *testing.T) {
 }
 
 func TestNewProfile_ImplementsInterface(t *testing.T) {
-	httpProfile := http.NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"none",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	httpProfile := http.NewHTTPProfile(http.ProfileConfig{
+		BaseURL: "http://localhost:80", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post", TLSVerify: "none",
+	})
 
 	// Compile-time check: NewProfile returns a Profile interface
 	var _ Profile = NewProfile(httpProfile)
@@ -63,24 +37,11 @@ func TestNewProfile_ImplementsInterface(t *testing.T) {
 
 func TestProfileInterface_Methods(t *testing.T) {
 	// Verify that the Profile interface has the expected methods
-	httpProfile := http.NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"none",
-		"",
-		nil,
-		nil,
-		0,
-	)
+	httpProfile := http.NewHTTPProfile(http.ProfileConfig{
+		BaseURL: "http://localhost:80", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post", TLSVerify: "none",
+	})
 
 	profile := NewProfile(httpProfile)
 

@@ -65,6 +65,10 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildStdErr = err.Error()
 		return payloadBuildResponse
 	}
+	garbleMode, _ := payloadBuildMsg.BuildParameters.GetStringArg("garble_mode")
+	if garbleMode == "" {
+		garbleMode = "lite"
+	}
 	// Validate mode for target OS
 	if mode == "windows-shellcode" && targetOs != "windows" {
 		payloadBuildResponse.Success = false
@@ -203,6 +207,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		goarch:        architecture,
 		mode:          mode,
 		garble:        garble,
+		garbleMode:    garbleMode,
 		c2ProfileName: payloadBuildMsg.C2Profiles[0].Name,
 		payloadUUID:   payloadBuildMsg.PayloadUUID,
 		macOSVersion:  macOSVersion,
@@ -253,7 +258,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	})
 
 	// Collect built payload (read binary, convert shellcode if needed, set filename)
-	collectPayloadOutput(&payloadBuildResponse, payloadName, mode, targetOs)
+	collectPayloadOutput(&payloadBuildResponse, payloadName, mode, targetOs, payloadBuildMsg.PayloadUUID)
 
 	return payloadBuildResponse
 }

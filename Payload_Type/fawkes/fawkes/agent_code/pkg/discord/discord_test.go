@@ -71,6 +71,7 @@ func TestSealConfigAndGetConfig(t *testing.T) {
 	cfg := p.getConfig()
 	if cfg == nil {
 		t.Fatal("getConfig returned nil after seal")
+		return
 	}
 	if cfg.BotToken != "mytoken" {
 		t.Errorf("vault BotToken = %q, want %q", cfg.BotToken, "mytoken")

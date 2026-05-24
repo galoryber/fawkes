@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,10 +15,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "socks",
-		Description:         "Start or stop a SOCKS5 proxy through this callback",
-		HelpString:          "socks start [port]  /  socks stop [port]",
-		Version:             1,
-		MitreAttackMappings: []string{"T1090"}, // Proxy
+		Description:         "Start, stop, or view stats for the SOCKS5 proxy through this callback. Supports TCP and UDP relay with optional bandwidth limiting.",
+		HelpString:          "socks start [port]  /  socks stop [port]  /  socks stats  /  socks bandwidth [kb/s]",
+		Version:             4,
+		MitreAttackMappings: []string{"T1090", "T1572"}, // Proxy, Protocol Tunneling
 		SupportedUIFeatures: []string{},
 		Author:              "@xorrior",
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -27,13 +28,14 @@ func init() {
 			{
 				Name:          "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:   "Start or stop the SOCKS proxy",
-				Choices:       []string{"start", "stop"},
+				Description:   "Start or stop the SOCKS proxy, view stats, or set bandwidth limit",
+				Choices:       []string{"start", "stop", "stats", "bandwidth"},
 				DefaultValue:  "start",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
 						UIModalPosition:     1,
+						GroupName:           "Default",
 					},
 				},
 			},
@@ -46,10 +48,25 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						UIModalPosition:     2,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "bandwidth_kbs",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:   "Per-connection bandwidth limit in KB/s (0 = unlimited). Applied on start or via 'bandwidth' action.",
+				DefaultValue:  0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     3,
+						GroupName:           "Default",
 					},
 				},
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "socks_new.js"), Author: "@galoryber"},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
@@ -60,17 +77,25 @@ func init() {
 			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Support: socks start 1080  /  socks stop 1080  /  socks start  /  socks stop
 			if input == "" {
 				return nil
 			}
+			if strings.HasPrefix(strings.TrimSpace(input), "{") {
+				return args.LoadArgsFromJSONString(input)
+			}
+			// Support: socks start 1080  /  socks stop 1080  /  socks stats  /  socks bandwidth 500
 			parts := splitArgs(input)
 			if len(parts) >= 1 {
 				args.SetArgValue("action", parts[0])
 			}
 			if len(parts) >= 2 {
-				if port, err := strconv.Atoi(parts[1]); err == nil {
-					args.SetArgValue("port", port)
+				if val, err := strconv.Atoi(parts[1]); err == nil {
+					action, _ := args.GetStringArg("action")
+					if action == "bandwidth" {
+						args.SetArgValue("bandwidth_kbs", val)
+					} else {
+						args.SetArgValue("port", val)
+					}
 				}
 			}
 			return nil
@@ -109,8 +134,20 @@ func init() {
 			}
 			portInt := int(port)
 
-			displayParams := fmt.Sprintf("%s %d", action, portInt)
-			response.DisplayParams = &displayParams
+			// Build display params
+			bwKbs, _ := taskData.Args.GetNumberArg("bandwidth_kbs")
+			bwInt := int(bwKbs)
+			switch action {
+			case "bandwidth":
+				dp := fmt.Sprintf("bandwidth %d KB/s", bwInt)
+				response.DisplayParams = &dp
+			default:
+				dp := fmt.Sprintf("%s %d", action, portInt)
+				if action == "start" && bwInt > 0 {
+					dp += fmt.Sprintf(" (bandwidth: %d KB/s)", bwInt)
+				}
+				response.DisplayParams = &dp
+			}
 
 			switch action {
 			case "start":
@@ -148,6 +185,10 @@ func init() {
 					response.Success = false
 					return response
 				}
+
+			case "stats", "bandwidth":
+				// No server-side action needed — agent handles these
+				break
 
 			default:
 				response.Error = fmt.Sprintf("Unknown action: %s", action)

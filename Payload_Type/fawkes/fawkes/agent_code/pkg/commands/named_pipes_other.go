@@ -4,7 +4,6 @@ package commands
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,11 +26,9 @@ func (c *NamedPipesCommand) Description() string {
 }
 
 func (c *NamedPipesCommand) Execute(task structs.Task) structs.CommandResult {
-	var args namedPipesArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[namedPipesArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	var sb strings.Builder

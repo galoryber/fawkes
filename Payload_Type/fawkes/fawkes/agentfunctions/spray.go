@@ -10,6 +10,30 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+func countSprayUsers(userList string) int {
+	count := 0
+	for _, line := range strings.Split(userList, "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func formatSprayDisplay(action, server, domain string, userCount int) string {
+	if action == "enumerate" {
+		return fmt.Sprintf("Enumerate users on %s (%s, %d users)", server, domain, userCount)
+	}
+	return fmt.Sprintf("Spray %s via %s (%s, %d users)", server, action, domain, userCount)
+}
+
+func formatSprayArtifact(action, server string, userCount int) string {
+	if action == "enumerate" {
+		return fmt.Sprintf("Kerberos user enumeration against %s (%d users)", server, userCount)
+	}
+	return fmt.Sprintf("Password spray via %s against %s (%d users)", action, server, userCount)
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "spray",
@@ -227,29 +251,10 @@ func init() {
 			domain, _ := taskData.Args.GetStringArg("domain")
 			users, _ := taskData.Args.GetStringArg("users")
 
-			// Count users
-			userCount := 0
-			for _, line := range strings.Split(users, "\n") {
-				if strings.TrimSpace(line) != "" {
-					userCount++
-				}
-			}
-
-			var displayMsg string
-			if action == "enumerate" {
-				displayMsg = fmt.Sprintf("Enumerate users on %s (%s, %d users)", server, domain, userCount)
-			} else {
-				displayMsg = fmt.Sprintf("Spray %s via %s (%s, %d users)", server, action, domain, userCount)
-			}
+			userCount := countSprayUsers(users)
+			displayMsg := formatSprayDisplay(action, server, domain, userCount)
 			response.DisplayParams = &displayMsg
-
-			var artifactMsg string
-			if action == "enumerate" {
-				artifactMsg = fmt.Sprintf("Kerberos user enumeration against %s (%d users)", server, userCount)
-			} else {
-				artifactMsg = fmt.Sprintf("Password spray via %s against %s (%d users)", action, server, userCount)
-			}
-			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
+			createArtifact(taskData.Task.ID, "Network Connection", formatSprayArtifact(action, server, userCount))
 
 			return response
 		},

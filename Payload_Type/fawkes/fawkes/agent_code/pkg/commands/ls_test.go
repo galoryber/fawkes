@@ -128,6 +128,21 @@ func TestFormatLsOutputFailure(t *testing.T) {
 	}
 }
 
+func TestFormatLsOutputHeaderShowsListedPath(t *testing.T) {
+	// Directory listing: ParentPath holds the dir's parent, Name holds the dir's
+	// base. The header must show the joined path, not just ParentPath.
+	result := structs.FileListing{Success: true, ParentPath: "/tmp", Name: "reltest"}
+	output := formatLsOutput(result)
+	if !strings.Contains(output, "Contents of directory: /tmp/reltest") {
+		t.Errorf("header should show full listed path, got %q", output)
+	}
+	// Failure case for a nonexistent path should mirror the same composition.
+	bad := structs.FileListing{Success: false, ParentPath: "/tmp", Name: "ghost"}
+	if !strings.Contains(formatLsOutput(bad), "Failed to list directory: /tmp/ghost") {
+		t.Errorf("failure header should show full listed path, got %q", formatLsOutput(bad))
+	}
+}
+
 func TestGetHostname(t *testing.T) {
 	h := getHostname()
 	if h == "" {

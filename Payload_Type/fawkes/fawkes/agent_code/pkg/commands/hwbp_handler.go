@@ -62,7 +62,7 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 		uintptr(PAGE_READWRITE),
 	)
 	if dataPtr == 0 {
-		return 0, 0, fmt.Errorf("allocate data block failed: %v", callErr)
+		return 0, 0, fmt.Errorf("allocate data block failed: %w", callErr)
 	}
 
 	// Write target addresses into data block
@@ -277,7 +277,7 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 		uintptr(PAGE_EXECUTE_READWRITE),
 	)
 	if codePtr == 0 {
-		return 0, 0, fmt.Errorf("allocate handler code failed: %v", callErr)
+		return 0, 0, fmt.Errorf("allocate handler code failed: %w", callErr)
 	}
 
 	// Copy shellcode to executable memory

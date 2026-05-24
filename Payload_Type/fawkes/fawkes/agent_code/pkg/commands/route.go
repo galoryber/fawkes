@@ -30,11 +30,9 @@ type RouteEntry struct {
 }
 
 func (c *RouteCommand) Execute(task structs.Task) structs.CommandResult {
-	var args routeArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[routeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	routes, err := enumerateRoutes()

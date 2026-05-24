@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -23,11 +22,9 @@ type proxyCheckArgs struct {
 }
 
 func (c *ProxyCheckCommand) Execute(task structs.Task) structs.CommandResult {
-	var args proxyCheckArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[proxyCheckArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	var sb strings.Builder

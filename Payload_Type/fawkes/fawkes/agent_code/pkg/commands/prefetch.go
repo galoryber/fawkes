@@ -46,9 +46,9 @@ type prefetchOutputEntry struct {
 }
 
 func (c *PrefetchCommand) Execute(task structs.Task) structs.CommandResult {
-	var params prefetchParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[prefetchParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "" {
@@ -314,7 +314,7 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 	if len(data) >= 8 && data[0] == 0x4D && data[1] == 0x41 && data[2] == 0x4D {
 		decompressed, err := decompressMAM(data)
 		if err != nil {
-			return nil, fmt.Errorf("MAM decompress: %v", err)
+			return nil, fmt.Errorf("MAM decompress: %w", err)
 		}
 		data = decompressed
 	}

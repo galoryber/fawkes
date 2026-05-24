@@ -55,12 +55,13 @@ function(task, responses){
                 return {"table": [{"headers": headers, "rows": rows, "title": "ETW Trace Sessions — " + count + " active"}]};
             }
         }
-        // "providers" action: parse provider list
+        // "providers" or "provider-list" action: parse provider list
         if(combined.includes("ETW Providers")){
             let lines = combined.split("\n");
             let providers = [];
             let pastHeader = false;
             let isSecuritySection = false;
+            let hasCategory = combined.includes("CATEGORY"); // provider-list has category column
             for(let i = 0; i < lines.length; i++){
                 let trimmed = lines[i].trim();
                 if(trimmed.includes("Security-Relevant Providers")){
@@ -76,30 +77,72 @@ function(task, responses){
                     continue;
                 }
                 if(!pastHeader || trimmed.length === 0) continue;
-                if(trimmed.startsWith("PROVIDER NAME") || trimmed.startsWith("Name")) continue;
-                // Parse provider lines
+                if(trimmed.startsWith("PROVIDER") || trimmed.startsWith("Name")) continue;
+                // Session detail lines (from provider-list)
+                if(trimmed.startsWith("└─")){
+                    if(providers.length > 0){
+                        let detailMatch = trimmed.match(/Session\s+(\d+):\s+level=(\w+)\s+keywords=(\S+)/);
+                        if(detailMatch){
+                            if(!providers[providers.length-1].sessions) providers[providers.length-1].sessions = [];
+                            providers[providers.length-1].sessions.push({id: detailMatch[1], level: detailMatch[2], keywords: detailMatch[3]});
+                        }
+                    }
+                    continue;
+                }
+                // Parse provider lines (2 formats: old providers and new provider-list)
                 let parts = trimmed.split(/\s{2,}/);
-                if(parts.length >= 2){
-                    providers.push({name: parts[0].trim(), guid: parts[1].trim(), security: isSecuritySection});
+                if(hasCategory && parts.length >= 4){
+                    providers.push({name: parts[0].trim(), category: parts[1].trim(), active: parts[2].trim(), guid: parts[3].trim(), security: true, sessions: []});
+                } else if(parts.length >= 2){
+                    providers.push({name: parts[0].trim(), guid: parts[1].trim(), security: isSecuritySection, sessions: []});
                 } else if(trimmed.length > 0){
-                    providers.push({name: trimmed, guid: "", security: isSecuritySection});
+                    providers.push({name: trimmed, guid: "", security: isSecuritySection, sessions: []});
                 }
             }
             if(providers.length > 0){
-                let headers = [
-                    {"plaintext": "Provider Name", "type": "string", "fillWidth": true},
-                    {"plaintext": "GUID", "type": "string", "width": 300},
-                ];
+                let headers;
+                if(hasCategory){
+                    headers = [
+                        {"plaintext": "Provider Name", "type": "string", "fillWidth": true},
+                        {"plaintext": "Category", "type": "string", "width": 100},
+                        {"plaintext": "Active", "type": "string", "width": 80},
+                        {"plaintext": "GUID", "type": "string", "width": 300},
+                        {"plaintext": "Sessions", "type": "string", "width": 250},
+                    ];
+                } else {
+                    headers = [
+                        {"plaintext": "Provider Name", "type": "string", "fillWidth": true},
+                        {"plaintext": "GUID", "type": "string", "width": 300},
+                    ];
+                }
                 let rows = [];
+                let categoryColors = {"Kernel": "#1565c0", "EDR": "#d32f2f", "AV/AMSI": "#d32f2f", "Audit": "#e65100", "Runtime": "#2e7d32", "Remote": "#6a1b9a", "Network": "#00838f", "Auth": "#ef6c00", "Sched": "#5d4037"};
                 for(let j = 0; j < providers.length; j++){
                     let p = providers[j];
-                    rows.push({
-                        "Provider Name": {"plaintext": p.name, "copyIcon": true},
-                        "GUID": {"plaintext": p.guid, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.9em"}, "copyIcon": p.guid.length > 0},
-                        "rowStyle": p.security ? {"backgroundColor": "rgba(255,0,0,0.06)"} : {},
-                    });
+                    let isActive = p.active && p.active.startsWith("yes");
+                    let isDangerous = p.category && (p.category === "EDR" || p.category === "AV/AMSI");
+                    let row;
+                    if(hasCategory){
+                        let catColor = categoryColors[p.category] || "#616161";
+                        let sessionStr = (p.sessions || []).map(function(s){ return "S" + s.id + "(" + s.level + ")"; }).join(", ");
+                        row = {
+                            "Provider Name": {"plaintext": p.name, "copyIcon": true},
+                            "Category": {"plaintext": p.category, "cellStyle": {"color": catColor, "fontWeight": "bold"}},
+                            "Active": {"plaintext": p.active, "cellStyle": isActive ? {"color": "#2e7d32", "fontWeight": "bold"} : {"color": "#9e9e9e"}},
+                            "GUID": {"plaintext": p.guid, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.9em"}, "copyIcon": p.guid.length > 0},
+                            "Sessions": {"plaintext": sessionStr || "-"},
+                            "rowStyle": isDangerous ? {"backgroundColor": "rgba(255,0,0,0.08)"} : isActive ? {"backgroundColor": "rgba(76,175,80,0.06)"} : {},
+                        };
+                    } else {
+                        row = {
+                            "Provider Name": {"plaintext": p.name, "copyIcon": true},
+                            "GUID": {"plaintext": p.guid, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.9em"}, "copyIcon": p.guid.length > 0},
+                            "rowStyle": p.security ? {"backgroundColor": "rgba(255,0,0,0.06)"} : {},
+                        };
+                    }
+                    rows.push(row);
                 }
-                return {"table": [{"headers": headers, "rows": rows, "title": "ETW Providers — " + providers.length + " shown"}]};
+                return {"table": [{"headers": headers, "rows": rows, "title": "ETW Providers — " + providers.length + " security-relevant"}]};
             }
         }
         // "query" action: parse key-value session details
@@ -134,6 +177,38 @@ function(task, responses){
             if(rows.length > 0){
                 let sessionMatch = combined.match(/ETW Session:\s+(\S+)/);
                 let title = sessionMatch ? "ETW Session: " + sessionMatch[1] : "ETW Session Details";
+                return {"table": [{"headers": headers, "rows": rows, "title": title}]};
+            }
+        }
+        // "patch" / "restore" / "provider-disable" / "provider-enable" actions: status-style output
+        if(combined.includes("Patched") || combined.includes("Restored") || combined.includes("kernel trace flag")){
+            let lines = combined.split("\n");
+            let results = [];
+            for(let i = 0; i < lines.length; i++){
+                let trimmed = lines[i].trim();
+                if(trimmed.length === 0) continue;
+                let status = "info";
+                if(trimmed.startsWith("[+]") || trimmed.includes("Successfully")) status = "success";
+                else if(trimmed.startsWith("[!]")) status = "error";
+                else if(trimmed.startsWith("[=]")) status = "neutral";
+                results.push({line: trimmed, status: status});
+            }
+            if(results.length > 0){
+                let headers = [
+                    {"plaintext": "Status", "type": "string", "width": 80},
+                    {"plaintext": "Details", "type": "string", "fillWidth": true},
+                ];
+                let rows = [];
+                let statusColors = {"success": "#2e7d32", "error": "#d32f2f", "neutral": "#9e9e9e", "info": "#1565c0"};
+                let statusIcons = {"success": "✓", "error": "✗", "neutral": "=", "info": "ℹ"};
+                for(let j = 0; j < results.length; j++){
+                    let r = results[j];
+                    rows.push({
+                        "Status": {"plaintext": statusIcons[r.status] || "•", "cellStyle": {"color": statusColors[r.status], "fontWeight": "bold", "textAlign": "center"}},
+                        "Details": {"plaintext": r.line, "cellStyle": {"fontFamily": "monospace"}},
+                    });
+                }
+                let title = combined.includes("Patched") ? "ETW Patch Results" : combined.includes("Restored") ? "ETW Restore Results" : "ETW Provider Update";
                 return {"table": [{"headers": headers, "rows": rows, "title": title}]};
             }
         }

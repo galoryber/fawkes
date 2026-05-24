@@ -79,7 +79,13 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		if os.IsNotExist(err) {
+			return errorf("Error: path not found: %s", path)
+		}
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to %s — check privileges", path)
+		}
+		return errorf("Error: cannot access %s: %v", path, err)
 	}
 
 	var results []hashResult
@@ -146,13 +152,16 @@ func hashNewHasher(alg string) hash.Hash {
 func hashFile(path, algorithm string) hashResult {
 	f, err := os.Open(path)
 	if err != nil {
-		return hashResult{Path: path, Err: err.Error()}
+		if os.IsPermission(err) {
+			return hashResult{Path: path, Err: "access denied"}
+		}
+		return hashResult{Path: path, Err: "cannot open file"}
 	}
 	defer f.Close()
 
 	h := hashNewHasher(algorithm)
 	if _, err := io.Copy(h, f); err != nil {
-		return hashResult{Path: path, Err: err.Error()}
+		return hashResult{Path: path, Err: "read error"}
 	}
 
 	info, _ := f.Stat()

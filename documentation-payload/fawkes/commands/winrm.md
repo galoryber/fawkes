@@ -24,6 +24,7 @@ shell | No | Shell type: `cmd` (default) or `powershell`
 port | No | WinRM port (default: 5985 for HTTP, 5986 for HTTPS)
 use_tls | No | Use HTTPS/TLS connection (default: false)
 timeout | No | Command timeout in seconds (default: 60)
+auto_verify | No | Auto-run `whoami` + `getprivs` after WinRM execution to verify callback context (default: false)
 
 ## Usage
 
@@ -57,6 +58,11 @@ winrm -host 192.168.1.1 -username admin -hash 8846f7eaee8fb117ad06bdd830b7586c -
 PTH with PowerShell:
 ```
 winrm -host 192.168.1.1 -username admin -hash aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c -command "hostname" -shell powershell
+```
+
+### Auto-Verify (verify callback context after lateral movement)
+```
+winrm -host 192.168.1.1 -username admin -password pass -command "hostname" -auto-verify true
 ```
 
 ## Example Output

@@ -105,11 +105,9 @@ type parsedService struct {
 }
 
 func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult {
-	var args remoteServiceArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[remoteServiceArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 	defer structs.ZeroString(&args.Hash)
@@ -144,28 +142,76 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 		args.Timeout = 30
 	}
 
-	switch strings.ToLower(args.Action) {
-	case "list":
-		return remoteSvcList(args)
-	case "query":
-		return remoteSvcQuery(args)
-	case "create":
-		return remoteSvcCreate(args)
-	case "start":
-		return remoteSvcStart(args)
-	case "stop":
-		return remoteSvcStop(args)
-	case "delete":
-		return remoteSvcDelete(args)
+	action := strings.ToLower(args.Action)
+
+	// Advanced operations that require both SVCCTL + WinReg remain in-process
+	// (they'll need their own subprocess approach later if NTLM is required)
+	switch action {
 	case "modify-path", "modify_path":
 		return remoteSvcModifyPath(args)
 	case "trigger":
 		return remoteSvcTrigger(args)
 	case "dll-sideload", "dll_sideload":
 		return remoteSvcDLLSideload(args)
-	default:
+	}
+
+	if args.Password == "" && args.Hash == "" {
+		return errorf("Either -password or -hash is required for remote service access")
+	}
+
+	opMap := map[string]string{
+		"list":   "svcctl-list",
+		"query":  "svcctl-query",
+		"create": "svcctl-create",
+		"start":  "svcctl-start",
+		"stop":   "svcctl-stop",
+		"delete": "svcctl-delete",
+	}
+	op, ok := opMap[action]
+	if !ok {
 		return errorf("Unknown action: %s\nAvailable: list, query, create, start, stop, delete, modify-path, trigger, dll-sideload", args.Action)
 	}
+
+	switch action {
+	case "query", "start", "stop", "delete":
+		if args.Name == "" {
+			return errorf("Action %q requires -name parameter", action)
+		}
+	case "create":
+		if args.Name == "" {
+			return errorf("Action %q requires -name parameter", action)
+		}
+		if args.BinPath == "" {
+			return errorf("Action %q requires -binpath parameter", action)
+		}
+	}
+
+	params, _ := json.Marshal(svcctlParams{
+		Name:        args.Name,
+		DisplayName: args.DisplayName,
+		BinPath:     args.BinPath,
+		StartType:   args.StartType,
+	})
+
+	output, err := rpcViaSubprocess(rpcHelperRequest{
+		Operation: op,
+		Server:    args.Server,
+		Username:  args.Username,
+		Password:  args.Password,
+		Hash:      args.Hash,
+		Domain:    args.Domain,
+		Timeout:   args.Timeout,
+		Params:    params,
+	})
+	if err != nil {
+		return errorf("Error: %v", err)
+	}
+
+	var result svcctlResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return errorf("Error parsing result: %v", err)
+	}
+	return successResult(result.Text)
 }
 
 // remoteSvcConnect establishes a DCE-RPC connection to the remote SVCCTL service
@@ -188,7 +234,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	)
 	if err != nil {
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %w", err)
 	}
 
 	// Use WithInsecure() for DCE-RPC binding — SMB named pipes already provide
@@ -198,7 +244,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	if err != nil {
 		cc.Close(ctx)
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create SVCCTL client: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create SVCCTL client: %w", err)
 	}
 
 	cleanup := func() {
@@ -212,7 +258,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	if err != nil {
 		cleanup()
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open SCM: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open SCM: %w", err)
 	}
 	if scmResp.Return != 0 {
 		cleanup()
@@ -223,117 +269,3 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	return cli, scmResp.SCM, ctx, cancel, cleanup, nil
 }
 
-func remoteSvcList(args remoteServiceArgs) structs.CommandResult {
-	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect|scManagerEnumerateService)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-	defer cancel()
-	defer cleanup()
-	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: scm}) }()
-
-	// First call to get required buffer size
-	resp, err := cli.EnumServicesStatusW(ctx, &svcctl.EnumServicesStatusWRequest{
-		ServiceManager: scm,
-		ServiceType:    svcWin32,
-		ServiceState:   svcStateAll,
-		BufferLength:   0,
-	})
-	if err != nil && resp == nil {
-		return errorf("EnumServicesStatusW failed: %v", err)
-	}
-
-	needed := resp.BytesNeededLength
-	if needed == 0 {
-		return successResult("No services found")
-	}
-
-	// Second call with proper buffer size
-	resp, err = cli.EnumServicesStatusW(ctx, &svcctl.EnumServicesStatusWRequest{
-		ServiceManager: scm,
-		ServiceType:    svcWin32,
-		ServiceState:   svcStateAll,
-		BufferLength:   needed,
-	})
-	if err != nil && resp == nil {
-		return errorf("EnumServicesStatusW failed: %v", err)
-	}
-	if resp.Return != 0 && resp.ServicesReturned == 0 {
-		return errorf("EnumServicesStatusW error: 0x%08x", resp.Return)
-	}
-
-	services := parseEnumServiceStatusW(resp.Buffer, resp.ServicesReturned)
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Services on %s (%d total):\n\n", args.Server, len(services)))
-	sb.WriteString(fmt.Sprintf("%-40s %-8s %s\n", "SERVICE NAME", "STATE", "DISPLAY NAME"))
-	sb.WriteString(strings.Repeat("-", 90) + "\n")
-
-	for _, svc := range services {
-		sb.WriteString(fmt.Sprintf("%-40s %-8s %s\n",
-			truncateStr(svc.serviceName, 39),
-			remoteSvcStateName(svc.currentState),
-			svc.displayName,
-		))
-	}
-
-	return successResult(sb.String())
-}
-
-func remoteSvcQuery(args remoteServiceArgs) structs.CommandResult {
-	if args.Name == "" {
-		return errorResult("Error: -name is required for query action")
-	}
-
-	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
-	if err != nil {
-		return errorResult(err.Error())
-	}
-	defer cancel()
-	defer cleanup()
-	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: scm}) }()
-
-	svcResp, err := cli.OpenServiceW(ctx, &svcctl.OpenServiceWRequest{
-		ServiceManager: scm,
-		ServiceName:    args.Name,
-		DesiredAccess:  svcQueryConfig | svcQueryStatus,
-	})
-	if err != nil {
-		return errorf("Failed to open service %q: %v", args.Name, err)
-	}
-	if svcResp.Return != 0 {
-		return errorf("OpenServiceW error for %q: 0x%08x", args.Name, svcResp.Return)
-	}
-	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: svcResp.Service}) }()
-
-	// Query config
-	cfgResp, err := cli.QueryServiceConfigW(ctx, &svcctl.QueryServiceConfigWRequest{
-		Service:      svcResp.Service,
-		BufferLength: 8192,
-	})
-	if err != nil {
-		return errorf("QueryServiceConfigW failed: %v", err)
-	}
-
-	// Query status
-	statusResp, err := cli.QueryServiceStatus(ctx, &svcctl.QueryServiceStatusRequest{
-		Service: svcResp.Service,
-	})
-	if err != nil {
-		return errorf("QueryServiceStatus failed: %v", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Service: %s\n", args.Name))
-	sb.WriteString(fmt.Sprintf("  Display Name : %s\n", cfgResp.ServiceConfig.DisplayName))
-	sb.WriteString(fmt.Sprintf("  Binary Path  : %s\n", cfgResp.ServiceConfig.BinaryPathName))
-	sb.WriteString(fmt.Sprintf("  Service Type : %s\n", remoteSvcTypeName(cfgResp.ServiceConfig.ServiceType)))
-	sb.WriteString(fmt.Sprintf("  Start Type   : %s\n", remoteSvcStartTypeName(cfgResp.ServiceConfig.StartType)))
-	sb.WriteString(fmt.Sprintf("  Run As       : %s\n", cfgResp.ServiceConfig.ServiceStartName))
-	if cfgResp.ServiceConfig.Dependencies != "" {
-		sb.WriteString(fmt.Sprintf("  Dependencies : %s\n", cfgResp.ServiceConfig.Dependencies))
-	}
-	sb.WriteString(fmt.Sprintf("  State        : %s\n", remoteSvcStateName(statusResp.ServiceStatus.CurrentState)))
-
-	return successResult(sb.String())
-}

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -14,6 +15,10 @@ func init() {
 		HelpString:          "chown -path /tmp/payload -owner root\nchown -path /var/data -owner www-data -group www-data -recursive true\nchown -path /tmp/file -owner 1000 -group 1000",
 		Version:             1,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "chown_new.js"),
+			Author:     "@galoryber",
+		},
 		MitreAttackMappings: []string{"T1222"},
 		SupportedUIFeatures: []string{"file_browser:upload"},
 		CommandAttributes: agentstructs.CommandAttribute{

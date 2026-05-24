@@ -33,11 +33,9 @@ type getSystemArgs struct {
 }
 
 func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
-	var args getSystemArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[getSystemArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Technique == "" {

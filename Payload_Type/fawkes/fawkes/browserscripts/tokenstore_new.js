@@ -14,8 +14,15 @@ function(task, responses){
         let data;
         try { data = JSON.parse(combined); } catch(e) { return {"plaintext": combined}; }
         if(!Array.isArray(data) || data.length === 0){
-            return {"plaintext": "No tokens in store"};
+            return {"plaintext": combined};
         }
+
+        // Detect format: identity history (has "operation" field) vs token store (has "token_id")
+        if(data[0].operation !== undefined){
+            return renderIdentityHistory(data);
+        }
+
+        // Token store format
         let headers = [
             {"plaintext": "Token ID", "type": "number", "width": 100},
             {"plaintext": "PID", "type": "number", "width": 90},
@@ -28,7 +35,6 @@ function(task, responses){
             let e = data[j];
             let user = e.user || "N/A";
             let rowStyle = {};
-            // Highlight SYSTEM tokens
             let lowerUser = user.toLowerCase();
             if(lowerUser === "system" || lowerUser === "nt authority\\system" || lowerUser === "nt authority\\local service" || lowerUser === "nt authority\\network service"){
                 rowStyle = {"backgroundColor": "rgba(255,0,0,0.15)"};
@@ -53,4 +59,56 @@ function(task, responses){
         const combined = responses.reduce((prev, cur) => prev + cur, "");
         return {"plaintext": combined};
     }
+}
+
+function renderIdentityHistory(events){
+    let levelColors = {
+        "SYSTEM": "rgba(255,0,0,0.15)",
+        "admin": "rgba(255,165,0,0.15)",
+        "user": "rgba(100,149,237,0.10)",
+    };
+    let opLabels = {
+        "stealtoken": "\u{1F50D} steal-token",
+        "maketoken": "\u{1F511} make-token",
+        "rev2self": "\u{21A9}\u{FE0F} rev2self",
+        "getsystem": "\u{26A1} getsystem",
+        "token-store-use": "\u{1F4E6} token-store use",
+    };
+
+    let headers = [
+        {"plaintext": "#", "type": "number", "width": 50},
+        {"plaintext": "Time", "type": "string", "width": 180},
+        {"plaintext": "Operation", "type": "string", "width": 180},
+        {"plaintext": "From", "type": "string", "fillWidth": true},
+        {"plaintext": "To", "type": "string", "fillWidth": true},
+        {"plaintext": "Level", "type": "string", "width": 100},
+        {"plaintext": "Detail", "type": "string", "width": 200},
+    ];
+    let rows = [];
+    for(let i = 0; i < events.length; i++){
+        let e = events[i];
+        let level = e.level || "user";
+        let rowStyle = {};
+        if(levelColors[level]){
+            rowStyle = {"backgroundColor": levelColors[level]};
+        }
+        let opDisplay = opLabels[e.operation] || e.operation;
+        rows.push({
+            "#": {"plaintext": i + 1},
+            "Time": {"plaintext": e.timestamp || ""},
+            "Operation": {"plaintext": opDisplay},
+            "From": {"plaintext": e.from_user || "(process token)", "copyIcon": true},
+            "To": {"plaintext": e.to_user || "", "copyIcon": true},
+            "Level": {"plaintext": level},
+            "Detail": {"plaintext": e.detail || ""},
+            "rowStyle": rowStyle,
+        });
+    }
+    return {
+        "table": [{
+            "headers": headers,
+            "rows": rows,
+            "title": "Identity Chain Timeline (" + events.length + " transitions)",
+        }]
+    };
 }

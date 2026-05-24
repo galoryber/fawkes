@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -21,9 +20,9 @@ func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Actions: list, add, delete, status")
 	}
 
-	var args firewallArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[firewallArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {

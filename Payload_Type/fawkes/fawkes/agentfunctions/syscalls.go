@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -16,6 +18,7 @@ func init() {
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -33,6 +36,7 @@ func init() {
 				},
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "syscalls_new.js"), Author: "@galoryber"},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,

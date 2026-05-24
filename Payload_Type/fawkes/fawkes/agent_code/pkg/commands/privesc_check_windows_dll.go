@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"debug/pe"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -388,6 +389,102 @@ func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 	sb.WriteString("  3. System reboot: Services that load the DLL will pick it up on next boot\n")
 	sb.WriteString("  4. LOLBin load:  rundll32 " + destPath + ",Run\n")
 	sb.WriteString("\nCleanup: securedelete " + destPath + "\n")
+
+	return successResult(sb.String())
+}
+
+// winDLLExports enumerates the export table of a PE file (DLL or EXE) on disk.
+// Useful for building proxy DLLs that forward all exports to the original.
+func winDLLExports(args privescCheckArgs) structs.CommandResult {
+	if args.Source == "" {
+		return errorResult("Error: 'source' is required — path to the PE file to inspect")
+	}
+
+	srcPath, err := filepath.Abs(args.Source)
+	if err != nil {
+		return errorf("Error resolving path: %v", err)
+	}
+
+	f, err := os.Open(srcPath)
+	if err != nil {
+		return errorf("Error opening %s: %v", srcPath, err)
+	}
+	defer f.Close()
+
+	peFile, err := pe.NewFile(f)
+	if err != nil {
+		return errorf("Error parsing PE file: %v", err)
+	}
+	defer peFile.Close()
+
+	arch := "unknown"
+	switch peFile.Machine {
+	case pe.IMAGE_FILE_MACHINE_AMD64:
+		arch = "x64"
+	case pe.IMAGE_FILE_MACHINE_I386:
+		arch = "x86"
+	case pe.IMAGE_FILE_MACHINE_ARM64:
+		arch = "ARM64"
+	}
+
+	isDLL := peFile.Characteristics&pe.IMAGE_FILE_DLL != 0
+
+	// Parse export directory from the data directory
+	var exportDir pe.DataDirectory
+	switch opt := peFile.OptionalHeader.(type) {
+	case *pe.OptionalHeader64:
+		if len(opt.DataDirectory) > 0 {
+			exportDir = opt.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_EXPORT]
+		}
+	case *pe.OptionalHeader32:
+		if len(opt.DataDirectory) > 0 {
+			exportDir = opt.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_EXPORT]
+		}
+	}
+
+	if exportDir.VirtualAddress == 0 || exportDir.Size == 0 {
+		return successf("%s (%s, %s): No exports", filepath.Base(srcPath), arch, peTypeStr(isDLL))
+	}
+
+	exports, dllName, err := parseExportDirectory(peFile, exportDir)
+	if err != nil {
+		return errorf("Error parsing export directory: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== PE Export Table: %s ===\n", filepath.Base(srcPath)))
+	sb.WriteString(fmt.Sprintf("Path: %s\n", srcPath))
+	sb.WriteString(fmt.Sprintf("Architecture: %s | Type: %s\n", arch, peTypeStr(isDLL)))
+	if dllName != "" {
+		sb.WriteString(fmt.Sprintf("Export Name: %s\n", dllName))
+	}
+	sb.WriteString(fmt.Sprintf("Exports: %d\n\n", len(exports)))
+
+	if len(exports) > 0 {
+		sb.WriteString("Ordinal  Name\n")
+		sb.WriteString("-------  ----\n")
+		for _, exp := range exports {
+			if exp.name != "" {
+				sb.WriteString(fmt.Sprintf("%-8d %s", exp.ordinal, exp.name))
+			} else {
+				sb.WriteString(fmt.Sprintf("%-8d (ordinal-only)", exp.ordinal))
+			}
+			if exp.forwarder != "" {
+				sb.WriteString(fmt.Sprintf(" -> %s", exp.forwarder))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	sb.WriteString(fmt.Sprintf("\n--- DEF File (for proxy DLL) ---\n"))
+	sb.WriteString(fmt.Sprintf("LIBRARY \"%s\"\nEXPORTS\n", filepath.Base(srcPath)))
+	for _, exp := range exports {
+		if exp.name != "" {
+			sb.WriteString(fmt.Sprintf("  %s @%d\n", exp.name, exp.ordinal))
+		} else {
+			sb.WriteString(fmt.Sprintf("  noname_ordinal_%d @%d NONAME\n", exp.ordinal, exp.ordinal))
+		}
+	}
 
 	return successResult(sb.String())
 }

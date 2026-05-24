@@ -93,6 +93,12 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			depth, _ := taskData.Args.GetNumberArg("depth")
+			if depth == 0 {
+				depth = 3
+			}
+			display := fmt.Sprintf("discover (depth: %d)", int(depth))
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "File Read", "Password manager database/config file discovery")
 			return response
 		},

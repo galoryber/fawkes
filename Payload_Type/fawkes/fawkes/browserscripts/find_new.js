@@ -32,6 +32,7 @@ function(task, responses){
             return {"plaintext": combined};
         }
         let headers = [
+            {"plaintext": "actions", "type": "button", "width": 90, "disableSort": true},
             {"plaintext": "size", "type": "string", "width": 90},
             {"plaintext": "modified", "type": "string", "width": 130},
             {"plaintext": "path", "type": "string", "fillWidth": true},
@@ -48,7 +49,26 @@ function(task, responses){
             } else if(path.match(/\.(conf|cfg|ini|yaml|yml|json|xml|env|toml|properties)/)){
                 rowStyle = {"backgroundColor": "rgba(255,165,0,0.12)"};
             }
+            let actionButton;
+            if(e.isDir){
+                actionButton = {
+                    "name": "ls",
+                    "type": "task",
+                    "ui_feature": "file_browser:list",
+                    "startIcon": "list",
+                    "parameters": {"full_path": e.path},
+                };
+            } else {
+                actionButton = {
+                    "name": "cat",
+                    "type": "task",
+                    "ui_feature": "cat",
+                    "startIcon": "visibility",
+                    "parameters": e.path,
+                };
+            }
             rows.push({
+                "actions": {"button": actionButton},
                 "size": {"plaintext": e.size},
                 "modified": {"plaintext": e.modified},
                 "path": {"plaintext": e.path, "copyIcon": true},

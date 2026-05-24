@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -13,7 +15,7 @@ func init() {
 		Description:         "Link to a P2P agent via TCP or named pipe to establish a peer-to-peer connection for internal pivoting. The target agent must be built with a TCP or named pipe profile and listening.",
 		HelpString:          "link -host <ip> -port <port> | link -connection_type namedpipe -host <ip> -pipe_name <name>",
 		Version:             1,
-		MitreAttackMappings: []string{"T1572"},
+		MitreAttackMappings: []string{"T1572", "T1008"}, // Protocol Tunneling, Fallback Channels
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -81,6 +83,7 @@ func init() {
 				},
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "link_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -159,6 +162,22 @@ func init() {
 				ArtifactMessage:  artifact,
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "linked") || strings.Contains(responseText, "Connected") || strings.Contains(responseText, "connected") {
+				host, _ := processResponse.TaskData.Args.GetStringArg("host")
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[P2P] Link established to %s from %s", host, processResponse.TaskData.Callback.Host), false)
+			}
 			return response
 		},
 	})

@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"syscall"
@@ -57,9 +56,9 @@ type weEntry struct {
 }
 
 func (c *WindowsEnumCommand) Execute(task structs.Task) structs.CommandResult {
-	var args weArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[weArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

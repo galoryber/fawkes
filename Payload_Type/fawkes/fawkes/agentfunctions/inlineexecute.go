@@ -136,6 +136,7 @@ func init() {
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "inlineexecute_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -184,6 +185,20 @@ func init() {
 				},
 			},
 			{
+				Name:             "bof_b64",
+				ModalDisplayName: "BOF (Base64)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded BOF/COFF bytes (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:             "entry_point",
 				ModalDisplayName: "Entry Point",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
@@ -198,6 +213,11 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     1,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
 						UIModalPosition:     1,
 					},
 				},
@@ -232,6 +252,11 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     2,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
 						UIModalPosition:     2,
 					},
 				},
@@ -288,11 +313,26 @@ func init() {
 			var filename string
 			var fileContents []byte
 
+			// Check for CLI group (bof_b64 provided directly)
+			cliB64, _ := taskData.Args.GetStringArg("bof_b64")
+			if cliB64 != "" {
+				decoded, err := base64.StdEncoding.DecodeString(cliB64)
+				if err != nil {
+					response.Success = false
+					response.Error = "Invalid base64 in bof_b64: " + err.Error()
+					return response
+				}
+				fileContents = decoded
+				filename = "cli-bof"
+			}
+
 			// Check if this is a Forge invocation by looking for bof_file parameter
 			forgeFileID, forgeErr := taskData.Args.GetStringArg("bof_file")
 			isForgeCall := (forgeErr == nil && forgeFileID != "")
 
-			if isForgeCall {
+			if fileContents != nil {
+				// Already have contents from CLI group — skip file resolution
+			} else if isForgeCall {
 				// Forge invocation - use Forge parameter names
 				// Get file details
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{

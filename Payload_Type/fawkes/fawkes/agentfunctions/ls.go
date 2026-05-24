@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"strings"
+	"time"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -26,6 +28,24 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ls_new.js"),
 			Author:     "@its_a_feature_",
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Directory listing (T1083). File/directory enumeration is a standard discovery action logged by EDR and audit policies. Access timestamps may be updated on target directories.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Directory listing completed. Results populated Mythic file browser. Repeated listings of sensitive directories (e.g., Documents, Desktop) may trigger behavioral detection.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -41,6 +61,7 @@ func init() {
 			}
 			return response
 		},
+		TaskFunctionProcessResponse: lsProcessResponse,
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			// Check if this is from the file browser (has full_path field)
 			fileBrowserData := agentstructs.FileBrowserTask{}
@@ -132,4 +153,117 @@ func init() {
 			return nil
 		},
 	})
+}
+
+type lsFileListing struct {
+	Host       string        `json:"host"`
+	IsFile     bool          `json:"is_file"`
+	Name       string        `json:"name"`
+	ParentPath string        `json:"parent_path"`
+	Success    bool          `json:"success"`
+	Files      []lsFileEntry `json:"files,omitempty"`
+}
+
+type lsFileEntry struct {
+	Name        string `json:"name"`
+	FullName    string `json:"full_name"`
+	IsFile      bool   `json:"is_file"`
+	Permissions string `json:"permissions"`
+	Size        int64  `json:"size"`
+	Owner       string `json:"owner"`
+	Group       string `json:"group"`
+	ModifyTime  string `json:"modify_time"`
+	AccessTime  string `json:"access_time"`
+}
+
+func lsProcessResponse(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+	response := agentstructs.PTTaskProcessResponseMessageResponse{
+		TaskID:  msg.TaskData.Task.ID,
+		Success: true,
+	}
+	responseText, ok := msg.Response.(string)
+	if !ok || responseText == "" {
+		return response
+	}
+
+	var listing lsFileListing
+	if err := json.Unmarshal([]byte(responseText), &listing); err != nil {
+		return response
+	}
+	if !listing.Success {
+		return response
+	}
+
+	host := listing.Host
+	if host == "" {
+		host = msg.TaskData.Callback.Host
+	}
+
+	dirPath := filepath.Join(listing.ParentPath, listing.Name)
+
+	if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+		TaskID: msg.TaskData.Task.ID,
+		FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+			Host:       host,
+			IsFile:     listing.IsFile,
+			Name:       listing.Name,
+			ParentPath: listing.ParentPath,
+			Success:    true,
+		},
+	}); err != nil {
+		logging.LogError(err, "ls: failed to create directory browser entry",
+			"host", host, "path", dirPath)
+	}
+
+	for _, f := range listing.Files {
+		perms := make(map[string]interface{})
+		if f.Permissions != "" {
+			perms["permissions"] = f.Permissions
+		}
+		if f.Owner != "" {
+			perms["owner"] = f.Owner
+		}
+		if f.Group != "" {
+			perms["group"] = f.Group
+		}
+
+		entry := mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+			Host:        host,
+			IsFile:      f.IsFile,
+			Name:        f.Name,
+			ParentPath:  dirPath,
+			Success:     true,
+			Permissions: perms,
+			Size:        uint64(f.Size),
+		}
+		if t, err := parseTimestamp(f.ModifyTime); err == nil {
+			entry.ModifyTime = t
+		}
+		if t, err := parseTimestamp(f.AccessTime); err == nil {
+			entry.AccessTime = t
+		}
+
+		if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+			TaskID:      msg.TaskData.Task.ID,
+			FileBrowser: entry,
+		}); err != nil {
+			logging.LogError(err, "ls: failed to create file browser entry",
+				"host", host, "file", f.Name)
+		}
+	}
+	return response
+}
+
+func parseTimestamp(s string) (uint64, error) {
+	if s == "" {
+		return 0, nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, s)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return uint64(t.Unix()), nil
 }

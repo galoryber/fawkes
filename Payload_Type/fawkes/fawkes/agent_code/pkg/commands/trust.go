@@ -98,9 +98,9 @@ func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -server <DC> [-username user@domain -password pass]")
 	}
 
-	var args trustArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[trustArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -148,7 +148,7 @@ func trustDetectBaseDN(conn *ldap.Conn) (string, error) {
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 	if len(result.Entries) == 0 {
 		return "", fmt.Errorf("no RootDSE entries returned")

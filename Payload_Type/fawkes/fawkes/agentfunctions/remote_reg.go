@@ -8,6 +8,15 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+func formatRemoteRegOPSEC(action, server string) string {
+	msg := fmt.Sprintf("OPSEC WARNING: Remote registry %s via RPC named pipe (winreg) on %s.", action, server)
+	if action == "set" || action == "delete" {
+		msg += " Write/delete operations modify the remote registry — may trigger EDR alerts for remote registry modification."
+	}
+	msg += " Uses SMB named pipe transport (ncacn_np:[winreg]) — generates network logon and SMB events."
+	return msg
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "remote-reg",
@@ -170,11 +179,7 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			server, _ := taskData.Args.GetStringArg("server")
-			msg := fmt.Sprintf("OPSEC WARNING: Remote registry %s via RPC named pipe (winreg) on %s.", action, server)
-			if action == "set" || action == "delete" {
-				msg += " Write/delete operations modify the remote registry — may trigger EDR alerts for remote registry modification."
-			}
-			msg += " Uses SMB named pipe transport (ncacn_np:[winreg]) — generates network logon and SMB events."
+			msg := formatRemoteRegOPSEC(action, server)
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,

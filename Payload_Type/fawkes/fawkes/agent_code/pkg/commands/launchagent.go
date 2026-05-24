@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
@@ -34,14 +33,13 @@ type launchAgentArgs struct {
 }
 
 func (c *LaunchAgentCommand) Execute(task structs.Task) structs.CommandResult {
-	var args launchAgentArgs
-
 	if task.Params == "" {
 		return errorResult("Error: parameters required. Use action: install, remove, list")
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[launchAgentArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -65,7 +63,7 @@ func getPlistDir(daemon bool) (string, error) {
 	// User-level LaunchAgent
 	u, err := user.Current()
 	if err != nil {
-		return "", fmt.Errorf("cannot determine current user: %v", err)
+		return "", fmt.Errorf("cannot determine current user: %w", err)
 	}
 	return filepath.Join(u.HomeDir, "Library", "LaunchAgents"), nil
 }

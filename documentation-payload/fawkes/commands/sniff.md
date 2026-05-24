@@ -9,13 +9,13 @@ hidden = false
 
 Network sniffing, LLMNR/NBT-NS/mDNS poisoning, and NTLM relay for credential interception. Three modes:
 
-- **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, and Kerberos.
+- **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, Kerberos, LDAP simple bind, SMTP AUTH PLAIN, and Telnet.
 - **poison**: Active LLMNR/NBT-NS/mDNS responder — answers multicast name resolution queries with the attacker IP to intercept authentication attempts (T1557.001).
 - **relay**: NTLM relay — intercepts victim NTLM authentication via HTTP and relays it to a target SMB server for authenticated access without cracking hashes (T1557.001).
 
 Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison and relay: cross-platform.
 
-In poison mode, an HTTP NTLM capture server runs alongside the name resolution poisoners. When a victim resolves a name to the attacker IP, subsequent HTTP/WPAD requests trigger NTLM authentication — captured NTLMv2 hashes are output in **hashcat mode 5600** format for offline cracking.
+In poison mode, **SMB (port 445) and HTTP (port 80) NTLM capture servers** run alongside the name resolution poisoners. When a victim resolves a name to the attacker IP, Windows clients try SMB first (for UNC paths and file share access), then HTTP. Both capture NTLMv2 hashes in **hashcat mode 5600** format for offline cracking.
 
 In relay mode, the agent acts as a man-in-the-middle: it presents an HTTP 401 challenge to victims, forwards their NTLM Type 1 message to the target SMB server, relays the server's Type 2 challenge back, and forwards the victim's final Type 3 authentication to complete the SMB session as the victim user.
 
@@ -140,8 +140,9 @@ When running in poison mode, the agent:
 
 1. **Listens** for LLMNR (UDP 5355), NBT-NS (UDP 137), and/or mDNS (UDP 5353) queries
 2. **Responds** with the attacker's IP address, causing victims to connect to us
-3. **Serves HTTP NTLM challenges** (TCP port 80) to capture authentication attempts
-4. **Extracts NTLMv2 hashes** in hashcat-compatible format (mode 5600)
+3. **Serves SMB NTLM challenges** (TCP port 445) — captures hashes from UNC path access, file share requests, and Explorer name resolution
+4. **Serves HTTP NTLM challenges** (TCP port 80) — captures hashes from WPAD, browser requests, and HTTP-based authentication
+5. **Extracts NTLMv2 hashes** in hashcat-compatible format (mode 5600)
 
 Captured hashes are automatically registered in the Mythic credential vault and can be cracked offline:
 
@@ -167,8 +168,17 @@ hashcat -m 5600 captured_hashes.txt wordlist.txt
     {
       "protocol": "ntlmv2",
       "src_ip": "192.168.1.50",
+      "dst_port": 445,
       "username": "CONTOSO\\jsmith",
       "password": "jsmith::CONTOSO:1122334455667788:aabbccdd...:0101000000000000...",
+      "detail": "NTLMv2 SMB capture | hashcat -m 5600 | domain=CONTOSO"
+    },
+    {
+      "protocol": "ntlmv2",
+      "src_ip": "192.168.1.51",
+      "dst_port": 80,
+      "username": "CONTOSO\\asmith",
+      "password": "asmith::CONTOSO:aabbccddee001122:ddeeff...:0101000000000000...",
       "detail": "NTLMv2 HTTP capture | hashcat -m 5600 | domain=CONTOSO"
     }
   ]
@@ -251,10 +261,11 @@ JSON output with capture statistics and discovered credentials:
 {{% notice warning %}}CRITICAL: Active network poisoning generates detectable traffic{{% /notice %}}
 
 - LLMNR/NBT-NS/mDNS poisoning actively responds to multicast/broadcast queries — **IDS/IPS will detect this** (Responder-like behavior)
-- Binding to ports 137 (NBT-NS) and 80 (HTTP) may conflict with existing services
-- On Windows, the NetBIOS service uses port 137 — poisoner may fail to bind
+- Binding to ports 137 (NBT-NS), 445 (SMB), and 80 (HTTP) may conflict with existing services
+- On Windows, the NetBIOS service uses port 137 and the Server service uses port 445 — poisoner may fail to bind
 - Multiple hosts may authenticate to the attacker IP — **monitor for account lockouts**
-- HTTP NTLM capture server listens on TCP 80 for the poison duration
+- SMB (TCP 445) and HTTP (TCP 80) NTLM capture servers listen for the poison duration
+- SMB server responds with STATUS_LOGON_FAILURE after capturing hashes — may generate Event ID 4625 on the victim
 
 ### Relay Mode
 {{% notice warning %}}CRITICAL: Active network relay generates detectable SMB traffic{{% /notice %}}

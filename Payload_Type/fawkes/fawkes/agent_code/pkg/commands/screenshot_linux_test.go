@@ -49,7 +49,7 @@ func TestScreenshotLinuxCommand_NoDisplay(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error when no display is set, got %s", result.Status)
 	}
-	if !strings.Contains(result.Output, "No display server detected") {
+	if !strings.Contains(strings.ToLower(result.Output), "no display server detected") {
 		t.Errorf("expected display server error, got: %s", result.Output)
 	}
 }

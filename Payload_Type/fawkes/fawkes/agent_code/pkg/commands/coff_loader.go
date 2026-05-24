@@ -41,16 +41,25 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	gotSize := uint32(0)
 	var gotMap = make(map[string]uintptr)
 
+	trampolineBaseAddress := uintptr(0)
+	trampolineOffset := 0
+	trampolineSize := uint32(0)
+	var trampolineMap = make(map[string]uintptr)
+
 	bssBaseAddress := uintptr(0)
 	bssOffset := 0
 	bssSize := uint32(0)
 
 	// Calculate sizes for special sections
+	// GOT: 8 bytes per __imp_ symbol. Trampoline: 16 bytes per bare symbol
+	// (JMP stub for direct CALL rel32 that can't reach windows.NewCallback addresses).
+	// BSS: for bare symbols that don't resolve to any known function.
 	for _, symbol := range parsedCoff.Symbols {
 		if isSpecialSymbol(symbol) {
 			if isImportSymbol(symbol) {
 				gotSize += 8
 			} else {
+				trampolineSize += 16
 				bssSize += symbol.Value + 8
 			}
 		}
@@ -74,7 +83,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 		var err error
 		addr, err = virtualAllocRW(uint32(allocationSize))
 		if err != nil {
-			return "", fmt.Errorf("memory allocation failed for section %s: %v", section.NameString(), err)
+			return "", fmt.Errorf("memory allocation failed for section %s: %w", section.NameString(), err)
 		}
 
 		if strings.HasPrefix(section.NameString(), ".bss") {
@@ -96,13 +105,23 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 		}
 	}
 
-	// Allocate GOT
+	// Allocate GOT for __imp_ symbols
 	if gotSize == 0 {
-		gotSize = 8 // Minimum allocation to avoid zero-size VirtualAlloc
+		gotSize = 8
 	}
 	gotBaseAddress, err := virtualAllocRW(gotSize)
 	if err != nil {
-		return "", fmt.Errorf("GOT memory allocation failed: %v", err)
+		return "", fmt.Errorf("GOT memory allocation failed: %w", err)
+	}
+
+	// Allocate trampoline area for bare symbols (direct CALL rel32 targets).
+	// Each trampoline is 14 bytes (FF 25 00 00 00 00 + 8-byte addr), padded to 16.
+	if trampolineSize == 0 {
+		trampolineSize = 16
+	}
+	trampolineBaseAddress, err = virtualAllocRW(trampolineSize)
+	if err != nil {
+		return "", fmt.Errorf("trampoline memory allocation failed: %w", err)
 	}
 
 	// Process relocations
@@ -119,13 +138,10 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			symbolDefAddress := uintptr(0)
 
 			if isSpecialSymbol(symbol) {
-				if isImportSymbol(symbol) {
-					externalAddress := resolveExternalSymbol(symbol.NameString(), outputChan)
+				externalAddress := resolveExternalSymbol(symbol.NameString(), outputChan)
 
-					if externalAddress == 0 {
-						return "", fmt.Errorf("failed to resolve external symbol: %s", symbol.NameString())
-					}
-
+				if externalAddress != 0 && isImportSymbol(symbol) {
+					// __imp_ symbols: store address in GOT (indirect call through pointer)
 					if existingGotAddress, exists := gotMap[symbol.NameString()]; exists {
 						symbolDefAddress = existingGotAddress
 					} else {
@@ -137,6 +153,23 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 						gotMap[symbol.NameString()] = symbolDefAddress
 					}
 					*(*uint64)(unsafe.Pointer(symbolDefAddress)) = uint64(externalAddress)
+				} else if externalAddress != 0 {
+					// Bare symbol: create JMP trampoline near BOF code.
+					// Direct CALL rel32 requires an executable target within ±2GB;
+					// windows.NewCallback() addresses may be far away.
+					if existingAddr, exists := trampolineMap[symbol.NameString()]; exists {
+						symbolDefAddress = existingAddr
+					} else {
+						trampAddr := trampolineBaseAddress + uintptr(trampolineOffset)
+						// FF 25 00 00 00 00 = jmp qword ptr [rip+0]
+						*(*[6]byte)(unsafe.Pointer(trampAddr)) = [6]byte{0xFF, 0x25, 0x00, 0x00, 0x00, 0x00}
+						*(*uint64)(unsafe.Pointer(trampAddr + 6)) = uint64(externalAddress)
+						trampolineMap[symbol.NameString()] = trampAddr
+						trampolineOffset += 16
+						symbolDefAddress = trampAddr
+					}
+				} else if isImportSymbol(symbol) {
+					return "", fmt.Errorf("failed to resolve external symbol: %s", symbol.NameString())
 				} else {
 					if uintptr(bssOffset)+uintptr(symbol.Value)+8 > uintptr(bssSize) {
 						return "", fmt.Errorf("BSS overflow: offset %d + size %d exceeds allocated %d", bssOffset, symbol.Value+8, bssSize)
@@ -157,6 +190,14 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 
 	}
 
+	// Mark trampoline area executable
+	if trampolineOffset > 0 {
+		if err := virtualProtectRX(trampolineBaseAddress, uint32(trampolineOffset)); err != nil {
+			return "", fmt.Errorf("trampoline protection change failed: %w", err)
+		}
+		flushInstructionCache(trampolineBaseAddress, uint32(trampolineOffset))
+	}
+
 	// Mark executable sections as RX and flush instruction cache
 	for _, section := range parsedCoff.Sections.Array() {
 		if section.Characteristics&coffImageScnMemExecute != 0 {
@@ -169,7 +210,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 				continue
 			}
 			if err := virtualProtectRX(sec.Address, size); err != nil {
-				return "", fmt.Errorf("protection change failed for section %s: %v", section.NameString(), err)
+				return "", fmt.Errorf("protection change failed for section %s: %w", section.NameString(), err)
 			}
 			flushInstructionCache(sec.Address, size)
 		}
@@ -229,6 +270,9 @@ collectLoop:
 		if gotBaseAddress != 0 {
 			windows.VirtualFree(gotBaseAddress, 0, windows.MEM_RELEASE)
 		}
+		if trampolineBaseAddress != 0 {
+			windows.VirtualFree(trampolineBaseAddress, 0, windows.MEM_RELEASE)
+		}
 	}
 
 	return output, nil
@@ -243,17 +287,18 @@ func isImportSymbol(sym *pecoff.Symbol) bool {
 }
 
 func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uintptr {
-	if !strings.HasPrefix(symbolName, "__imp_") {
-		return 0
+	// Strip __imp_ prefix if present; also handle symbols without it
+	// (BOFs compiled without __declspec(dllimport))
+	cleanName := symbolName
+	if strings.HasPrefix(cleanName, "__imp_") {
+		cleanName = cleanName[6:]
 	}
-
-	symbolName = symbolName[6:] // Remove "__imp_" prefix
-	if strings.HasPrefix(symbolName, "_") {
-		symbolName = symbolName[1:]
+	if strings.HasPrefix(cleanName, "_") {
+		cleanName = cleanName[1:]
 	}
 
 	// Check for Beacon API functions - use OUR implementations
-	switch symbolName {
+	switch cleanName {
 	case "BeaconOutput":
 		return windows.NewCallback(getBeaconOutputCallback(outChannel))
 	case "BeaconDataParse":
@@ -271,8 +316,8 @@ func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uin
 	}
 
 	// Dynamic Function Resolution (Library$Function format)
-	if strings.Contains(symbolName, "$") {
-		parts := strings.Split(symbolName, "$")
+	if strings.Contains(cleanName, "$") {
+		parts := strings.Split(cleanName, "$")
 		libName := parts[0] + ".dll"
 		procName := parts[1]
 
@@ -289,7 +334,7 @@ func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uin
 
 	// Standard library functions
 	var libName string
-	switch symbolName {
+	switch cleanName {
 	case "FreeLibrary", "LoadLibraryA", "GetProcAddress", "GetModuleHandleA":
 		libName = "kernel32.dll"
 	case "MessageBoxA":
@@ -302,7 +347,7 @@ func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uin
 	if err != nil {
 		return 0
 	}
-	proc, err := syscall.GetProcAddress(lib, symbolName)
+	proc, err := syscall.GetProcAddress(lib, cleanName)
 	if err != nil {
 		return 0
 	}

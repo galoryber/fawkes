@@ -15,8 +15,9 @@ Execute commands on remote hosts via SCM (Service Control Manager) service creat
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
+| action | No | execute | `execute` to run command, `check` to validate prerequisites |
 | host | Yes | - | Target hostname or IP address |
-| command | Yes | - | Command to execute (automatically wrapped in `cmd.exe /c`) |
+| command | Yes (execute) | - | Command to execute (automatically wrapped in `cmd.exe /c`) |
 | name | No | (random) | Custom service name (random plausible name if not specified) |
 | display | No | (same as name) | Service display name |
 | cleanup | No | true | Delete the service after execution |
@@ -38,6 +39,13 @@ psexec -host 192.168.1.10 -command "whoami" -name "WindowsUpdate" -display "Wind
 ```
 psexec -host 192.168.1.10 -command "C:\payload.exe" -cleanup false
 ```
+
+### Pre-Flight Check
+Validate prerequisites before executing:
+```
+psexec -action check -host 192.168.1.10
+```
+Returns JSON with pass/fail for: SMB port 445, SCM access, service creation permissions, admin share accessibility.
 
 ### With Credential Impersonation
 ```

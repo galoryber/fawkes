@@ -2,7 +2,6 @@ package commands
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -32,13 +31,9 @@ type secureDeleteArgs struct {
 const secureDeleteDefaultPasses = 3
 
 func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
-	}
-
-	var args secureDeleteArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[secureDeleteArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Path == "" {

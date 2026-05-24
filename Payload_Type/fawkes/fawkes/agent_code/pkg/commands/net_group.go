@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -49,9 +48,9 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -action <list|members|user|privileged> -server <DC>")
 	}
 
-	var args netGroupArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[netGroupArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -115,7 +114,7 @@ func ngDetectBaseDN(conn *ldap.Conn) (string, error) {
 		0, 10, false, "(objectClass=*)", []string{"defaultNamingContext"}, nil)
 	result, err := conn.Search(req)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 	if len(result.Entries) == 0 {
 		return "", fmt.Errorf("no RootDSE entries returned")

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -16,9 +17,9 @@ func init() {
 		Name:                "rpfwd",
 		Description:         "Start, stop, or forward port forwarding through this agent. 'start' creates a reverse port forward (agent listens, Mythic connects to remote). 'forward' creates a local relay (agent listens, agent connects to internal target).",
 		HelpString:          "rpfwd start <port> <remote_ip> <remote_port>  /  rpfwd forward <port> <target_ip> <target_port>  /  rpfwd stop <port>",
-		Version:             2,
-		MitreAttackMappings: []string{"T1090"}, // Proxy
-		SupportedUIFeatures: []string{},
+		Version:             3,
+		MitreAttackMappings: []string{"T1090", "T1572"}, // Proxy, Protocol Tunneling
+		SupportedUIFeatures: []string{"port_browser:forward"},
 		Author:              "@GlobeTechLLC",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
@@ -33,6 +34,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -45,6 +47,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 				},
@@ -57,6 +60,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     3,
 					},
 				},
@@ -69,6 +73,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     4,
 					},
 				},
@@ -81,6 +86,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     5,
 					},
 				},
@@ -93,6 +99,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     6,
 					},
 				},
@@ -105,14 +112,19 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     7,
 					},
 				},
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "rpfwd_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
+			}
+			if strings.HasPrefix(strings.TrimSpace(input), "{") {
+				return args.LoadArgsFromJSONString(input)
 			}
 			// Support:
 			//   rpfwd start 8080 10.0.0.1 80

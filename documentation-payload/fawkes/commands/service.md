@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Manage system services — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, restart, create, delete, list, enable, or disable services.
+Manage system services and detect/disable EDR/AV — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, restart, create, delete, list, enable, disable, edr-enum, or edr-kill services.
 
 - **Windows:** Uses Win32 Service Control Manager API (OpenSCManager, CreateService, etc.). No subprocess creation — all operations run in-process via `golang.org/x/sys/windows/svc/mgr`.
 - **Linux:** Uses systemctl for service management. Create writes systemd unit files to `/etc/systemd/system/` and reloads the daemon. Delete stops, disables, and removes the unit file. List and query enrich output with unit file state and service details.
@@ -19,11 +19,12 @@ Manage system services — Windows via SCM API, Linux via systemctl, macOS via l
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | Action to perform: `query`, `start`, `stop`, `restart`, `create`, `delete`, `list`, `enable`, `disable` |
-| name | Conditional | Service name (required for all actions except `list`) |
+| action | Yes | Action to perform: `query`, `start`, `stop`, `restart`, `create`, `delete`, `list`, `enable`, `disable`, `edr-enum`, `edr-kill` |
+| name | Conditional | Service name (required for all actions except `list`, `edr-enum`, `edr-kill`) |
 | binpath | Conditional | Path to service binary (required for `create`) |
 | display | No | Display name / description for the service (for `create`) |
 | start | No | Start type: `demand` (manual), `auto` (automatic), `disabled` (default: `demand`) |
+| confirm | Conditional | Safety gate: `EDR-KILL` (required for `edr-kill` action) |
 
 ## Usage
 
@@ -176,10 +177,27 @@ The `query` action returns `launchctl print` output plus the plist file contents
 - **macOS:** Start uses `launchctl kickstart` (preferred) with `launchctl load` as fallback
 - Requires appropriate privileges for start/stop/enable/disable/create/delete operations
 
+## EDR/AV Targeting
+
+### Enumerate installed security services
+```
+service -action edr-enum
+```
+
+Scans for 60+ known EDR/AV service names across CrowdStrike, SentinelOne, Defender, Carbon Black, Symantec, Sophos, ESET, Kaspersky, Trend Micro, Palo Alto, Cylance, McAfee, Elastic, Wazuh, and more.
+
+### Stop and disable security services
+```
+service -action edr-kill -confirm EDR-KILL
+```
+
+{{% notice warning %}}The `edr-kill` action requires `-confirm EDR-KILL` as a safety gate. This will attempt to stop and disable all detected EDR/AV services. Requires elevated privileges.{{% /notice %}}
+
 ## MITRE ATT&CK Mapping
 
 - **T1543.002** — Create or Modify System Process: Systemd Service (Linux create/delete)
 - **T1543.003** — Create or Modify System Process: Windows Service
 - **T1543.004** — Create or Modify System Process: Launch Daemon/Agent (macOS create/delete)
-- **T1562.001** — Impair Defenses: Disable or Modify Tools (enable/disable actions)
+- **T1489** — Service Stop (edr-kill)
+- **T1562.001** — Impair Defenses: Disable or Modify Tools (enable/disable, edr-kill)
 - **T1569.002** — System Services: Service Execution

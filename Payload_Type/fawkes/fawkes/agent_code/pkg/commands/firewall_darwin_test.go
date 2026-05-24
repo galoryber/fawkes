@@ -113,3 +113,104 @@ func TestFirewallDarwinActionCaseInsensitive(t *testing.T) {
 		t.Error("Action should be case-insensitive")
 	}
 }
+
+// --- buildPfRule tests ---
+
+func TestBuildPfRule_PassInTcpPort(t *testing.T) {
+	args := firewallArgs{
+		RuleAction: "allow",
+		Direction:  "in",
+		Protocol:   "tcp",
+		Port:       "4444",
+	}
+	rule := buildPfRule(args)
+	if rule != "pass in proto tcp from any to any port 4444" {
+		t.Errorf("unexpected rule: %s", rule)
+	}
+}
+
+func TestBuildPfRule_BlockOutUdp(t *testing.T) {
+	args := firewallArgs{
+		RuleAction: "block",
+		Direction:  "out",
+		Protocol:   "udp",
+		Port:       "53",
+	}
+	rule := buildPfRule(args)
+	if rule != "block out proto udp from any to any port 53" {
+		t.Errorf("unexpected rule: %s", rule)
+	}
+}
+
+func TestBuildPfRule_NoProtocol(t *testing.T) {
+	args := firewallArgs{
+		RuleAction: "allow",
+		Direction:  "in",
+	}
+	rule := buildPfRule(args)
+	if rule != "pass in from any to any" {
+		t.Errorf("unexpected rule: %s", rule)
+	}
+}
+
+func TestBuildPfRule_AnyProtocol(t *testing.T) {
+	args := firewallArgs{
+		RuleAction: "block",
+		Direction:  "out",
+		Protocol:   "any",
+	}
+	rule := buildPfRule(args)
+	if rule != "block out from any to any" {
+		t.Errorf("unexpected rule: %s", rule)
+	}
+}
+
+func TestBuildPfRule_DefaultsPassIn(t *testing.T) {
+	args := firewallArgs{}
+	rule := buildPfRule(args)
+	if rule != "pass in from any to any" {
+		t.Errorf("unexpected rule with defaults: %s", rule)
+	}
+}
+
+// --- pf action dispatch tests ---
+
+func TestFirewallDarwinPfListAction(t *testing.T) {
+	cmd := &FirewallCommand{}
+	params, _ := json.Marshal(map[string]string{"action": "pf-list", "name": "fawkes"})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// pf-list may fail without root but should not be "Unknown action"
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("pf-list should be a recognized action")
+	}
+}
+
+func TestFirewallDarwinPfAddAction(t *testing.T) {
+	cmd := &FirewallCommand{}
+	params, _ := json.Marshal(firewallArgs{
+		Action:     "pf-add",
+		Name:       "fawkes",
+		Protocol:   "tcp",
+		Port:       "4444",
+		RuleAction: "allow",
+		Direction:  "in",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// Will likely fail without root, but should not be "Unknown action"
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("pf-add should be a recognized action")
+	}
+}
+
+func TestFirewallDarwinPfDeleteAction(t *testing.T) {
+	cmd := &FirewallCommand{}
+	params, _ := json.Marshal(map[string]string{"action": "pf-delete", "name": "fawkes"})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// Will likely fail without root, but should not be "Unknown action"
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("pf-delete should be a recognized action")
+	}
+}

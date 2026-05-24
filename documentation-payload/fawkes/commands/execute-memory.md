@@ -65,6 +65,7 @@ The temp file exists only for the duration of execution. Apple Silicon requires 
 | arguments | No | Command-line arguments to pass to the binary |
 | timeout | No | Execution timeout in seconds (default: 60) |
 | export_name | No | Windows DLLs only: export function to call after DllMain (e.g., Go, Run, Execute) |
+| stack_spoof | No | Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`. |
 
 ## Usage
 

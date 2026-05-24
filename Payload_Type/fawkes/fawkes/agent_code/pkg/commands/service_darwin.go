@@ -28,17 +28,13 @@ type serviceArgs struct {
 	BinPath string `json:"binpath"`
 	Display string `json:"display"`
 	Start   string `json:"start"`
+	Confirm string `json:"confirm"`
 }
 
 func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
-	var args serviceArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, query, start, stop, create, delete, enable, disable")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[serviceArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -60,8 +56,12 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceDeleteDarwin(args)
 	case "disable":
 		return serviceDisableDarwin(args)
+	case "edr-enum":
+		return serviceEdrEnumDarwin()
+	case "edr-kill":
+		return serviceEdrKillDarwin(args)
 	default:
-		return errorf("Unknown action: %s. Use: list, query, start, stop, restart, create, delete, enable, disable", args.Action)
+		return errorf("Unknown action: %s. Use: list, query, start, stop, restart, create, delete, enable, disable, edr-enum, edr-kill", args.Action)
 	}
 }
 

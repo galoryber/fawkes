@@ -54,11 +54,11 @@ func getLocalIP(ifaceName string) (string, error) {
 	if ifaceName != "" {
 		iface, err := net.InterfaceByName(ifaceName)
 		if err != nil {
-			return "", fmt.Errorf("interface %s: %v", ifaceName, err)
+			return "", fmt.Errorf("interface %s: %w", ifaceName, err)
 		}
 		addrs, err := iface.Addrs()
 		if err != nil {
-			return "", fmt.Errorf("interface %s addrs: %v", ifaceName, err)
+			return "", fmt.Errorf("interface %s addrs: %w", ifaceName, err)
 		}
 		for _, addr := range addrs {
 			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
@@ -70,10 +70,13 @@ func getLocalIP(ifaceName string) (string, error) {
 	// Auto-detect: dial a known address, read local side
 	conn, err := net.Dial("udp", "8.8.8.8:53")
 	if err != nil {
-		return "", fmt.Errorf("auto-detect IP: %v", err)
+		return "", fmt.Errorf("auto-detect IP: %w", err)
 	}
 	defer conn.Close()
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return "", fmt.Errorf("auto-detect IP: unexpected address type %T", conn.LocalAddr())
+	}
 	return localAddr.IP.String(), nil
 }
 

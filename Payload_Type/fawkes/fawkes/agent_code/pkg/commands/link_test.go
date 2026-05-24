@@ -149,7 +149,7 @@ func TestLinkCommand_InvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "Failed to parse") {
+	if !strings.Contains(result.Output, "Error parsing parameters") {
 		t.Errorf("expected parse error, got: %s", result.Output)
 	}
 }
@@ -519,7 +519,7 @@ func TestUnlinkCommand_InvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "Failed to parse") {
+	if !strings.Contains(result.Output, "Error parsing parameters") {
 		t.Errorf("expected parse error, got: %s", result.Output)
 	}
 }

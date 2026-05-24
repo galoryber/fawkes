@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -58,14 +57,9 @@ const (
 )
 
 func (c *SchtaskCommand) Execute(task structs.Task) structs.CommandResult {
-	var args schtaskArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required (action, name)")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[schtaskArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -106,7 +100,7 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
 			runtime.UnlockOSThread()
-			return nil, nil, fmt.Errorf("CoInitializeEx failed: %v", err)
+			return nil, nil, fmt.Errorf("CoInitializeEx failed: %w", err)
 		}
 	}
 
@@ -114,7 +108,7 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to create Schedule.Service: %v", err)
+		return nil, nil, fmt.Errorf("failed to create Schedule.Service: %w", err)
 	}
 
 	service, err := unknown.QueryInterface(ole.IID_IDispatch)
@@ -122,7 +116,7 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to query IDispatch: %v", err)
+		return nil, nil, fmt.Errorf("failed to query IDispatch: %w", err)
 	}
 
 	// Connect to local task scheduler (pass nil variants for optional params)
@@ -131,7 +125,7 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 		service.Release()
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("ITaskService.Connect failed: %v", err)
+		return nil, nil, fmt.Errorf("ITaskService.Connect failed: %w", err)
 	}
 
 	// Get root folder
@@ -140,7 +134,7 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 		service.Release()
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("GetFolder failed: %v", err)
+		return nil, nil, fmt.Errorf("GetFolder failed: %w", err)
 	}
 	folder := folderResult.ToIDispatch()
 

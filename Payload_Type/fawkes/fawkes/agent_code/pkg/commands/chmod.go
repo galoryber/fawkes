@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -29,9 +28,9 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -path <file> -mode <permissions> [-recursive true]")
 	}
 
-	var args chmodArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[chmodArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Path == "" {

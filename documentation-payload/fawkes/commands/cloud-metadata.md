@@ -15,7 +15,7 @@ This is a critical reconnaissance command for cloud environments — instance me
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network`, `aws-iam`, `azure-graph`, `gcp-iam`, `aws-persist`, `azure-persist` |
+| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network`, `storage`, `aws-iam`, `azure-graph`, `gcp-iam`, `aws-persist`, `azure-persist`, `aws-ssm`, `azure-keyvault`, `gcp-secrets`, `aws-s3`, `azure-blob`, `gcp-gcs` |
 | provider | No | auto | Cloud provider: `auto`, `aws`, `azure`, `gcp`, `digitalocean` |
 | timeout | No | 3 | Per-request timeout in seconds |
 
@@ -32,6 +32,13 @@ This is a critical reconnaissance command for cloud environments — instance me
 - **gcp-iam** — GCP IAM enumeration: project IAM bindings, service accounts, assigned scopes
 - **aws-persist** — AWS IAM persistence: create long-lived IAM access key via CreateAccessKey API (T1098.001)
 - **azure-persist** — Azure AD persistence: create app registration with client secret via Microsoft Graph (T1098.001)
+- **aws-ssm** — AWS SSM Parameter Store: enumerate and read stored secrets (T1602)
+- **azure-keyvault** — Azure Key Vault: enumerate and read vault secrets via managed identity (T1602)
+- **gcp-secrets** — GCP Secret Manager: enumerate and read project secrets via service account (T1602)
+- **storage** — Enumerate accessible cloud storage (auto-detects provider; combines aws-s3, azure-blob, gcp-gcs)
+- **aws-s3** — AWS S3: list buckets and sample objects using IMDS IAM role credentials (T1530)
+- **azure-blob** — Azure Blob Storage: list containers and sample blobs using managed identity (T1530)
+- **gcp-gcs** — GCP Cloud Storage: list buckets and sample objects using service account token (T1530)
 
 ## Usage
 
@@ -71,6 +78,43 @@ Enumerate GCP IAM bindings and service accounts:
 cloud-metadata -action gcp-iam
 ```
 
+Read AWS SSM Parameter Store secrets:
+```
+cloud-metadata -action aws-ssm
+```
+
+Read Azure Key Vault secrets:
+```
+cloud-metadata -action azure-keyvault
+```
+
+Read GCP Secret Manager secrets:
+```
+cloud-metadata -action gcp-secrets
+```
+
+### Cloud Storage Enumeration
+
+Enumerate storage buckets/containers (auto-detect provider):
+```
+cloud-metadata -action storage
+```
+
+List AWS S3 buckets and sample objects:
+```
+cloud-metadata -action aws-s3
+```
+
+List Azure Blob Storage containers:
+```
+cloud-metadata -action azure-blob
+```
+
+List GCP Cloud Storage buckets:
+```
+cloud-metadata -action gcp-gcs
+```
+
 ## Supported Providers
 
 | Provider | Endpoint | Auth Header |
@@ -84,3 +128,5 @@ cloud-metadata -action gcp-iam
 
 - **T1552.005** — Unsecured Credentials: Cloud Instance Metadata API
 - **T1580** — Cloud Infrastructure Discovery
+- **T1530** — Data from Cloud Storage Object (S3/Blob/GCS bucket enumeration)
+- **T1602** — Data from Configuration Repository (SSM/Key Vault/Secret Manager)

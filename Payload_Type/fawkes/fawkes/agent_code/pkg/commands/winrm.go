@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -27,6 +26,7 @@ func (c *WinrmCommand) Description() string {
 }
 
 type winrmArgs struct {
+	Action   string `json:"action"`   // execute (default) or check
 	Host     string `json:"host"`     // target host IP or hostname
 	Username string `json:"username"` // username for auth (DOMAIN\user or user)
 	Password string `json:"password"` // password for auth
@@ -43,12 +43,16 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -host <target> -username <user> -password <pass> -command <cmd>")
 	}
 
-	var args winrmArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[winrmArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 	defer structs.ZeroString(&args.Hash)
+
+	if strings.ToLower(args.Action) == "check" {
+		return winrmCheck(args)
+	}
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return errorResult("Error: host, username, and password (or hash) are required")
@@ -275,7 +279,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	// Step 2: Send Negotiate message
 	negotiateMsg, err := ntlmssp.NewNegotiateMessage("", "")
 	if err != nil {
-		return nil, fmt.Errorf("NTLM negotiate: %v", err)
+		return nil, fmt.Errorf("NTLM negotiate: %w", err)
 	}
 	defer structs.ZeroBytes(negotiateMsg) // opsec: clear NTLM negotiate message
 
@@ -309,7 +313,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	challengeBytes, err := base64.StdEncoding.DecodeString(challengeStr)
 	if err != nil {
-		return nil, fmt.Errorf("decode NTLM challenge: %v", err)
+		return nil, fmt.Errorf("decode NTLM challenge: %w", err)
 	}
 	defer structs.ZeroBytes(challengeBytes) // opsec: clear NTLM challenge bytes
 
@@ -318,7 +322,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 		PasswordHashed: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("NTLM authenticate with hash: %v", err)
+		return nil, fmt.Errorf("NTLM authenticate with hash: %w", err)
 	}
 	defer structs.ZeroBytes(authMsg) // opsec: clear NTLM auth message (contains hash proof)
 

@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,11 +22,9 @@ func (c *HandlesCommand) Description() string {
 }
 
 func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
-	var args handlesArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[handlesArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// pid 0 means "self" — resolve to current process

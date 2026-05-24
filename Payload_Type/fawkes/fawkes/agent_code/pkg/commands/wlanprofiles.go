@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -29,11 +28,9 @@ type wlanProfile struct {
 }
 
 func (c *WlanProfilesCommand) Execute(task structs.Task) structs.CommandResult {
-	var args wlanProfilesArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[wlanProfilesArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	profiles, err := getWlanProfiles()

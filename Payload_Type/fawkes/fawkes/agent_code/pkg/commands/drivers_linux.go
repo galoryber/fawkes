@@ -15,7 +15,7 @@ func enumerateDrivers() ([]DriverInfo, error) {
 	// Parse /proc/modules: name size refcount deps state address
 	data, err := os.ReadFile("/proc/modules")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read /proc/modules: %v", err)
+		return nil, fmt.Errorf("failed to read /proc/modules: %w", err)
 	}
 	defer structs.ZeroBytes(data)
 

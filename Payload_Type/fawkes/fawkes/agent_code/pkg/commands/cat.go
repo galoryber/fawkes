@@ -69,7 +69,13 @@ func (c *CatCommand) Execute(task structs.Task) structs.CommandResult {
 func catReadFull(path string, maxBytes int) structs.CommandResult {
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		if os.IsNotExist(err) {
+			return errorf("Error: file not found: %s", path)
+		}
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to %s — check privileges", path)
+		}
+		return errorf("Error: cannot access %s: %v", path, err)
 	}
 
 	if info.IsDir() {
@@ -86,7 +92,10 @@ func catReadFull(path string, maxBytes int) structs.CommandResult {
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return errorf("Error reading file: %v", err)
+		if os.IsPermission(err) {
+			return errorf("Error: access denied reading %s — check privileges", path)
+		}
+		return errorf("Error: cannot read %s", path)
 	}
 
 	result := successResult(string(content))
@@ -98,7 +107,13 @@ func catReadFull(path string, maxBytes int) structs.CommandResult {
 func catReadLines(args catParams, maxBytes int) structs.CommandResult {
 	f, err := os.Open(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		if os.IsNotExist(err) {
+			return errorf("Error: file not found: %s", args.Path)
+		}
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to %s — check privileges", args.Path)
+		}
+		return errorf("Error: cannot open %s", args.Path)
 	}
 	defer f.Close()
 

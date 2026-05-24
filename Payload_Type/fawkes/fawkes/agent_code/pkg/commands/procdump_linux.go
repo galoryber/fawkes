@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -28,11 +27,9 @@ func (c *ProcdumpCommand) Description() string {
 }
 
 func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
-	var args procdumpArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[procdumpArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

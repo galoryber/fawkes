@@ -56,6 +56,7 @@ func init() {
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "inlineassembly_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -89,6 +90,20 @@ func init() {
 				},
 			},
 			{
+				Name:             "assembly_b64",
+				ModalDisplayName: "Assembly (Base64)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded .NET assembly bytes (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:             "arguments",
 				ModalDisplayName: "Assembly Arguments",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
@@ -103,6 +118,11 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     1,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
 						UIModalPosition:     1,
 					},
 				},
@@ -151,7 +171,7 @@ func init() {
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    "OPSEC WARNING: Inline assembly execution loads and runs .NET assemblies in-process via the CLR. Creates CLR loading artifacts (clrjit.dll, mscorlib.ni.dll). Detectable by ETW .NET tracing, AMSI scanning, and memory scanners looking for .NET metadata in non-.NET processes.",
+				OpsecPreMessage:    "OPSEC WARNING: Inline assembly execution loads .NET assemblies in-process via the CLR. Creates CLR loading artifacts (clrjit.dll, mscorlib.ni.dll). ETW (EtwEventWrite) is auto-patched before assembly loading to silence CLR telemetry. Memory scanners may detect .NET metadata in non-.NET processes.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -160,7 +180,7 @@ func init() {
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    "OPSEC AUDIT: .NET assembly executed via CLR. The CLR remains loaded in the process (cannot be unloaded). Assembly metadata may be visible to ETW .NET runtime providers. Use 'etw -action blind' to suppress .NET ETW if needed.",
+				OpsecPostMessage:    "OPSEC AUDIT: .NET assembly executed via CLR. The CLR remains loaded in the process (cannot be unloaded). ETW was auto-patched before execution — CLR Assembly.Load and JIT events were silenced.",
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -173,11 +193,26 @@ func init() {
 			var filename string
 			var fileContents []byte
 
+			// Check for CLI group (assembly_b64 provided directly)
+			cliB64, _ := taskData.Args.GetStringArg("assembly_b64")
+			if cliB64 != "" {
+				decoded, err := base64.StdEncoding.DecodeString(cliB64)
+				if err != nil {
+					response.Success = false
+					response.Error = "Invalid base64 in assembly_b64: " + err.Error()
+					return response
+				}
+				fileContents = decoded
+				filename = "cli-assembly"
+			}
+
 			// Check if this is a Forge invocation
 			forgeFileID, forgeErr := taskData.Args.GetStringArg("assembly_file")
 			isForgeCall := (forgeErr == nil && forgeFileID != "")
 
-			if isForgeCall {
+			if fileContents != nil {
+				// Already have contents from CLI group — skip file resolution
+			} else if isForgeCall {
 				// Forge invocation - use Forge parameter names
 				// Get file details
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{

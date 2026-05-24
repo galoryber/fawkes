@@ -181,7 +181,7 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 func adcsBuildCSR(key *rsa.PrivateKey, subject, altName string) ([]byte, error) {
 	subj, err := adcsParseSubject(subject)
 	if err != nil {
-		return nil, fmt.Errorf("invalid subject: %v", err)
+		return nil, fmt.Errorf("invalid subject: %w", err)
 	}
 
 	template := &x509.CertificateRequest{
@@ -193,7 +193,7 @@ func adcsBuildCSR(key *rsa.PrivateKey, subject, altName string) ([]byte, error) 
 	if altName != "" {
 		sanExt, err := adcsBuildSANExtension(altName)
 		if err != nil {
-			return nil, fmt.Errorf("building SAN extension: %v", err)
+			return nil, fmt.Errorf("building SAN extension: %w", err)
 		}
 		template.ExtraExtensions = append(template.ExtraExtensions, sanExt)
 	}

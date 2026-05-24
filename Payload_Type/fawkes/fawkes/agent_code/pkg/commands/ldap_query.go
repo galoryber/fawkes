@@ -110,12 +110,12 @@ var presetQueries = map[string]struct {
 
 func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|trusts|unconstrained|constrained|dacl|query> -server <DC>")
+		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|trusts|unconstrained|constrained|dacl|gmsa|bloodhound|query> -server <DC>")
 	}
 
-	var args ldapQueryArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[ldapQueryArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -183,10 +183,20 @@ func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 		return ldapQueryDACL(conn, args, baseDN)
 	}
 
+	// Handle gmsa action (requires binary msDS-ManagedPassword parsing)
+	if strings.ToLower(args.Action) == "gmsa" {
+		return ldapQueryGMSA(conn, args, baseDN)
+	}
+
+	// Handle bloodhound action (comprehensive AD collection in BH CE format)
+	if strings.ToLower(args.Action) == "bloodhound" {
+		return successResult(ldapQueryBloodHound(conn, args, baseDN))
+	}
+
 	// Resolve filter and attributes
 	filter, attributes, desc := resolveQuery(args, baseDN)
 	if filter == "" {
-		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
+		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, gmsa, bloodhound, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
 	}
 
 	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"
@@ -246,7 +256,7 @@ func detectBaseDN(conn *ldap.Conn) (string, error) {
 
 	result, err := conn.Search(searchRequest)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 
 	if len(result.Entries) == 0 {

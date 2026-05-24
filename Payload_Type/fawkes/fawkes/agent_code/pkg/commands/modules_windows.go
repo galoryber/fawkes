@@ -38,7 +38,7 @@ var (
 func listProcessModules(pid int) ([]ModuleInfo, error) {
 	snap, err := windows.CreateToolhelp32Snapshot(thSnapModule|thSnapModule32, uint32(pid))
 	if err != nil {
-		return nil, fmt.Errorf("CreateToolhelp32Snapshot: %v", err)
+		return nil, fmt.Errorf("CreateToolhelp32Snapshot: %w", err)
 	}
 	defer func() { _ = windows.CloseHandle(snap) }()
 
@@ -47,7 +47,7 @@ func listProcessModules(pid int) ([]ModuleInfo, error) {
 
 	ret, _, err := procModule32FirstW.Call(uintptr(snap), uintptr(unsafe.Pointer(&me)))
 	if ret == 0 {
-		return nil, fmt.Errorf("Module32FirstW: %v", err)
+		return nil, fmt.Errorf("Module32FirstW: %w", err)
 	}
 
 	var modules []ModuleInfo

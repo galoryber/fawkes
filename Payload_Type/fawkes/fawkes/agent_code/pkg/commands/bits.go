@@ -7,7 +7,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"syscall"
@@ -105,9 +104,9 @@ type bgJobProgress struct {
 }
 
 func (c *BitsCommand) Execute(task structs.Task) structs.CommandResult {
-	var args bitsArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[bitsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -157,7 +156,7 @@ func bitsConnect() (uintptr, func(), error) {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
 			runtime.UnlockOSThread()
-			return 0, nil, fmt.Errorf("CoInitializeEx: %v", err)
+			return 0, nil, fmt.Errorf("CoInitializeEx: %w", err)
 		}
 	}
 
@@ -165,7 +164,7 @@ func bitsConnect() (uintptr, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return 0, nil, fmt.Errorf("CreateInstance: %v", err)
+		return 0, nil, fmt.Errorf("CreateInstance: %w", err)
 	}
 
 	mgr := uintptr(unsafe.Pointer(unk))

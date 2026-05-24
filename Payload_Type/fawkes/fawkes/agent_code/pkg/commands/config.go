@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -25,11 +24,9 @@ type ConfigParams struct {
 
 // ExecuteWithAgent implements AgentCommand for access to the Agent struct.
 func (c *ConfigCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent) structs.CommandResult {
-	var params ConfigParams
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	params, parseErr := unmarshalParams[ConfigParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	params.Action = strings.ToLower(params.Action)

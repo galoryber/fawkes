@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -33,14 +32,14 @@ type ldapWriteArgs struct {
 }
 
 func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
-	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred"
+	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred, gpo-task, gpo-script, template-esc1, template-esc4"
 	if task.Params == "" {
 		return errorf("Error: parameters required. Use -action <%s> -server <DC>", allActions)
 	}
 
-	var args ldapWriteArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[ldapWriteArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -65,6 +64,8 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		"add-computer": true, "delete-object": true,
 		"set-rbcd": true, "clear-rbcd": true,
 		"shadow-cred": true, "clear-shadow-cred": true,
+		"gpo-task": true, "gpo-script": true,
+		"template-esc1": true, "template-esc4": true,
 	}
 	if !validActions[action] {
 		return errorf("Unknown action: %s\nAvailable: %s", args.Action, allActions)
@@ -130,6 +131,14 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		return ldapShadowCred(conn, args, baseDN)
 	case "clear-shadow-cred":
 		return ldapClearShadowCred(conn, args, baseDN)
+	case "gpo-task":
+		return ldapGPOAddTask(conn, args, baseDN)
+	case "gpo-script":
+		return ldapGPOAddScript(conn, args, baseDN)
+	case "template-esc1":
+		return ldapTemplateESC1(conn, args, baseDN)
+	case "template-esc4":
+		return ldapTemplateESC4(conn, args, baseDN)
 	default:
 		// Unreachable — action is validated before connection
 		return errorResult("Unknown action")
@@ -156,7 +165,7 @@ func ldapResolveDN(conn *ldap.Conn, name string, baseDN string) (string, error) 
 
 	result, err := conn.Search(searchRequest)
 	if err != nil {
-		return "", fmt.Errorf("search failed: %v", err)
+		return "", fmt.Errorf("search failed: %w", err)
 	}
 
 	if len(result.Entries) == 0 {

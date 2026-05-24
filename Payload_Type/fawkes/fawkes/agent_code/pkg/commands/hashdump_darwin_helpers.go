@@ -27,7 +27,7 @@ type darwinHashEntry struct {
 func parseDarwinUserPlist(username string, data []byte) (*darwinHashEntry, error) {
 	root, err := parseBplist(data)
 	if err != nil {
-		return nil, fmt.Errorf("parsing plist for %s: %v", username, err)
+		return nil, fmt.Errorf("parsing plist for %s: %w", username, err)
 	}
 
 	if root.kind != 'm' {
@@ -80,7 +80,7 @@ func parseDarwinUserPlist(username string, data []byte) (*darwinHashEntry, error
 func parseShadowHashData(entry *darwinHashEntry, blob []byte) (*darwinHashEntry, error) {
 	inner, err := parseBplist(blob)
 	if err != nil {
-		return nil, fmt.Errorf("parsing ShadowHashData: %v", err)
+		return nil, fmt.Errorf("parsing ShadowHashData: %w", err)
 	}
 
 	if inner.kind != 'm' {

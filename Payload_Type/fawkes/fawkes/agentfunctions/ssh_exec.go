@@ -2,10 +2,28 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
+
+var sshExecutionRegex = regexp.MustCompile(`\[\*\]\s+SSH\s+(\S+)@(\S+)\s`)
+
+func extractSSHExecutionInfo(responseText string) (user, host string, ok bool) {
+	m := sshExecutionRegex.FindStringSubmatch(responseText)
+	if len(m) > 2 {
+		return m[1], m[2], true
+	}
+	return "", "", false
+}
+
+func sshAuthMethod(keyPath string) string {
+	if keyPath != "" {
+		return "key:" + keyPath
+	}
+	return "password"
+}
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
@@ -27,9 +45,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "exec: execute command (default). push: transfer file. tunnel-local: local port forward (-L). tunnel-remote: remote port forward (-R). tunnel-dynamic: SOCKS proxy (-D). tunnel-list: show active tunnels. tunnel-stop: stop a tunnel.",
+				Description:      "exec: execute command (default). push: transfer file. check: validate SSH prerequisites. tunnel-local: local port forward (-L). tunnel-remote: remote port forward (-R). tunnel-dynamic: SOCKS proxy (-D). tunnel-list: show active tunnels. tunnel-stop: stop a tunnel.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"exec", "push", "tunnel-local", "tunnel-remote", "tunnel-dynamic", "tunnel-list", "tunnel-stop"},
+				Choices:          []string{"exec", "push", "check", "tunnel-local", "tunnel-remote", "tunnel-dynamic", "tunnel-list", "tunnel-stop"},
 				DefaultValue:     "exec",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
@@ -203,6 +221,7 @@ func init() {
 				},
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ssh_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -231,6 +250,9 @@ func init() {
 				}
 			}
 			msg += " SSH sessions are logged in auth.log/secure. Connection metadata (source IP, username, key fingerprint) is recorded by sshd."
+			if ctx := identityContextForOPSEC(taskData.Callback.Description); ctx != "" {
+				msg += " [Identity: " + ctx + "]"
+			}
 
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
@@ -281,13 +303,11 @@ func init() {
 				return response
 			}
 
-			// Parse: [*] SSH user@host:port (auth: method)
-			re := regexp.MustCompile(`\[\*\]\s+SSH\s+(\S+)@(\S+)\s`)
-			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
+			if user, host, ok := extractSSHExecutionInfo(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
-					fmt.Sprintf("SSH execution: %s@%s", m[1], m[2]))
+					fmt.Sprintf("SSH execution: %s@%s", user, host))
 				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
-					fmt.Sprintf("SSH execution on %s as %s", m[2], m[1]))
+					fmt.Sprintf("SSH execution on %s as %s", host, user))
 			}
 			return response
 		},
@@ -302,10 +322,7 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			keyPath, _ := taskData.Args.GetStringArg("key_path")
 
-			authMethod := "password"
-			if keyPath != "" {
-				authMethod = "key:" + keyPath
-			}
+			authMethod := sshAuthMethod(keyPath)
 
 			if action == "push" {
 				source, _ := taskData.Args.GetStringArg("source")

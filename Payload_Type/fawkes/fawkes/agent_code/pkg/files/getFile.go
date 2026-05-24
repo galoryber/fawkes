@@ -34,13 +34,19 @@ func waitForFileResponse(ch chan json.RawMessage, timeout time.Duration) (json.R
 	}
 }
 
-// sendUploadFileMessagesToMythic sends messages to Mythic to transfer a file from Mythic to Agent
+// sendUploadFileMessagesToMythic sends messages to Mythic to transfer a file from Mythic to Agent.
+// Supports resume: if getFileFromMythic.StartChunk > 1, requests from that chunk onward.
 func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicStruct) {
-	// Request the first chunk
+	startChunk := 1
+	if getFileFromMythic.StartChunk > 1 {
+		startChunk = getFileFromMythic.StartChunk
+	}
+
+	// Request the first (or resume) chunk
 	fileUploadData := structs.FileUploadMessage{}
 	fileUploadData.FileID = getFileFromMythic.FileID
 	fileUploadData.ChunkSize = 512000
-	fileUploadData.ChunkNum = 1
+	fileUploadData.ChunkNum = startChunk
 	fileUploadData.FullPath = getFileFromMythic.FullPath
 
 	fileUploadMsg := structs.Response{}
@@ -53,6 +59,12 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 	// Wait for the response with timeout
 	rawData, ok := waitForFileResponse(getFileFromMythic.FileTransferResponse, fileTransferTimeout)
 	if !ok {
+		SaveTransferState(&TransferState{
+			FileID:    getFileFromMythic.FileID,
+			FullPath:  getFileFromMythic.FullPath,
+			Direction: TransferUpload,
+			LastChunk: startChunk - 1,
+		})
 		errResponse := structs.Response{}
 		errResponse.Completed = true
 		errResponse.TaskID = getFileFromMythic.Task.ID
@@ -74,16 +86,27 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 		return
 	}
 
+	totalChunks := fileUploadMsgResponse.TotalChunks
+
 	// Inform the user that we started getting data
 	if getFileFromMythic.SendUserStatusUpdates {
 		response := structs.Response{}
 		response.Completed = false
 		response.TaskID = getFileFromMythic.Task.ID
-		response.UserOutput = fmt.Sprintf("Fetching file from server with %d total chunks at %d bytes per chunk\n", fileUploadMsgResponse.TotalChunks, fileUploadData.ChunkSize)
+		if startChunk > 1 {
+			response.UserOutput = fmt.Sprintf("Resuming upload from chunk %d/%d (%d bytes per chunk)\n",
+				startChunk, totalChunks, fileUploadData.ChunkSize)
+		} else {
+			response.UserOutput = fmt.Sprintf("Fetching file from server with %d total chunks at %d bytes per chunk\n",
+				totalChunks, fileUploadData.ChunkSize)
+		}
 		getFileFromMythic.Task.Job.SendResponses <- response
 	}
 
-	// Decode and send the first chunk
+	// Initialize streaming hash for integrity verification (covers resumed portion only)
+	hasher := NewStreamingHasher()
+
+	// Decode and send the first (or resume) chunk
 	decoded, err := base64.StdEncoding.DecodeString(fileUploadMsgResponse.ChunkData)
 	if err != nil {
 		errResponse := structs.Response{}
@@ -94,13 +117,22 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 		getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 		return
 	}
+	hasher.Write(decoded)
 	getFileFromMythic.ReceivedChunkChannel <- decoded
 
 	// Track percentage completion
 	lastPercentCompleteNotified := 0
-	if fileUploadMsgResponse.TotalChunks > 1 {
-		for index := 2; index <= fileUploadMsgResponse.TotalChunks; index++ {
+	if totalChunks > startChunk {
+		for index := startChunk + 1; index <= totalChunks; index++ {
 			if getFileFromMythic.Task.ShouldStop() {
+				// Save resume state: last successfully received chunk is index-1
+				SaveTransferState(&TransferState{
+					FileID:    getFileFromMythic.FileID,
+					FullPath:  getFileFromMythic.FullPath,
+					Direction: TransferUpload,
+					LastChunk: index - 1,
+					TotalChunks: totalChunks,
+				})
 				getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 				return
 			}
@@ -112,10 +144,18 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 			// Get the response with timeout
 			rawData, ok := waitForFileResponse(getFileFromMythic.FileTransferResponse, fileTransferTimeout)
 			if !ok {
+				// Save resume state on timeout
+				SaveTransferState(&TransferState{
+					FileID:    getFileFromMythic.FileID,
+					FullPath:  getFileFromMythic.FullPath,
+					Direction: TransferUpload,
+					LastChunk: index - 1,
+					TotalChunks: totalChunks,
+				})
 				errResponse := structs.Response{}
 				errResponse.Completed = true
 				errResponse.TaskID = getFileFromMythic.Task.ID
-				errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d from server", index, fileUploadMsgResponse.TotalChunks)
+				errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d from server", index, totalChunks)
 				getFileFromMythic.Task.Job.SendResponses <- errResponse
 				getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 				return
@@ -144,9 +184,10 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 				getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 				return
 			}
+			hasher.Write(decoded)
 			getFileFromMythic.ReceivedChunkChannel <- decoded
 
-			newPercentComplete := ((index * 100) / fileUploadMsgResponse.TotalChunks)
+			newPercentComplete := ((index * 100) / totalChunks)
 			if newPercentComplete/10 > lastPercentCompleteNotified && getFileFromMythic.SendUserStatusUpdates {
 				response := structs.Response{}
 				response.Completed = false
@@ -157,6 +198,20 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 			}
 		}
 	}
+
+	// Transfer complete — clear any resume state
+	ClearTransferState(getFileFromMythic.FullPath)
+
+	// Store transfer result if requested
+	if getFileFromMythic.TransferResult != nil {
+		*getFileFromMythic.TransferResult = structs.FileTransferResult{
+			FileID:    getFileFromMythic.FileID,
+			SHA256:    hasher.Sum(),
+			BytesSent: hasher.BytesHashed(),
+			Chunks:    totalChunks,
+		}
+	}
+
 	// Signal that we're done
 	getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 }

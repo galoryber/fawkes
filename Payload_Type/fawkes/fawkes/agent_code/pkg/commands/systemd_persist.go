@@ -65,11 +65,11 @@ func systemdUnitDir(system bool) (string, error) {
 	}
 	u, err := user.Current()
 	if err != nil {
-		return "", fmt.Errorf("cannot determine user: %v", err)
+		return "", fmt.Errorf("cannot determine user: %w", err)
 	}
 	dir := filepath.Join(u.HomeDir, ".config", "systemd", "user")
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("cannot create user unit dir: %v", err)
+		return "", fmt.Errorf("cannot create user unit dir: %w", err)
 	}
 	return dir, nil
 }

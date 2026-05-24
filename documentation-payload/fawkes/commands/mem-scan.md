@@ -9,9 +9,9 @@ hidden = false
 
 Search a target process's virtual memory for byte patterns (string or hex). Returns matches with addresses, region info, and hex dump context with ASCII sidebar.
 
-Windows uses VirtualQueryEx + ReadProcessMemory. Linux reads /proc/pid/maps + /proc/pid/mem.
+Windows uses VirtualQueryEx + ReadProcessMemory. Linux reads /proc/pid/maps + /proc/pid/mem. macOS uses mach_vm_region + mach_vm_read (self-scan mode only; remote process scanning requires the task_for_pid entitlement which is not available without SIP disabled or a signed/entitled binary).
 
-Windows and Linux only.
+Cross-platform (Windows, Linux, macOS).
 
 ## Arguments
 
@@ -56,9 +56,9 @@ Match 1: 0xC00000B970 (region base 0xC000000000 + 0xB970)
 
 ## OPSEC Considerations
 
-- Opens target process with PROCESS_VM_READ + PROCESS_QUERY_INFORMATION — may trigger EDR alerts
-- ReadProcessMemory calls are monitored by many security products
-- On Linux, reading /proc/pid/mem requires appropriate permissions (ptrace_scope)
+- **Windows:** Opens target process with PROCESS_VM_READ + PROCESS_QUERY_INFORMATION — may trigger EDR alerts; ReadProcessMemory calls are monitored by many security products
+- **Linux:** Reading /proc/pid/mem requires appropriate permissions (ptrace_scope)
+- **macOS:** Self-scan only (mach_vm_read on own task port); remote process scanning requires task_for_pid entitlement which needs SIP disabled or a properly entitled binary
 - Scanning large processes generates significant memory I/O
 - Regions >256 MB are automatically skipped to avoid hanging
 

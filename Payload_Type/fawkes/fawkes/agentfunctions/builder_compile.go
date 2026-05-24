@@ -17,6 +17,7 @@ type buildCommandConfig struct {
 	goarch        string
 	mode          string
 	garble        bool
+	garbleMode    string
 	c2ProfileName string
 	payloadUUID   string
 	macOSVersion  string
@@ -62,7 +63,7 @@ func constructBuildCommand(cfg buildCommandConfig) buildCommandResult {
 		}
 	}
 	// Enable CGO for Windows builds (needed for go-coff BOF execution)
-	if cfg.targetOs == "windows" && cfg.mode != "shared" {
+	if cfg.targetOs == "windows" && cfg.mode != "shared" && cfg.mode != "windows-shellcode" {
 		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
 		if goarch == "amd64" {
 			command += "CC=x86_64-w64-mingw32-gcc "
@@ -76,7 +77,14 @@ func constructBuildCommand(cfg buildCommandConfig) buildCommandResult {
 	// when -literals tries to obfuscate them all with GOGARBLE=*).
 	command += "GOGARBLE=fawkes "
 	if cfg.garble {
-		command += "/go/bin/garble -tiny -literals -seed random build "
+		if cfg.garbleMode == "full" {
+			// GOMEMLIMIT + GOGC constrain compiler memory during -literals
+			// transformation of 200+ command files. Without this, peak RSS
+			// exceeds 11GB and the build is OOM-killed on hosts with ≤12GB RAM.
+			command += "GOMEMLIMIT=8GiB GOGC=50 /go/bin/garble -tiny -literals -seed random build "
+		} else {
+			command += "/go/bin/garble -tiny -seed random build "
+		}
 	} else {
 		command += "go build "
 	}
@@ -151,7 +159,7 @@ func executeCompilation(command, payloadUUID string, garble bool) (compileResult
 
 // collectPayloadOutput reads the built binary, applies shellcode conversion if needed,
 // and populates the build response with the final payload and filename.
-func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, mode, targetOs string) {
+func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, mode, targetOs, payloadUUID string) {
 	payloadBytes, err := os.ReadFile(fmt.Sprintf("/build/%s", payloadName))
 	if err != nil {
 		resp.Success = false
@@ -175,6 +183,13 @@ func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, 
 		extension := "bin"
 		filename := fmt.Sprintf("fawkes.%s", extension)
 		resp.UpdatedFilename = &filename
+		// Track shellcode artifact in Mythic file vault
+		mythicrpc.SendMythicRPCFileCreate(mythicrpc.MythicRPCFileCreateMessage{
+			PayloadUUID:  payloadUUID,
+			FileContents: shellcode,
+			Filename:     filename,
+			Comment:      fmt.Sprintf("sRDI shellcode — OS: %s, Mode: %s, DLL size: %d, Shellcode size: %d", targetOs, mode, len(payloadBytes), len(shellcode)),
+		})
 		return
 	}
 
@@ -184,6 +199,13 @@ func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, 
 	extension := payloadFileExtension(mode, targetOs)
 	filename := fmt.Sprintf("fawkes.%s", extension)
 	resp.UpdatedFilename = &filename
+	// Track payload artifact in Mythic file vault
+	mythicrpc.SendMythicRPCFileCreate(mythicrpc.MythicRPCFileCreateMessage{
+		PayloadUUID:  payloadUUID,
+		FileContents: payloadBytes,
+		Filename:     filename,
+		Comment:      fmt.Sprintf("Payload — OS: %s, Mode: %s, Size: %d bytes", targetOs, mode, len(payloadBytes)),
+	})
 }
 
 // payloadFileExtension returns the file extension for the given build mode and OS.

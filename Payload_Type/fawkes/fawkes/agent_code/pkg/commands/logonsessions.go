@@ -76,11 +76,9 @@ type sessionEntry struct {
 }
 
 func (c *LogonSessionsCommand) Execute(task structs.Task) structs.CommandResult {
-	var args logonSessionsArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[logonSessionsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	action := strings.ToLower(args.Action)
@@ -111,7 +109,7 @@ func enumerateWTSSessions() ([]sessionEntry, error) {
 		uintptr(unsafe.Pointer(&sessionCount)),
 	)
 	if ret == 0 {
-		return nil, fmt.Errorf("WTSEnumerateSessionsW failed: %v", err)
+		return nil, fmt.Errorf("WTSEnumerateSessionsW failed: %w", err)
 	}
 	defer procWTSFreeMemory.Call(sessionInfoPtr)
 

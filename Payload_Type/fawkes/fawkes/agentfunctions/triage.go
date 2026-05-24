@@ -4,14 +4,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
-	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
+	agentstructs.AllPayloadData.Get("fawkes").AddCommand(triageCommand())
+}
+
+// triageResult represents a single file discovery result from triage output.
+type triageResult struct {
+	Path     string `json:"path"`
+	Category string `json:"category"`
+}
+
+// parseTriageResults parses triage JSON output into a list of file results.
+func parseTriageResults(responseText string) []triageResult {
+	if responseText == "" || responseText == "[]" {
+		return nil
+	}
+	var results []triageResult
+	if err := json.Unmarshal([]byte(responseText), &results); err != nil {
+		return nil
+	}
+	return results
+}
+
+// triageOPSECMessage generates the OPSEC warning message for triage actions.
+func triageOPSECMessage(action, target string) string {
+	if action == "recon-chain" {
+		return fmt.Sprintf("OPSEC WARNING: Recon Chain will execute a multi-step automated reconnaissance sequence against %s: (1) port scan, (2) SMB share enumeration, (3) share file hunting, (4) local credential triage. This generates significant network traffic and multiple authentication events. Each step creates visible artifacts (SYN scans, SMB sessions, file access logs). The combined footprint is substantially higher than any single command.", target)
+	}
+	return "OPSEC WARNING: System triage performs broad enumeration (processes, services, network, users, installed software, scheduled tasks). Aggregated system interrogation may trigger behavioral analytics for automated reconnaissance."
+}
+
+// validateReconChainParams checks if recon-chain parameters are valid.
+func validateReconChainParams(target, ports string) string {
+	if target == "" {
+		return "recon-chain requires -target parameter (e.g., 192.168.1.0/24)"
+	}
+	return ""
+}
+
+func triageCommand() agentstructs.Command {
+	return agentstructs.Command{
 		Name: "triage",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "triage_new.js"),
@@ -178,11 +215,8 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := "OPSEC WARNING: System triage performs broad enumeration (processes, services, network, users, installed software, scheduled tasks). Aggregated system interrogation may trigger behavioral analytics for automated reconnaissance."
-			if action == "recon-chain" {
-				target, _ := taskData.Args.GetStringArg("target")
-				msg = fmt.Sprintf("OPSEC WARNING: Recon Chain will execute a multi-step automated reconnaissance sequence against %s: (1) port scan, (2) SMB share enumeration, (3) share file hunting, (4) local credential triage. This generates significant network traffic and multiple authentication events. Each step creates visible artifacts (SYN scans, SMB sessions, file access logs). The combined footprint is substantially higher than any single command.", target)
-			}
+			target, _ := taskData.Args.GetStringArg("target")
+			msg := triageOPSECMessage(action, target)
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
@@ -197,17 +231,13 @@ func init() {
 				Success: true,
 			}
 			responseText, ok := processResponse.Response.(string)
-			if !ok || responseText == "" || responseText == "[]" {
+			if !ok {
 				return response
 			}
-			var results []struct {
-				Path     string `json:"path"`
-				Category string `json:"category"`
-			}
-			if err := json.Unmarshal([]byte(responseText), &results); err != nil {
+			results := parseTriageResults(responseText)
+			if len(results) == 0 {
 				return response
 			}
-			// Group by category, create summary artifacts
 			categories := map[string]int{}
 			for _, r := range results {
 				categories[r.Category]++
@@ -237,9 +267,9 @@ func init() {
 			// recon-chain: sequential chain portscan → smb shares → share_hunt → triage
 			if action == "recon-chain" {
 				target, _ := taskData.Args.GetStringArg("target")
-				if target == "" {
+				if errMsg := validateReconChainParams(target, ""); errMsg != "" {
 					response.Success = false
-					response.Error = "recon-chain requires -target parameter (e.g., 192.168.1.0/24)"
+					response.Error = errMsg
 					return response
 				}
 
@@ -294,243 +324,5 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-	})
-}
-
-// reconPortscanDone handles portscan completion, creates smb share enum subtask for hosts with port 445 open.
-func reconPortscanDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
 	}
-
-	// Get portscan results
-	responseText := getSubtaskResponses(subtaskData.Task.ID)
-	if responseText == "" {
-		completed := true
-		response.Completed = &completed
-		msg := "Recon Chain: portscan returned no results"
-		response.Stdout = &msg
-		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-			TaskID: taskData.Task.ID, Response: []byte(msg),
-		})
-		return response
-	}
-
-	// Parse hosts with port 445 open (SMB)
-	smbHosts := parsePortScanForPort(responseText, 445)
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte(fmt.Sprintf("[Step 1/4] Portscan complete. Found %d hosts with SMB (445) open.", len(smbHosts))),
-	})
-
-	if len(smbHosts) == 0 {
-		completed := true
-		response.Completed = &completed
-		msg := "Recon Chain complete: no SMB hosts found"
-		response.Stdout = &msg
-		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-			TaskID: taskData.Task.ID, Response: []byte(msg),
-		})
-		return response
-	}
-
-	// Get chain context (credentials) from parent task's Stdout
-	// Use extractChainContext to handle Mythic appending extra lines to Stdout
-	chainCtx := extractChainContext(taskData.Task.Stdout)
-
-	// Step 2: Enumerate SMB shares on each discovered host
-	// Use share-hunt which handles multiple hosts and credential params
-	username := chainCtx["username"]
-	password := chainCtx["password"]
-	hash := chainCtx["hash"]
-
-	if username == "" {
-		// No creds — skip SMB and go straight to local triage
-		completed := true
-		response.Completed = &completed
-		msg := fmt.Sprintf("Recon Chain: %d SMB hosts found but no credentials provided — skipping share enumeration. Run with -username/-password for full chain.", len(smbHosts))
-		response.Stdout = &msg
-		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-			TaskID: taskData.Task.ID, Response: []byte(msg),
-		})
-		return response
-	}
-
-	// Create share-hunt subtask for discovered SMB hosts
-	hostsStr := strings.Join(smbHosts, ",")
-	params := map[string]interface{}{
-		"hosts":    hostsStr,
-		"username": username,
-		"filter":   "all",
-	}
-	if password != "" {
-		params["password"] = password
-	}
-	if hash != "" {
-		params["hash"] = hash
-	}
-	paramsJSON, _ := json.Marshal(params)
-
-	callbackFunc := "reconShareHuntDone"
-	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
-		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
-			TaskID:                  taskData.Task.ID,
-			SubtaskCallbackFunction: &callbackFunc,
-			CommandName:             "share-hunt",
-			Params:                  string(paramsJSON),
-		},
-	)
-	if err != nil {
-		completed := true
-		response.Completed = &completed
-		msg := fmt.Sprintf("Recon Chain: failed to create share-hunt subtask: %s", err.Error())
-		response.Stderr = &msg
-		return response
-	}
-
-	return response
-}
-
-// reconSMBDone is reserved for future use (individual host SMB enumeration).
-func reconSMBDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	return agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-}
-
-// reconShareHuntDone handles share_hunt completion, creates local triage subtask.
-func reconShareHuntDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-
-	// Report share hunt results
-	responseText := getSubtaskResponses(subtaskData.Task.ID)
-	fileCount := 0
-	if responseText != "" {
-		fileCount = strings.Count(responseText, "\n")
-	}
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte(fmt.Sprintf("[Step 2/4] Share hunt complete. Found ~%d interesting files on remote shares.", fileCount)),
-	})
-
-	// Step 3: Run local triage for credential/config files
-	callbackFunc := "reconTriageDone"
-	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
-		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
-			TaskID:                  taskData.Task.ID,
-			SubtaskCallbackFunction: &callbackFunc,
-			CommandName:             "triage",
-			Params:                  `{"action":"credentials"}`,
-		},
-	)
-	if err != nil {
-		completed := true
-		response.Completed = &completed
-		msg := fmt.Sprintf("Recon Chain: share hunt done but failed to start local triage: %s", err.Error())
-		response.Stderr = &msg
-		return response
-	}
-
-	return response
-}
-
-// reconTriageDone handles the final triage step, aggregates all chain results.
-func reconTriageDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
-	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
-		TaskID:  taskData.Task.ID,
-		Success: true,
-	}
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte("[Step 3/4] Local triage complete."),
-	})
-
-	// Aggregate all subtask results
-	parentID := taskData.Task.ID
-	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
-		TaskID:             parentID,
-		SearchParentTaskID: &parentID,
-	})
-
-	summary := "=== Recon Chain Complete ===\n"
-	if err == nil && searchResult.Success {
-		successCount := 0
-		errorCount := 0
-		for _, task := range searchResult.Tasks {
-			if task.Status == "error" {
-				errorCount++
-			} else if task.Completed {
-				successCount++
-			}
-			summary += fmt.Sprintf("[%s] %s %s\n", task.Status, task.CommandName, task.DisplayParams)
-		}
-		summary += fmt.Sprintf("\nTotal: %d subtasks (%d success, %d errors)\n", len(searchResult.Tasks), successCount, errorCount)
-	} else {
-		summary += "Could not retrieve subtask details.\n"
-	}
-
-	completed := true
-	response.Completed = &completed
-	response.Stdout = &summary
-
-	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
-		TaskID:   taskData.Task.ID,
-		Response: []byte(summary),
-	})
-
-	return response
-}
-
-// parsePortScanForPort extracts hosts with a specific port open from portscan output.
-// The port-scan agent returns a text table format:
-//
-//	Host                 Port     Service
-//	--------------------------------------------------
-//	192.168.100.51       445      microsoft-ds
-//	192.168.100.53       445      microsoft-ds
-//
-// Lines matching "IP PORT SERVICE" are parsed with the target port filter.
-func parsePortScanForPort(responseText string, targetPort int) []string {
-	hostSet := map[string]bool{}
-	targetPortStr := fmt.Sprintf("%d", targetPort)
-
-	for _, line := range strings.Split(responseText, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "-") || strings.HasPrefix(line, "Scanned") ||
-			strings.HasPrefix(line, "Found") || strings.HasPrefix(line, "Host") {
-			continue
-		}
-
-		// Parse "IP  PORT  SERVICE" columns (whitespace-separated)
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-
-		host := fields[0]
-		port := fields[1]
-
-		// Validate host looks like an IP or hostname
-		if !strings.Contains(host, ".") && !strings.Contains(host, ":") {
-			continue
-		}
-
-		if port == targetPortStr {
-			hostSet[host] = true
-		}
-	}
-
-	var hosts []string
-	for h := range hostSet {
-		hosts = append(hosts, h)
-	}
-	return hosts
 }

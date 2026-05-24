@@ -21,6 +21,7 @@ func init() {
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters:       []agentstructs.CommandParameter{},
 		AssociatedBrowserScript: nil,
@@ -78,6 +79,20 @@ func init() {
 			})
 			if err != nil {
 				logging.LogError(err, "Failed to remove tokens from Mythic tracker on rev2self")
+			}
+
+			// Update callback description — extract reverted identity
+			user := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "Reverted to:") {
+					user = strings.TrimSpace(strings.TrimPrefix(trimmed, "Reverted to:"))
+					break
+				}
+			}
+			if user != "" {
+				updateCallbackIdentity(processResponse.TaskData.Task.ID,
+					processResponse.TaskData.Callback.AgentCallbackID, "rev2self", user)
 			}
 
 			return response

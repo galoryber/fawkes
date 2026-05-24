@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -17,6 +18,10 @@ func init() {
 		MitreAttackMappings: []string{"T1070.004"}, // Indicator Removal: File Deletion
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "mv_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -115,6 +120,21 @@ func init() {
 			displayParams := source + " -> " + destination
 			response.DisplayParams = &displayParams
 			createArtifact(task.Task.ID, "File Write", "Move "+source+" to "+destination)
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "Moved") || strings.Contains(responseText, "moved") {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[FILE] mv on %s: %s", processResponse.TaskData.Callback.Host, responseText), false)
+			}
 			return response
 		},
 	})

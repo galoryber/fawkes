@@ -183,7 +183,7 @@ func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err 
 	page, allocErr := windows.VirtualAlloc(0, 4096,
 		windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_EXECUTE_READWRITE)
 	if allocErr != nil {
-		return 0, fmt.Errorf("allocate hook shellcode memory: %v", allocErr)
+		return 0, fmt.Errorf("allocate hook shellcode memory: %w", allocErr)
 	}
 
 	// Patch the flag address now that we know the page address
@@ -232,7 +232,7 @@ func allocateDSAOnHeap(dsaData []byte) (uintptr, error) {
 	}
 	buf, _, callErr := procHeapAlloc.Call(hHeap, 0x08, uintptr(len(dsaData)))
 	if buf == 0 {
-		return 0, fmt.Errorf("HeapAlloc(%d bytes): %v", len(dsaData), callErr)
+		return 0, fmt.Errorf("HeapAlloc(%d bytes): %w", len(dsaData), callErr)
 	}
 	dst := unsafe.Slice((*byte)(unsafe.Pointer(buf)), len(dsaData))
 	copy(dst, dsaData)

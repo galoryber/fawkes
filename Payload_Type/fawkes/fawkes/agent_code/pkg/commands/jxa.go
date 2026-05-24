@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
@@ -35,12 +34,9 @@ type jxaArgs struct {
 const defaultJXATimeout = 60 // seconds
 
 func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
-	var args jxaArgs
-
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[jxaArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Code == "" && args.File == "" {

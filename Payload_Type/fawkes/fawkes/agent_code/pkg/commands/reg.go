@@ -38,11 +38,9 @@ type regArgs struct {
 }
 
 func (c *RegCommand) Execute(task structs.Task) structs.CommandResult {
-	var args regArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v\nUsage: reg -action <read|write|delete|search|save> ...", err)
-		}
+	args, parseErr := unmarshalParams[regArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
@@ -92,7 +90,7 @@ func regActionRead(args regArgs) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Error reading registry: %v", err)
 	}
 
 	key, err := registry.OpenKey(hiveKey, args.Path, registry.READ)
@@ -129,7 +127,7 @@ func regActionWrite(args regArgs) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Error writing registry: %v", err)
 	}
 
 	key, _, err := registry.CreateKey(hiveKey, args.Path, registry.SET_VALUE)
@@ -184,7 +182,7 @@ func regActionSearch(args regArgs) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Error searching registry: %v", err)
 	}
 
 	var results []regSearchResult

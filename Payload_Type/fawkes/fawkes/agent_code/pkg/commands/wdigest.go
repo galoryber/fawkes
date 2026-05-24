@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -29,11 +28,9 @@ type wdigestArgs struct {
 }
 
 func (c *WdigestCommand) Execute(task structs.Task) structs.CommandResult {
-	var args wdigestArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[wdigestArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

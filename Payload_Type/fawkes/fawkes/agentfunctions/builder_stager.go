@@ -76,6 +76,15 @@ func buildPowerShellStager(msg agentstructs.PayloadBuildMessage, resp *agentstru
 			stagerURL, amsiBypass, len(stagerBytes), oneLiner),
 	})
 
+	// Track stager in Mythic file vault
+	comment := fmt.Sprintf("PowerShell stager — OS: Windows, AMSI bypass: %v, URL: %s, Size: %d bytes", amsiBypass, stagerURL, len(stagerBytes))
+	mythicrpc.SendMythicRPCFileCreate(mythicrpc.MythicRPCFileCreateMessage{
+		PayloadUUID:  msg.PayloadUUID,
+		FileContents: stagerBytes,
+		Filename:     "fawkes_stager.ps1",
+		Comment:      comment,
+	})
+
 	resp.Payload = &stagerBytes
 	resp.Success = true
 	resp.BuildMessage = "PowerShell stager generated successfully!"

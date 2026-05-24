@@ -2,10 +2,25 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
+
+var clipboardCredentialTags = []string{
+	"NTLM Hash", "NT Hash", "Password-like", "API Key", "AWS Key", "Private Key", "Bearer Token",
+}
+
+func clipboardDetectedCredentialPatterns(responseText string) []string {
+	var detected []string
+	for _, tag := range clipboardCredentialTags {
+		if strings.Contains(responseText, tag) {
+			detected = append(detected, tag)
+		}
+	}
+	return detected
+}
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
@@ -16,7 +31,11 @@ func init() {
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1115"}, // Clipboard Data
-		ScriptOnlyCommand:   false,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "clipboard_new.js"),
+			Author:     "@galoryber",
+		},
+		ScriptOnlyCommand: false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
@@ -158,11 +177,9 @@ func init() {
 						"[Clipboard Dump] Monitor captures retrieved")
 				}
 				// Track detected credential patterns
-				for _, tag := range []string{"NTLM Hash", "NT Hash", "Password-like", "API Key", "AWS Key", "Private Key", "Bearer Token"} {
-					if strings.Contains(responseText, tag) {
-						createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
-							fmt.Sprintf("[Clipboard] Credential pattern detected: %s", tag))
-					}
+				for _, tag := range clipboardDetectedCredentialPatterns(responseText) {
+					createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
+						fmt.Sprintf("[Clipboard] Credential pattern detected: %s", tag))
 				}
 			case "monitor":
 				createArtifact(processResponse.TaskData.Task.ID, "Data Collection",

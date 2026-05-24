@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,9 +35,9 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: parameters required. Use -action <%s> -server <DC> -target <object>", allActions)
 	}
 
-	var args aclEditArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[aclEditArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -135,7 +134,7 @@ func aclEditReadSD(conn *ldap.Conn, targetDN string) ([]byte, error) {
 		searchReq.Controls = nil
 		result, err = conn.Search(searchReq)
 		if err != nil {
-			return nil, fmt.Errorf("querying nTSecurityDescriptor: %v", err)
+			return nil, fmt.Errorf("querying nTSecurityDescriptor: %w", err)
 		}
 	}
 
@@ -193,7 +192,7 @@ func resolvePrincipalSID(conn *ldap.Conn, principal string, baseDN string) ([]by
 
 	result, err := conn.Search(searchReq)
 	if err != nil {
-		return nil, "", fmt.Errorf("LDAP search error: %v", err)
+		return nil, "", fmt.Errorf("LDAP search error: %w", err)
 	}
 
 	if len(result.Entries) == 0 {

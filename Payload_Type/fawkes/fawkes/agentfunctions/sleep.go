@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -16,10 +17,10 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sleep",
 		Description:         "Update the sleep interval, jitter, and working hours of the agent.",
-		HelpString:          "sleep {interval} [jitter%] [working_start] [working_end] [working_days]",
-		Version:             1,
+		HelpString:          "sleep {interval} [jitter%] [working_start] [working_end] [working_days] OR sleep -interval 60 -jitter 30 -jitter_profile normal",
+		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{},
+		MitreAttackMappings: []string{"T1029"}, // Scheduled Transfer (callback interval)
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
@@ -33,6 +34,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -46,6 +48,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 				},
@@ -59,6 +62,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     3,
 					},
 				},
@@ -72,6 +76,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     4,
 					},
 				},
@@ -85,11 +90,47 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     5,
 					},
 				},
 				Description: "Comma-separated ISO weekday numbers (Mon=1, Sun=7). E.g. '1,2,3,4,5' for weekdays. Leave empty for no change, '0' to disable (all days).",
 			},
+			{
+				Name:             "jitter_profile",
+				ModalDisplayName: "Jitter Profile",
+				CLIName:          "jitter_profile",
+				DefaultValue:     "uniform",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"uniform", "normal", "exponential"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     6,
+					},
+				},
+				Description: "Jitter distribution: uniform (flat random, default), normal (bell curve — clusters near interval), exponential (bursty — shorter sleeps with occasional long pauses).",
+			},
+		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sleep_new.js"), Author: "@galoryber"},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			interval, _ := taskData.Args.GetNumberArg("interval")
+			msg := fmt.Sprintf("OPSEC WARNING: Changing sleep interval to %ds. ", int(interval))
+			if interval < 5 {
+				msg += "Very short interval — high network traffic, increased detection risk."
+			} else if interval < 30 {
+				msg += "Short interval increases C2 traffic frequency."
+			} else {
+				msg += "Interval affects responsiveness vs. stealth tradeoff."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
@@ -107,9 +148,13 @@ func init() {
 			}
 			interval, _ := taskData.Args.GetNumberArg("interval")
 			jitter, _ := taskData.Args.GetNumberArg("jitter")
+			profile, _ := taskData.Args.GetStringArg("jitter_profile")
 			display := fmt.Sprintf("%ds", int(interval))
 			if jitter > 0 {
 				display += fmt.Sprintf(" %d%%", int(jitter))
+			}
+			if profile != "" && profile != "uniform" {
+				display += fmt.Sprintf(" (%s)", profile)
 			}
 			response.DisplayParams = &display
 			return response

@@ -7,7 +7,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -40,14 +39,9 @@ const (
 )
 
 func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
-	var args firewallArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, add, delete, enable, disable, status")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[firewallArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -83,7 +77,7 @@ func connectFirewall() (*firewallConnection, func(), error) {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
 			runtime.UnlockOSThread()
-			return nil, nil, fmt.Errorf("CoInitializeEx failed: %v", err)
+			return nil, nil, fmt.Errorf("CoInitializeEx failed: %w", err)
 		}
 	}
 
@@ -91,7 +85,7 @@ func connectFirewall() (*firewallConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to create HNetCfg.FwPolicy2: %v", err)
+		return nil, nil, fmt.Errorf("failed to create HNetCfg.FwPolicy2: %w", err)
 	}
 
 	policy, err := unknown.QueryInterface(ole.IID_IDispatch)
@@ -99,7 +93,7 @@ func connectFirewall() (*firewallConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to query IDispatch: %v", err)
+		return nil, nil, fmt.Errorf("failed to query IDispatch: %w", err)
 	}
 
 	rulesResult, err := oleutil.GetProperty(policy, "Rules")
@@ -107,7 +101,7 @@ func connectFirewall() (*firewallConnection, func(), error) {
 		policy.Release()
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to get Rules collection: %v", err)
+		return nil, nil, fmt.Errorf("failed to get Rules collection: %w", err)
 	}
 	rules := rulesResult.ToIDispatch()
 

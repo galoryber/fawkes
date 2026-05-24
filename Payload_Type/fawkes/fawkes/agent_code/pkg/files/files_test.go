@@ -1686,40 +1686,15 @@ func TestSendFile_FileIDNotString(t *testing.T) {
 	fileIDResp, _ := json.Marshal(map[string]interface{}{"file_id": 12345})
 	fileTransferResp <- fileIDResp
 
-	// Receive file_id output (the info message)
-	select {
-	case <-task.Job.SendResponses:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Timed out")
-	}
-
-	// Now it will try to read a chunk and do the type assertion on file_id
-	// The chunk is sent, then file_id.(string) assertion should fail
+	// file_id type assertion now happens immediately after receiving the response.
+	// The error should be the next message on SendResponses.
 	select {
 	case resp := <-task.Job.SendResponses:
-		if resp.Download != nil { //nolint:gocritic // test code
-			// This is the chunk data — ack it, then the type assertion will be attempted
-			// after the chunk send, during the loop iteration
-			// Actually, looking at the code more carefully: file_id type assertion happens
-			// inside the chunk loop at line 168. So the chunk data is already being sent,
-			// then when constructing fileDownloadData.FileID, the assertion fails.
-
-			// Wait for the error
-			select {
-			case errResp := <-task.Job.SendResponses:
-				if !strings.Contains(errResp.UserOutput, "file_id not found or not a string") {
-					t.Errorf("Expected file_id type error, got: %s", errResp.UserOutput)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("Timed out waiting for type assertion error")
-			}
-		} else if strings.Contains(resp.UserOutput, "file_id not found or not a string") {
-			// Got the error directly
-		} else {
-			t.Errorf("Unexpected response: %s", resp.UserOutput)
+		if !strings.Contains(resp.UserOutput, "file_id not found or not a string") {
+			t.Errorf("Expected file_id type error, got: %s", resp.UserOutput)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Timed out")
+		t.Fatal("Timed out waiting for error")
 	}
 
 	select {

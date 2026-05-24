@@ -1,6 +1,7 @@
 package http
 
 import (
+	"crypto/tls"
 	"testing"
 
 	utls "github.com/refraction-networking/utls"
@@ -66,10 +67,56 @@ func TestTlsFingerprintID_Randomized(t *testing.T) {
 	}
 }
 
+func TestTlsFingerprintID_Rotate(t *testing.T) {
+	_, ok := tlsFingerprintID("rotate")
+	if ok {
+		t.Error("expected ok=false for 'rotate' (handled separately by isRotateFingerprint)")
+	}
+	if !isRotateFingerprint("rotate") {
+		t.Error("isRotateFingerprint should return true for 'rotate'")
+	}
+	if !isRotateFingerprint("  Rotate  ") {
+		t.Error("isRotateFingerprint should handle whitespace and case")
+	}
+	if isRotateFingerprint("chrome") {
+		t.Error("isRotateFingerprint should return false for 'chrome'")
+	}
+}
+
 func TestTlsFingerprintID_Go(t *testing.T) {
 	_, ok := tlsFingerprintID("go")
 	if ok {
 		t.Error("expected ok=false for 'go' (default, no spoofing)")
+	}
+}
+
+func TestBuildRotatingDialer(t *testing.T) {
+	cfg := &tls.Config{InsecureSkipVerify: true}
+	dialer := buildRotatingDialer(cfg)
+	if dialer == nil {
+		t.Fatal("buildRotatingDialer returned nil")
+	}
+}
+
+func TestRotationPoolHasExpectedBrowsers(t *testing.T) {
+	if len(rotationPool) < 4 {
+		t.Errorf("rotationPool has %d entries, expected at least 4", len(rotationPool))
+	}
+}
+
+func TestNewHTTPProfile_WithRotateFingerprint(t *testing.T) {
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "rotate",
+	}
+	p := NewHTTPProfile(cfg)
+	if p == nil {
+		t.Fatal("NewHTTPProfile returned nil")
+	}
+	if p.client == nil {
+		t.Fatal("client is nil")
 	}
 }
 
@@ -101,24 +148,13 @@ func TestTlsFingerprintID_Whitespace(t *testing.T) {
 
 func TestNewHTTPProfile_WithTLSFingerprint(t *testing.T) {
 	// When fingerprint is set, DialTLSContext should be configured (non-nil transport)
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"none",
-		"chrome",
-		nil,
-		nil,
-		0,
-	)
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "chrome",
+	}
+	p := NewHTTPProfile(cfg)
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
 	}
@@ -129,24 +165,13 @@ func TestNewHTTPProfile_WithTLSFingerprint(t *testing.T) {
 
 func TestNewHTTPProfile_WithoutTLSFingerprint(t *testing.T) {
 	// When fingerprint is "go" or empty, standard TLS should be used
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"none",
-		"go",
-		nil,
-		nil,
-		0,
-	)
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "go",
+	}
+	p := NewHTTPProfile(cfg)
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
 	}

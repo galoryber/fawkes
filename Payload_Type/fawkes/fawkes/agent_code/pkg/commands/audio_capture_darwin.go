@@ -18,9 +18,9 @@ func (c *AudioCaptureCommand) Name() string        { return "audio-capture" }
 func (c *AudioCaptureCommand) Description() string { return "Record audio from microphone (T1123)" }
 
 func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
-	var params audioCaptureParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[audioCaptureParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	audioDefaultParams(&params)
 

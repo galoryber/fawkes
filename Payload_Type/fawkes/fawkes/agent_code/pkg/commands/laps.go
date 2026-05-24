@@ -41,9 +41,9 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -server <DC> -username <user@domain> -password <pass> [-filter <computer>]")
 	}
 
-	var args lapsArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[lapsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password)
 

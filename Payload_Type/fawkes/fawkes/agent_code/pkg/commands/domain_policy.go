@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -35,9 +34,9 @@ func (c *DomainPolicyCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -action <password|lockout|fgpp|all> -server <DC> -username <user@domain> -password <pass>")
 	}
 
-	var args domainPolicyArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[domainPolicyArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -120,7 +119,7 @@ func domainPolicyDetectBaseDN(conn *ldap.Conn) (string, error) {
 	)
 	result, err := conn.Search(searchRequest)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 	if len(result.Entries) == 0 {
 		return "", fmt.Errorf("no RootDSE entries returned")
@@ -246,8 +245,7 @@ func queryFGPPs(conn *ldap.Conn, baseDN string) string {
 
 	result, err := conn.Search(searchRequest)
 	if err != nil {
-		// Container may not exist (pre-2008 domain, or no FGPPs configured)
-		if strings.Contains(err.Error(), "No Such Object") {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
 			return "[*] Fine-Grained Password Policies: None found (no PSO container)\n"
 		}
 		return fmt.Sprintf("[!] Error querying FGPPs: %v\n", err)

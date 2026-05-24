@@ -4,9 +4,12 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -32,6 +35,10 @@ var (
 	// gTokenStore holds named tokens for quick switching between identities.
 	// Tokens are saved via token-store save and restored via token-store use.
 	gTokenStore = make(map[string]*SavedToken)
+
+	// gIdentityHistory tracks all identity transitions for audit/visualization.
+	// Append-only, newest last. Capped at 100 entries.
+	gIdentityHistory []IdentityEvent
 )
 
 // SavedToken holds a duplicated token along with metadata for the token store.
@@ -115,7 +122,7 @@ func RevertCurrentToken() error {
 	// Call RevertToSelf to drop any thread impersonation
 	ret, _, err := procRevertToSelf.Call()
 	if ret == 0 {
-		return fmt.Errorf("RevertToSelf failed: %v", err)
+		return fmt.Errorf("RevertToSelf failed: %w", err)
 	}
 
 	// Release OS thread lock since we're no longer impersonating
@@ -142,7 +149,7 @@ func SetIdentityToken(token windows.Token) error {
 	// Impersonate the new token
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(token))
 	if ret == 0 {
-		return fmt.Errorf("ImpersonateLoggedOnUser failed: %v", err)
+		return fmt.Errorf("ImpersonateLoggedOnUser failed: %w", err)
 	}
 
 	// Store the token for later use
@@ -155,12 +162,12 @@ func SetIdentityToken(token windows.Token) error {
 func GetTokenUserInfo(token windows.Token) (string, error) {
 	tokenUser, err := token.GetTokenUser()
 	if err != nil {
-		return "", fmt.Errorf("GetTokenUser failed: %v", err)
+		return "", fmt.Errorf("GetTokenUser failed: %w", err)
 	}
 
 	account, domain, _, err := tokenUser.User.Sid.LookupAccount("")
 	if err != nil {
-		return "", fmt.Errorf("LookupAccount failed: %v", err)
+		return "", fmt.Errorf("LookupAccount failed: %w", err)
 	}
 
 	return fmt.Sprintf("%s\\%s", domain, account), nil
@@ -179,13 +186,13 @@ func GetCurrentIdentity() (string, error) {
 	// Fall back to process token
 	processHandle, err := windows.GetCurrentProcess()
 	if err != nil {
-		return "", fmt.Errorf("GetCurrentProcess failed: %v", err)
+		return "", fmt.Errorf("GetCurrentProcess failed: %w", err)
 	}
 
 	var processToken windows.Token
 	err = windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &processToken)
 	if err != nil {
-		return "", fmt.Errorf("OpenProcessToken failed: %v", err)
+		return "", fmt.Errorf("OpenProcessToken failed: %w", err)
 	}
 	defer processToken.Close()
 
@@ -253,7 +260,7 @@ func SaveTokenToStore(name, source string) error {
 		&dupToken,
 	)
 	if err != nil {
-		return fmt.Errorf("DuplicateTokenEx failed: %v", err)
+		return fmt.Errorf("DuplicateTokenEx failed: %w", err)
 	}
 
 	identity, _ := GetTokenUserInfo(dupToken)
@@ -303,7 +310,7 @@ func UseTokenFromStore(name string) (string, error) {
 		&dupToken,
 	)
 	if err != nil {
-		return "", fmt.Errorf("DuplicateTokenEx failed: %v", err)
+		return "", fmt.Errorf("DuplicateTokenEx failed: %w", err)
 	}
 
 	// Clear current impersonation
@@ -317,7 +324,7 @@ func UseTokenFromStore(name string) (string, error) {
 	ret, _, sysErr := procImpersonateLoggedOnUser.Call(uintptr(dupToken))
 	if ret == 0 {
 		windows.CloseHandle(windows.Handle(dupToken))
-		return "", fmt.Errorf("ImpersonateLoggedOnUser failed: %v", sysErr)
+		return "", fmt.Errorf("ImpersonateLoggedOnUser failed: %w", sysErr)
 	}
 
 	gIdentityToken = dupToken
@@ -381,4 +388,75 @@ func zeroStoredCredentials(creds *StoredCredentials) {
 		return
 	}
 	structs.ZeroString(&creds.Password)
+}
+
+// IdentityEvent records a single identity transition for audit trail.
+type IdentityEvent struct {
+	Timestamp string `json:"timestamp"`
+	Operation string `json:"operation"` // stealtoken, maketoken, rev2self, getsystem, token-store-use
+	FromUser  string `json:"from_user"`
+	ToUser    string `json:"to_user"`
+	Level     string `json:"level"` // SYSTEM, admin, user
+	Detail    string `json:"detail,omitempty"`
+}
+
+const maxIdentityHistory = 100
+
+// RecordIdentityTransition appends an identity change event to the history.
+// Called by stealtoken, maketoken, rev2self, getsystem, and token-store use.
+func RecordIdentityTransition(operation, fromUser, toUser, detail string) {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+
+	level := classifyIdentityLevelLocal(toUser)
+	event := IdentityEvent{
+		Timestamp: time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		Operation: operation,
+		FromUser:  fromUser,
+		ToUser:    toUser,
+		Level:     level,
+		Detail:    detail,
+	}
+
+	gIdentityHistory = append(gIdentityHistory, event)
+	if len(gIdentityHistory) > maxIdentityHistory {
+		gIdentityHistory = gIdentityHistory[len(gIdentityHistory)-maxIdentityHistory:]
+	}
+}
+
+// GetIdentityHistory returns a copy of all recorded identity events.
+func GetIdentityHistory() []IdentityEvent {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+
+	result := make([]IdentityEvent, len(gIdentityHistory))
+	copy(result, gIdentityHistory)
+	return result
+}
+
+// GetIdentityHistoryJSON returns the identity history as a JSON string.
+func GetIdentityHistoryJSON() string {
+	history := GetIdentityHistory()
+	if len(history) == 0 {
+		return "[]"
+	}
+	data, err := json.Marshal(history)
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
+}
+
+// classifyIdentityLevelLocal classifies a user identity string by privilege level.
+// Internal helper that doesn't need the tokenMutex.
+func classifyIdentityLevelLocal(user string) string {
+	upper := strings.ToUpper(user)
+	if strings.Contains(upper, "SYSTEM") || strings.Contains(upper, "NT AUTHORITY") {
+		return "SYSTEM"
+	}
+	if strings.Contains(upper, "ADMIN") || strings.Contains(upper, "DA ") ||
+		strings.Contains(upper, "DOMAIN ADMIN") || strings.Contains(upper, "ENTERPRISE ADMIN") {
+		return "admin"
+	}
+	return "user"
 }

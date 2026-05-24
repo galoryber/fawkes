@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -35,10 +34,9 @@ type InlineExecuteParams struct {
 // Execute executes the inline-execute command
 func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse parameters
-	var params InlineExecuteParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v\nRaw params: %s", err, task.Params)
+	params, parseErr := unmarshalParams[InlineExecuteParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Validate BOF data

@@ -11,7 +11,7 @@ Windows Only
 
 ## Summary
 
-Remove EDR (Endpoint Detection and Response) inline hooks from DLLs by reading a clean copy from disk and overwriting the in-memory `.text` section. Supports `ntdll.dll`, `kernel32.dll`, `kernelbase.dll`, `advapi32.dll`, or all four at once.
+Remove EDR (Endpoint Detection and Response) inline hooks from DLLs by restoring the `.text` section from a clean copy. Supports `ntdll.dll`, `kernel32.dll`, `kernelbase.dll`, `advapi32.dll`, `user32.dll`, or all five at once.
 
 ### How EDR Hooking Works
 
@@ -19,12 +19,16 @@ EDR products inject monitoring DLLs into every user-mode process. These DLLs ove
 
 ### How Unhooking Works
 
-Since the on-disk DLLs are never modified (they're the original Microsoft-signed binaries), we can:
+Two source methods are available for obtaining the clean DLL copy:
 
-1. Map a clean copy from `C:\Windows\System32\<dll>` using `SEC_IMAGE` (PE section alignment)
-2. Parse the PE headers to locate the `.text` section
-3. Overwrite the hooked in-memory `.text` with the pristine disk copy
-4. All inline hooks are removed in a single operation
+**Disk (default):** Read from `C:\Windows\System32\<dll>` using `CreateFileW` + `SEC_IMAGE` mapping. Simple and reliable, but `CreateFileW` on system DLLs may be monitored by EDR.
+
+**KnownDlls (OPSEC-friendly):** Open the `\KnownDlls\<dll>` section object using `NtOpenSection` + `NtMapViewOfSection`. These section objects are created by the kernel at boot time and contain pre-mapped copies of common system DLLs. This avoids filesystem I/O entirely — no `CreateFileW`, no disk reads, no filesystem event telemetry.
+
+Both methods:
+1. Parse the PE headers to locate the `.text` section
+2. Overwrite the hooked in-memory `.text` with the pristine copy
+3. All inline hooks are removed in a single operation
 
 ### Supported DLLs
 
@@ -34,13 +38,15 @@ Since the on-disk DLLs are never modified (they're the original Microsoft-signed
 | kernel32.dll | CreateProcessW, VirtualAlloc, WriteProcessMemory, CreateRemoteThread |
 | kernelbase.dll | VirtualAlloc, ReadProcessMemory, CreateFileW |
 | advapi32.dll | OpenProcessToken, AdjustTokenPrivileges, RegSetValueExW |
+| user32.dll | SetWindowsHookExW, SendMessageW, PostMessageW |
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
 | action | No | unhook | `unhook` or `check` |
-| dll | No | ntdll.dll | Target DLL: `ntdll.dll`, `kernel32.dll`, `kernelbase.dll`, `advapi32.dll`, or `all` |
+| dll | No | ntdll.dll | Target DLL: `ntdll.dll`, `kernel32.dll`, `kernelbase.dll`, `advapi32.dll`, `user32.dll`, or `all` |
+| source | No | disk | `disk` (read from System32) or `knowndlls` (use KnownDlls section objects — no disk I/O) |
 
 ## Usage
 
@@ -62,6 +68,16 @@ ntdll-unhook -action unhook -dll all
 Check all DLLs for hooks:
 ```
 ntdll-unhook -action check -dll all
+```
+
+Unhook using KnownDlls (OPSEC — no disk reads):
+```
+ntdll-unhook -dll all -source knowndlls
+```
+
+Unhook user32.dll specifically:
+```
+ntdll-unhook -dll user32.dll
 ```
 
 ## Example Output

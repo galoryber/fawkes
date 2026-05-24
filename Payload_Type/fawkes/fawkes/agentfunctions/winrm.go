@@ -4,16 +4,32 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
+
+var winrmExecutionRegex = regexp.MustCompile(`\[\*\]\s+WinRM\s+(\S+)@(\S+?):(\d+)\s+\((\S+),`)
+
+func extractWinRMExecutionInfo(responseText string) (user, host, port, shell string, ok bool) {
+	m := winrmExecutionRegex.FindStringSubmatch(responseText)
+	if len(m) > 4 {
+		return m[1], m[2], m[3], m[4], true
+	}
+	return "", "", "", "", false
+}
+
+func countPrivilegeLines(text string) int {
+	return strings.Count(text, "\n")
+}
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "winrm",
 		Description:         "Execute commands on remote Windows hosts via WinRM with NTLM authentication. Supports cmd.exe and PowerShell shells. Supports pass-the-hash.",
-		HelpString:          "winrm -host 192.168.1.1 -username admin -password pass -command \"whoami\"\nwinrm -host 192.168.1.1 -username DOMAIN\\admin -password pass -command \"Get-Process\" -shell powershell\nwinrm -host 192.168.1.1 -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -command \"whoami\" -domain DOMAIN\nwinrm -host 192.168.1.1 -username admin -password pass -command \"ipconfig /all\" -port 5986 -use_tls true",
-		Version:             1,
+		HelpString:          "winrm -host <target> -username <user> -password <pass> -command <cmd> OR winrm -action check -host <target> [-username <user> -password <pass>]",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.006", "T1550.002"},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "winrm_new.js"), Author: "@galoryber"},
@@ -24,7 +40,23 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"winrmAutoVerifyWhoamiDone":   winrmAutoVerifyWhoamiDone,
+			"winrmAutoVerifyGetprivsDone": winrmAutoVerifyGetprivsDone,
+		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				CLIName:          "action",
+				ModalDisplayName: "Action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"execute", "check"},
+				Description:      "execute: run command on remote host. check: validate WinRM prerequisites.",
+				DefaultValue:     "execute",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 			{
 				Name:                 "host",
 				CLIName:              "host",
@@ -127,6 +159,17 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+			{
+				Name:             "auto_verify",
+				CLIName:          "auto-verify",
+				ModalDisplayName: "Auto-Verify (whoami + getprivs)",
+				Description:      "After WinRM execution, automatically run whoami and getprivs locally to verify callback context",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -139,11 +182,15 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			host, _ := taskData.Args.GetStringArg("host")
+			msg := fmt.Sprintf("OPSEC WARNING: WinRM remote command execution on %s. Creates network logon (Event ID 4624 type 3) and WinRM operational logs (Event ID 91, 161). WinRM lateral movement is a high-fidelity detection indicator.", host)
+			if ctx := identityContextForOPSEC(taskData.Callback.Description); ctx != "" {
+				msg += " [Identity: " + ctx + "]"
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: WinRM remote command execution on %s. Creates network logon (Event ID 4624 type 3) and WinRM operational logs (Event ID 91, 161). WinRM lateral movement is a high-fidelity detection indicator.", host),
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -165,13 +212,11 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse: [*] WinRM user@host:port (shell, auth)
-			re := regexp.MustCompile(`\[\*\]\s+WinRM\s+(\S+)@(\S+?):(\d+)\s+\((\S+),`)
-			if m := re.FindStringSubmatch(responseText); len(m) > 3 {
+			if user, host, port, shell, ok := extractWinRMExecutionInfo(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
-					fmt.Sprintf("WinRM execution: %s@%s:%s (%s)", m[1], m[2], m[3], m[4]))
+					fmt.Sprintf("WinRM execution: %s@%s:%s (%s)", user, host, port, shell))
 				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
-					fmt.Sprintf("WinRM execution on %s as %s", m[2], m[1]))
+					fmt.Sprintf("WinRM execution on %s as %s", host, user))
 			}
 			return response
 		},
@@ -184,8 +229,25 @@ func init() {
 			host, _ := taskData.Args.GetStringArg("host")
 			command, _ := taskData.Args.GetStringArg("command")
 			shell, _ := taskData.Args.GetStringArg("shell")
+			autoVerify, _ := taskData.Args.GetBooleanArg("auto_verify")
 
 			displayMsg := fmt.Sprintf("WinRM %s %s@%s: %s", shell, "", host, command)
+			if autoVerify {
+				displayMsg += " [auto-verify: whoami \u2192 getprivs]"
+
+				// Create whoami subtask → chains to getprivs on completion
+				callbackFunc := "winrmAutoVerifyWhoamiDone"
+				if _, err := mythicrpc.SendMythicRPCTaskCreateSubtask(mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+					TaskID: taskData.Task.ID, SubtaskCallbackFunction: &callbackFunc,
+					CommandName: "whoami", Params: `{}`,
+				}); err != nil {
+					response.Success = false
+					response.Error = fmt.Sprintf("Failed to create auto-verify whoami: %v", err)
+					return response
+				}
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					fmt.Sprintf("WinRM auto-verify: %s → whoami → getprivs", host))
+			}
 			response.DisplayParams = &displayMsg
 
 			createArtifact(taskData.Task.ID, "Network Connection", fmt.Sprintf("WinRM connection to %s (%s: %s)", host, shell, command))
@@ -195,4 +257,58 @@ func init() {
 			return response
 		},
 	})
+}
+
+// --- WinRM auto-verify subtask chain ---
+
+// winrmAutoVerifyWhoamiDone handles whoami completion → chains to getprivs.
+func winrmAutoVerifyWhoamiDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	_ *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[auto-verify] Identity: %s", strings.TrimSpace(responseText))),
+	})
+
+	callbackFunc := "winrmAutoVerifyGetprivsDone"
+	if _, err := mythicrpc.SendMythicRPCTaskCreateSubtask(mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+		TaskID: taskData.Task.ID, SubtaskCallbackFunction: &callbackFunc,
+		CommandName: "getprivs", Params: `{}`,
+	}); err != nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("auto-verify: whoami OK but getprivs failed: %s", err.Error())
+		response.Stderr = &msg
+	}
+	return response
+}
+
+// winrmAutoVerifyGetprivsDone handles getprivs completion → aggregates results.
+func winrmAutoVerifyGetprivsDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	_ *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	privCount := countPrivilegeLines(responseText)
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[auto-verify] Privileges: %d available. Callback context verified.", privCount)),
+	})
+
+	return response
 }

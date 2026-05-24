@@ -15,7 +15,7 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `admins`, `disabled`, `gpo`, `ou`, `password-never-expires`, `trusts`, `unconstrained`, `constrained`, `dacl`, or `query` |
+| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `admins`, `disabled`, `gpo`, `ou`, `password-never-expires`, `trusts`, `unconstrained`, `constrained`, `dacl`, `gmsa`, `bloodhound`, or `query` |
 | `server` | Yes | | Domain controller IP or hostname |
 | `filter` | No | | Custom LDAP filter (required when action=`query`). For `dacl`, specify target object name. |
 | `base_dn` | No | auto | LDAP search base (auto-detected from RootDSE) |
@@ -44,6 +44,8 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 | `unconstrained` | `TRUSTED_FOR_DELEGATION` flag (524288), excluding DCs | Computers with unconstrained delegation |
 | `constrained` | `(msDS-AllowedToDelegateTo=*)` | Accounts with constrained delegation |
 | `dacl` | N/A | Parse DACL of a specific AD object (use `-filter` for target name) |
+| `gmsa` | `(objectClass=msDS-GroupManagedServiceAccount)` | Enumerate Group Managed Service Accounts. Extracts NTLM hash from msDS-ManagedPassword if readable. Identifies who can read the password. |
+| `bloodhound` | Multiple queries | Comprehensive AD collection in BloodHound CE v6 JSON format. Collects users, computers, groups, OUs, GPOs, trusts, and group memberships for graph analysis. |
 
 ## Usage
 
@@ -89,6 +91,12 @@ ldap-query -action dacl -server dc01 -filter "arya.stark" -username user@domain.
 
 # DACL on a group (find who can modify membership)
 ldap-query -action dacl -server dc01 -filter "Domain Admins" -username user@domain.local -password Pass123
+
+# Enumerate gMSA accounts and extract NTLM hashes (if readable)
+ldap-query -action gmsa -server dc01 -username user@domain.local -password Pass123
+
+# BloodHound CE collection (graph analysis)
+ldap-query -action bloodhound -server dc01 -username user@domain.local -password Pass123 -limit 500
 
 # Custom LDAP filter
 ldap-query -action query -server 192.168.1.10 -username user@domain.local -password Pass123 -filter "(servicePrincipalName=*MSSQLSvc*)"
@@ -148,6 +156,66 @@ The `dacl` action parses the `nTSecurityDescriptor` binary attribute and:
 
 Use this to identify RBCD targets, Shadow Credentials targets, or any object where non-privileged accounts have excessive permissions.
 
+## gMSA Action Details
+
+The `gmsa` action enumerates Group Managed Service Accounts and attempts to extract their NTLM password hashes:
+
+- **Enumerates all gMSA accounts** in the domain
+- **Reads msDS-ManagedPassword** binary blob (requires appropriate ACL permissions)
+- **Parses MSDS-MANAGEDPASSWORD_BLOB** (MS-ADTS Section 2.2.17) to extract the current password
+- **Computes NTLM hash** (MD4 of UTF-16LE password) for pass-the-hash use
+- **Identifies allowed principals** by parsing msDS-GroupMSAMembership security descriptor
+- **Registers extracted hashes** in the Mythic credential vault automatically
+
+This is a common AD privilege escalation path: any principal allowed to read `msDS-ManagedPassword` can extract the NTLM hash and use it for authentication via pass-the-hash.
+
+## BloodHound CE Collection
+
+The `bloodhound` action performs comprehensive AD enumeration and outputs data in BloodHound Community Edition v6 JSON format, ready for import into BloodHound CE for graph-based attack path analysis.
+
+### What it collects
+
+- **Users**: SID, name, UPN, UAC flags (enabled, delegation, preauth, adminCount, SPN), primary group, constrained delegation targets, timestamps
+- **Computers**: SID, DNS hostname, OS, UAC flags, LAPS status, delegation, primary group, timestamps
+- **Groups**: SID, name, direct members (resolved to SIDs with User/Computer/Group type), adminCount
+- **OUs**: GUID, name, GPO links (with enforcement status), inheritance blocking
+- **GPOs**: GUID, display name, SYSVOL path
+- **Domain**: SID, functional level, trust relationships (direction, type, transitivity, SID filtering)
+
+### What it does NOT collect (requires per-host enumeration)
+
+- ACLs/DACLs (use `ldap-query -action dacl` per object instead)
+- Local admin sessions, RDP/DCOM/PSRemote users (requires SMB/WinRM to each host)
+- Active logon sessions (requires NetSessionEnum to each host)
+
+### Output format
+
+The output is a single JSON object containing separate BloodHound CE v6 collections (users, computers, groups, domains, ous, gpos) plus a summary:
+
+```json
+{
+  "computers": {"meta": {"type": "computers", "count": 5, "version": 6}, "data": [...]},
+  "users": {"meta": {"type": "users", "count": 100, "version": 6}, "data": [...]},
+  "groups": {"meta": {"type": "groups", "count": 50, "version": 6}, "data": [...]},
+  "domains": {"meta": {"type": "domains", "count": 1, "version": 6}, "data": [...]},
+  "ous": {"meta": {"type": "ous", "count": 10, "version": 6}, "data": [...]},
+  "gpos": {"meta": {"type": "gpos", "count": 5, "version": 6}, "data": [...]},
+  "summary": {"domain": "SEVENKINGDOMS.LOCAL", "domain_sid": "S-1-5-21-...", "users": 100, "computers": 5, ...}
+}
+```
+
+To import into BloodHound CE, download the task output JSON and split it by type, or use each top-level key's content as a separate import file.
+
+### OPSEC considerations
+
+BloodHound collection generates significant LDAP traffic (bulk queries for all users, computers, groups, OUs, GPOs, and trusts). This pattern is detected by:
+
+- **Microsoft Defender for Identity** (MDI/ATA): detects LDAP reconnaissance patterns
+- **CrowdStrike Falcon**: monitors for bulk LDAP enumeration
+- **Custom SIEM rules**: Event ID 4662 (Directory Service Access) at high volume
+
+Consider running during business hours to blend with normal AD authentication traffic. Use the `limit` parameter to constrain result counts if stealth is a priority.
+
 ## Notes
 
 - **Authentication**: Most AD environments require authenticated bind. Use UPN format (`user@domain.local`) for the username. The `DOMAIN\user` format is not supported for LDAP simple bind.
@@ -160,3 +228,6 @@ Use this to identify RBCD targets, Shadow Credentials targets, or any object whe
 - **T1087.002** — Account Discovery: Domain Account
 - **T1069.002** — Permission Groups Discovery: Domain Groups
 - **T1482** — Domain Trust Discovery
+- **T1555** — Credentials from Password Stores (gMSA)
+- **T1003** — OS Credential Dumping (gMSA)
+- **T1615** — Group Policy Discovery (bloodhound)

@@ -6,7 +6,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -126,12 +125,9 @@ var (
 )
 
 func (c *ReflectiveLoadCommand) Execute(task structs.Task) structs.CommandResult {
-	var args reflectiveLoadArgs
-	if task.Params == "" {
-		return errorResult("Error: dll_b64 parameter required (base64-encoded PE/DLL)")
-	}
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[reflectiveLoadArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.DllB64 == "" {
 		return errorResult("Error: dll_b64 is empty")

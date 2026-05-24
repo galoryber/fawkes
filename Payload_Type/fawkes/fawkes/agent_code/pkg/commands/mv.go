@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"os"
 
 	"fawkes/pkg/structs"
@@ -20,22 +19,21 @@ func (c *MvCommand) Description() string {
 	return "Move file - moves a file from source to destination"
 }
 
+type mvArgs struct {
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+}
+
 // Execute executes the mv command
 func (c *MvCommand) Execute(task structs.Task) structs.CommandResult {
-	// Parse parameters
-	var args struct {
-		Source      string `json:"source"`
-		Destination string `json:"destination"`
-	}
-
 	// Check if parameters are provided
 	if task.Params == "" {
 		return errorResult("Error: No parameters specified. Usage: mv <source> <destination>")
 	}
 
-	// Try to parse as JSON
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v. Usage: mv <source> <destination>", err)
+	args, parseErr := unmarshalParams[mvArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Strip surrounding quotes in case the user wrapped paths (e.g. "C:\Program Data\file.txt")
@@ -49,12 +47,21 @@ func (c *MvCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Check if source file exists
 	if _, err := os.Stat(args.Source); err != nil {
-		return errorf("Error: Source file does not exist or cannot be accessed: %v", err)
+		if os.IsNotExist(err) {
+			return errorf("Error: source not found: %s", args.Source)
+		}
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to %s — check privileges", args.Source)
+		}
+		return errorf("Error: cannot access source: %s", args.Source)
 	}
 
 	// Move/rename the file
 	if err := os.Rename(args.Source, args.Destination); err != nil {
-		return errorf("Error moving file: %v", err)
+		if os.IsPermission(err) {
+			return errorf("Error: access denied — cannot write to destination %s", args.Destination)
+		}
+		return errorf("Error: cannot move %s to %s (cross-device move or destination directory missing)", args.Source, args.Destination)
 	}
 
 	return successf("Successfully moved %s to %s", args.Source, args.Destination)

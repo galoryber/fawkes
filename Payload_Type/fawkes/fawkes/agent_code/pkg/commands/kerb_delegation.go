@@ -25,6 +25,8 @@ type kerbDelegArgs struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	UseTLS   bool   `json:"use_tls"`
+	Duration int    `json:"duration"` // monitor: watch duration in seconds (default 300)
+	Interval int    `json:"interval"` // monitor: poll interval in seconds (default 10)
 }
 
 // userAccountControl flags
@@ -37,14 +39,19 @@ const (
 
 func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <unconstrained|constrained|rbcd|all> -server <DC>")
+		return errorResult("Error: parameters required. Use -action <unconstrained|constrained|rbcd|all|monitor> -server <DC>")
 	}
 
-	var args kerbDelegArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[kerbDelegArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password)
+
+	// monitor is local-only (LSA) — no LDAP connection needed
+	if strings.ToLower(args.Action) == "monitor" {
+		return kdMonitor(args)
+	}
 
 	if args.Server == "" {
 		return errorResult("Error: server parameter required (domain controller IP or hostname)")
@@ -101,7 +108,7 @@ func kdDetectBaseDN(conn *ldap.Conn) (string, error) {
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 	if len(result.Entries) == 0 {
 		return "", fmt.Errorf("no RootDSE entries returned")
@@ -268,6 +275,41 @@ func kdRBCDEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, error) {
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// kdIsTGT returns true if the server name is a krbtgt/ TGT principal.
+func kdIsTGT(serverName string) bool {
+	return strings.HasPrefix(strings.ToLower(serverName), "krbtgt/")
+}
+
+// kdBuildTicketKey returns a dedup key for a captured TGT.
+func kdBuildTicketKey(client, server, luidHex string) string {
+	return fmt.Sprintf("%s|%s|%s", client, server, luidHex)
+}
+
+// kdFormatLUID formats a Windows LUID as a hex string.
+func kdFormatLUID(low uint32, high int32) string {
+	return fmt.Sprintf("0x%08X%08X", uint32(high), low)
+}
+
+// kdMonitorClampArgs returns validated (duration, interval) within sane bounds.
+func kdMonitorClampArgs(duration, interval int) (int, int) {
+	if duration <= 0 {
+		duration = 300
+	}
+	if duration > 3600 {
+		duration = 3600
+	}
+	if interval <= 0 {
+		interval = 10
+	}
+	if interval < 5 {
+		interval = 5
+	}
+	if interval > duration {
+		interval = duration
+	}
+	return duration, interval
 }
 
 // kdFindAll runs all delegation checks and produces a combined report

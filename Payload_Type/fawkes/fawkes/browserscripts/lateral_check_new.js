@@ -16,6 +16,7 @@ function(task, responses){
             return {"plaintext": "No results"};
         }
         let headers = [
+            {"plaintext": "actions", "type": "button", "width": 90, "disableSort": true},
             {"plaintext": "host", "type": "string", "fillWidth": true},
             {"plaintext": "available", "type": "string", "fillWidth": true},
             {"plaintext": "suggested", "type": "string", "fillWidth": true},
@@ -31,6 +32,16 @@ function(task, responses){
                 rowStyle = {"backgroundColor": "rgba(255,0,0,0.1)"};
             }
             rows.push({
+                "actions": {
+                    "button": {
+                        "name": "Scan",
+                        "type": "task",
+                        "ui_feature": "port-scan",
+                        "startIcon": "search",
+                        "hoverText": "Full port scan of " + e.host,
+                        "parameters": {"action": "scan", "hosts": e.host},
+                    }
+                },
                 "host": {"plaintext": e.host, "copyIcon": true},
                 "available": {"plaintext": e.available ? e.available.join(", ") : "none"},
                 "suggested": {"plaintext": e.suggested ? e.suggested.join(", ") : "-"},

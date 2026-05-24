@@ -30,11 +30,9 @@ type lastLoginEntry struct {
 }
 
 func (c *LastCommand) Execute(task structs.Task) structs.CommandResult {
-	args := lastArgs{Count: 25}
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[lastArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Count <= 0 {
 		args.Count = 25

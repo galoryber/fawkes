@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode"
@@ -59,9 +58,9 @@ func (c *TrCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no parameters provided")
 	}
 
-	var args trArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[trArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Path == "" {
 		return errorResult("Error: path is required")

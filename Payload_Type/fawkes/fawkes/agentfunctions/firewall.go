@@ -16,8 +16,8 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Manage firewall rules — list, add, delete, enable/disable rules, and check firewall status. Windows: HNetCfg.FwPolicy2 COM. macOS: pf/ALF. Linux: iptables/nftables (auto-detected).",
-		HelpString:          "firewall -action <list|add|delete|enable|disable|status> [-name <rule_name>] [-direction <in|out>] [-rule_action <allow|block>] [-protocol <tcp|udp|any>] [-port <port>] [-program <path>]",
-		Version:             3,
+		HelpString:          "firewall -action <list|add|delete|enable|disable|status|pf-add|pf-delete|pf-list> [-name <rule_name>] [-direction <in|out>] [-rule_action <allow|block>] [-protocol <tcp|udp|any>] [-port <port>] [-program <path>]",
+		Version:             4,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1562.004"}, // Impair Defenses: Disable or Modify System Firewall
 		SupportedUIFeatures: []string{},
@@ -29,7 +29,7 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"list", "add", "delete", "enable", "disable", "status"},
+				Choices:       []string{"list", "add", "delete", "enable", "disable", "status", "pf-add", "pf-delete", "pf-list"},
 				DefaultValue:  "list",
 				Description:   "Action: list rules, add/delete a rule, enable/disable a rule, or show firewall status",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -175,6 +175,10 @@ func init() {
 				msg += "Deleting firewall rules weakens security posture — commonly monitored by SIEM as defense evasion (T1562.004)."
 			case "disable":
 				msg += "Disabling firewall rules is a high-visibility security change (T1562.004)."
+			case "pf-add":
+				msg += "Adding pf anchor rules modifies packet filter — pfctl operations are logged (T1562.004)."
+			case "pf-delete":
+				msg += "Flushing pf anchor rules removes all rules in the anchor — reversible but detectable (T1562.004)."
 			default:
 				msg += "Firewall enumeration is lower risk but may be logged by audit policies."
 			}
@@ -195,6 +199,18 @@ func init() {
 				msg += fmt.Sprintf(". Rule '%s' removed — security posture modified (T1562.004).", name)
 			case "disable":
 				msg += fmt.Sprintf(". Rule '%s' disabled — defense weakened (T1562.004).", name)
+			case "pf-add":
+				anchor := name
+				if anchor == "" {
+					anchor = "fawkes"
+				}
+				msg += fmt.Sprintf(". PF rule added to anchor '%s' — verify no alerting triggered (T1562.004).", anchor)
+			case "pf-delete":
+				anchor := name
+				if anchor == "" {
+					anchor = "fawkes"
+				}
+				msg += fmt.Sprintf(". PF anchor '%s' flushed — all rules removed (T1562.004).", anchor)
 			default:
 				msg += ". Enumeration complete — low risk."
 			}
@@ -250,6 +266,20 @@ func init() {
 				default:
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=false — Firewall rule disabled", name))
 				}
+			case "pf-add":
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("pfctl -a %s -f /dev/stdin — add pf anchor rule", name))
+			case "pf-delete":
+				anchor := name
+				if anchor == "" {
+					anchor = "fawkes"
+				}
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("pfctl -a %s -F rules — flush pf anchor", anchor))
+			case "pf-list":
+				anchor := name
+				if anchor == "" {
+					anchor = "fawkes"
+				}
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("pfctl -a %s -s rules — list pf anchor", anchor))
 			case "list", "status":
 				if osName == "Linux" {
 					createArtifact(taskData.Task.ID, "Process Create", "iptables/nft — list rules")
@@ -265,7 +295,7 @@ func init() {
 			action, _ := processResponse.TaskData.Args.GetStringArg("action")
 
 			switch action {
-			case "add", "delete", "enable", "disable":
+			case "add", "delete", "enable", "disable", "pf-add", "pf-delete":
 				// Track firewall modifications as defense evasion artifacts
 				name, _ := processResponse.TaskData.Args.GetStringArg("name")
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
@@ -275,7 +305,7 @@ func init() {
 				})
 				logOperationEvent(processResponse.TaskData.Task.ID,
 					fmt.Sprintf("[DEFENSE EVASION] Firewall rule %s: %s on %s", action, name, processResponse.TaskData.Callback.Host), true)
-			case "list", "status":
+			case "list", "status", "pf-list":
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 					TaskID:           processResponse.TaskData.Task.ID,
 					BaseArtifactType: "Configuration",

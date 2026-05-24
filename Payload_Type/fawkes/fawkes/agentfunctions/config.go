@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -15,6 +16,10 @@ func init() {
 		MitreAttackMappings: []string{},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "config_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS:        []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 			CommandIsSuggested: true,
@@ -70,6 +75,21 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Viewing agent runtime configuration."
+			if action == "set" {
+				key, _ := taskData.Args.GetStringArg("key")
+				msg = fmt.Sprintf("OPSEC WARNING: Modifying agent config key '%s'. Config changes alter C2 behavior and may affect detection profile (e.g., reducing sleep increases network traffic).", key)
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{

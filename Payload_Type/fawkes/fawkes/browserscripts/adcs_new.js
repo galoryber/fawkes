@@ -11,6 +11,9 @@ function(task, responses){
         for(let i = 0; i < responses.length; i++){
             combined += responses[i];
         }
+        if(combined.includes("=== ADCS Auto-Exploit")){
+            return renderAdcsChainResult(combined);
+        }
         let lines = combined.split("\n");
         let tables = [];
         // Detect sections
@@ -201,4 +204,48 @@ function(task, responses){
         const combined = responses.reduce((prev, cur) => prev + cur, "");
         return {'plaintext': combined};
     }
+}
+
+function renderAdcsChainResult(text){
+    let isSuccess = text.includes("SUCCESSFUL") && text.includes("ISSUED");
+    let lines = text.split("\n");
+    let headers = [
+        {"plaintext": "Field", "type": "string", "width": 140},
+        {"plaintext": "Value", "type": "string", "fillWidth": true},
+    ];
+    let rows = [];
+    rows.push({
+        "Field": {"plaintext": "Result", "cellStyle": {"fontWeight": "bold"}},
+        "Value": {"plaintext": isSuccess ? "Certificate ISSUED" : "Chain Complete (no certificate)",
+            "cellStyle": {"fontWeight": "bold", "color": isSuccess ? "#4caf50" : "#ff9800"}},
+        "rowStyle": {"backgroundColor": isSuccess ? "rgba(76,175,80,0.12)" : "rgba(255,152,0,0.08)"},
+    });
+    let statusMatch = text.match(/Request status:\s+(\S+)/);
+    if(statusMatch){
+        rows.push({
+            "Field": {"plaintext": "Request Status"},
+            "Value": {"plaintext": statusMatch[1]},
+        });
+    }
+    let detail = [];
+    let pastHeader = false;
+    for(let i = 0; i < lines.length; i++){
+        let line = lines[i].trim();
+        if(line.startsWith("===")){ pastHeader = true; continue; }
+        if(line.startsWith("Certificate ISSUED")) continue;
+        if(line.startsWith("Request status:")) continue;
+        if(pastHeader && line.length > 0){
+            detail.push(line);
+        }
+    }
+    if(detail.length > 0){
+        let detailText = detail.join("\n");
+        if(detailText.length > 500) detailText = detailText.substring(0, 500) + "...";
+        rows.push({
+            "Field": {"plaintext": "Details"},
+            "Value": {"plaintext": detailText, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.9em", "whiteSpace": "pre-wrap"}, "copyIcon": true},
+        });
+    }
+    let title = isSuccess ? "ADCS Auto-Exploit — Certificate Issued" : "ADCS Auto-Exploit Chain";
+    return {"table": [{"headers": headers, "rows": rows, "title": title}]};
 }

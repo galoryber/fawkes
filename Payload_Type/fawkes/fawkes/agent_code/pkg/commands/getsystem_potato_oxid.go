@@ -25,7 +25,7 @@ func findModuleInfo(moduleName string) (uintptr, uintptr, error) {
 
 	handle, _, callErr := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(namePtr)))
 	if handle == 0 {
-		return 0, 0, fmt.Errorf("module %s not found: %v", moduleName, callErr)
+		return 0, 0, fmt.Errorf("module %s not found: %w", moduleName, callErr)
 	}
 
 	// Query memory region to get the full module size
@@ -101,7 +101,7 @@ func extractProcessOXID() (oxid [8]byte, oid [8]byte, ipid [16]byte, err error) 
 	var pMoniker uintptr
 	ret, _, callErr := procCreateObjrefMonik.Call(iunknown, uintptr(unsafe.Pointer(&pMoniker)))
 	if ret != 0 || pMoniker == 0 {
-		err = fmt.Errorf("CreateObjrefMoniker: hr=0x%x %v", ret, callErr)
+		err = fmt.Errorf("CreateObjrefMoniker: hr=0x%x %w", ret, callErr)
 		return
 	}
 	defer comRelease(pMoniker)
@@ -110,7 +110,7 @@ func extractProcessOXID() (oxid [8]byte, oid [8]byte, ipid [16]byte, err error) 
 	var pBindCtx uintptr
 	ret, _, callErr = procCreateBindCtx.Call(0, uintptr(unsafe.Pointer(&pBindCtx)))
 	if ret != 0 || pBindCtx == 0 {
-		err = fmt.Errorf("CreateBindCtx: hr=0x%x %v", ret, callErr)
+		err = fmt.Errorf("CreateBindCtx: hr=0x%x %w", ret, callErr)
 		return
 	}
 	defer comRelease(pBindCtx)
@@ -122,7 +122,7 @@ func extractProcessOXID() (oxid [8]byte, oid [8]byte, ipid [16]byte, err error) 
 	getDisplayNameFunc := *(*uintptr)(unsafe.Pointer(monikerVtbl + 20*unsafe.Sizeof(uintptr(0))))
 	ret, _, callErr = syscall.SyscallN(getDisplayNameFunc, pMoniker, pBindCtx, 0, uintptr(unsafe.Pointer(&pDisplayName)))
 	if ret != 0 || pDisplayName == 0 {
-		err = fmt.Errorf("GetDisplayName: hr=0x%x %v", ret, callErr)
+		err = fmt.Errorf("GetDisplayName: hr=0x%x %w", ret, callErr)
 		return
 	}
 	defer procCoTaskMemFree.Call(pDisplayName)
@@ -376,7 +376,7 @@ func createOBJREFStream(objrefData []byte) (uintptr, func(), error) {
 			uintptr(len(objrefData)),
 		)
 		if stream == 0 {
-			return 0, nil, fmt.Errorf("SHCreateMemStream: %v", err)
+			return 0, nil, fmt.Errorf("SHCreateMemStream: %w", err)
 		}
 
 		release := func() {

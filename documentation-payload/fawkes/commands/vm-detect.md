@@ -7,50 +7,71 @@ hidden = false
 
 ## Summary
 
-Detect virtual machine and hypervisor environment. Identifies VMware, VirtualBox, Hyper-V, QEMU/KVM, Xen, Parallels, and cloud providers (AWS EC2, GCP) through multiple detection methods: MAC address OUI prefixes, DMI/SMBIOS information, VM tools/files, SCSI device names, CPU hypervisor flags, guest agent process scanning, and cloud provider board names.
+Detect virtual machine and hypervisor environment, or perform sandbox evasion analysis with scored checks. Two modes:
 
-Understanding the execution environment helps determine which techniques apply, whether sandbox evasion is needed, and what hardware-specific artifacts to expect.
+- **detect** (default): Identifies VMware, VirtualBox, Hyper-V, QEMU/KVM, Xen, Parallels, and cloud providers (AWS EC2, GCP) through MAC address OUI, DMI/SMBIOS, VM tools/files, SCSI devices, CPU hypervisor flags, and guest agent processes.
+- **sandbox**: Advanced sandbox/analysis evasion checks with a 0-100 risk score. Checks CPU count, RAM, disk size, system uptime, sleep timing accuracy, hostname patterns, process count, and username. Returns structured JSON with per-check scores and an overall verdict (clean/suspicious/likely_sandbox/sandbox).
 
 ## Arguments
 
-No arguments required.
+| Argument | Required | Description |
+|----------|----------|-------------|
+| action | No | `detect` (VM detection) or `sandbox` (sandbox evasion analysis). Default: `detect` |
 
 ## Usage
 
+### VM/hypervisor detection
 ```
 vm-detect
+vm-detect -action detect
 ```
+
+### Sandbox evasion analysis
+```
+vm-detect -action sandbox
+```
+
+## Sandbox Checks
+
+| Check | Category | Suspicious Threshold | Max Score |
+|-------|----------|---------------------|-----------|
+| CPU Count | hardware | < 2 CPUs | 15 |
+| Total RAM | hardware | < 2 GB | 15 |
+| Disk Size | hardware | < 50 GB | 15 |
+| System Uptime | timing | < 5 minutes | 15 |
+| Sleep Timing | timing | Sleep fast-forwarded | 20 |
+| Hostname | environment | Sandbox-like patterns | 10 |
+| Process Count | environment | < 50 processes | 15 |
+| Username | environment | Default/generic names | 10 |
+
+**Verdict thresholds:** 0-19 = clean, 20-44 = suspicious, 45-69 = likely_sandbox, 70-100 = sandbox
 
 ## Platform Details
 
-### Cross-platform
+### Cross-platform (detect mode)
 - MAC address check against known VM OUI prefixes (VMware, VirtualBox, Hyper-V, Xen, QEMU/KVM, OpenStack)
 
 ### Linux
-- DMI product_name (`/sys/class/dmi/id/product_name`)
-- DMI sys_vendor (`/sys/class/dmi/id/sys_vendor`)
-- DMI bios_vendor (`/sys/class/dmi/id/bios_vendor`)
-- DMI board_name (`/sys/class/dmi/id/board_name`) — detects GCP Compute Engine, AWS EC2
-- SCSI device names (`/proc/scsi/scsi`)
-- CPU hypervisor flag (`/proc/cpuinfo`)
-- Hypervisor type (`/sys/hypervisor/type`) — definitive Xen/KVM detection
-- Guest agent process scan (`/proc/*/comm`) — detects vmtoolsd, VBoxService, qemu-ga, hv_kvp_daemon, xe-daemon, spice-vdagent, prl_tools_service
+- DMI product_name, sys_vendor, bios_vendor, board_name
+- SCSI device names, CPU hypervisor flag, hypervisor type
+- Guest agent process scan (vmtoolsd, VBoxService, qemu-ga, etc.)
+- Sandbox: /proc/uptime, /proc/meminfo, statfs for disk
 
 ### Windows
-- VM-specific files and directories (VMware Tools, VirtualBox Guest Additions, Parallels Tools)
-- VM driver files (vmhgfs.sys, vmci.sys, VBoxMouse.sys)
-- Hyper-V bus driver (VMBusHID.sys)
+- VM files/directories, VM driver files, Hyper-V bus driver
+- Sandbox: GetTickCount64, GlobalMemoryStatusEx, GetDiskFreeSpaceExW, CreateToolhelp32Snapshot
 
 ### macOS
-- VM tools and kernel extensions (VMware Tools, VBoxGuest.kext, ParallelsVmm.kext)
+- VM tools and kernel extensions
+- Sandbox: kern.boottime, hw.memsize, statfs
 
 ## OPSEC Considerations
 
-- All checks are passive (filesystem reads, network interface enumeration, /proc scanning)
-- Process scan reads `/proc/*/comm` which is lightweight and doesn't trigger process creation
+- All checks are passive (filesystem reads, network interface enumeration, timing)
 - No registry queries, WMI calls, or CPUID instructions that could trigger sandbox detectors
-- Safe to run in sandbox analysis environments
+- Sleep timing check introduces a 500ms delay
 
 ## MITRE ATT&CK Mapping
 
+- **T1497** — Virtualization/Sandbox Evasion
 - **T1497.001** — Virtualization/Sandbox Evasion: System Checks

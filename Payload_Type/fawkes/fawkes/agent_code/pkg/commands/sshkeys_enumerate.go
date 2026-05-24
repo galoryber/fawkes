@@ -1,5 +1,3 @@
-//go:build !windows
-
 package commands
 
 import (
@@ -162,6 +160,11 @@ func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 		}
 	} else {
 		sb.WriteString("\n[Private Keys] None found\n")
+	}
+
+	// Windows-specific: PuTTY sessions, .ppk files, WSL distros, OpenSSH for Windows
+	if winExtra := sshKeysEnumerateWindows(); winExtra != "" {
+		sb.WriteString(winExtra)
 	}
 
 	return successResult(sb.String())

