@@ -81,11 +81,3 @@ func TestParseFilterFullInfoTooShort(t *testing.T) {
 	}
 }
 
-func encodeUTF16LE(s string) []byte {
-	b := make([]byte, len(s)*2)
-	for i, c := range s {
-		b[i*2] = byte(c)
-		b[i*2+1] = byte(c >> 8)
-	}
-	return b
-}

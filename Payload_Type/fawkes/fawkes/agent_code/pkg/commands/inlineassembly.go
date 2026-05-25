@@ -109,7 +109,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
 			}
 		}()
 		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
@@ -131,7 +131,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
 			}
 		}()
 		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
@@ -284,7 +284,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
 			}
 		}()
 
@@ -335,7 +335,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
 			}
 		}()
 
