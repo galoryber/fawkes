@@ -689,16 +689,16 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		return types.EncryptionKey{}, fmt.Errorf("parse ContentInfo: %w", err)
 	}
 
-	// Parse EnvelopedData SEQUENCE elements sequentially
-	edContent := ci.Content.Bytes
-	if len(edContent) == 0 {
-		edContent = ci.Content.FullBytes
+	// Get EnvelopedData SEQUENCE content (version + recipientInfos + encryptedContentInfo)
+	remain := ci.Content.Bytes
+	if len(remain) == 0 {
+		// FullBytes includes the SEQUENCE TLV — unwrap it
+		var edSeq gokrb5asn1.RawValue
+		if _, err := gokrb5asn1.Unmarshal(ci.Content.FullBytes, &edSeq); err != nil {
+			return types.EncryptionKey{}, fmt.Errorf("parse EnvelopedData: %w", err)
+		}
+		remain = edSeq.Bytes
 	}
-	var edSeq gokrb5asn1.RawValue
-	if _, err := gokrb5asn1.Unmarshal(edContent, &edSeq); err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse EnvelopedData outer: %w", err)
-	}
-	remain := edSeq.Bytes
 
 	// Element 1: version INTEGER
 	var version int
