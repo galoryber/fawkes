@@ -141,7 +141,7 @@ type paPkAsReq struct {
 // PA-PK-AS-REP DH variant (DHRepInfo) per RFC 4556 Section 3.2.3.
 type paPkAsRepDH struct {
 	DHSignedData  []byte `asn1:"tag:0"`
-	ServerDHNonce []byte `asn1:"optional,tag:1"`
+	ServerDHNonce []byte `asn1:"optional,explicit,tag:1"`
 }
 
 type kdcDHKeyInfo struct {
@@ -359,9 +359,9 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		sharedSecretBytes := sharedSecret.Bytes()
 		defer structs.ZeroBytes(sharedSecretBytes)
 
-		// Key derivation per RFC 4556 §3.2.3.1:
-		// fullKey = sharedSecret || clientDHNonce || serverDHNonce
-		// sessionKey = octetstring2key(fullKey, keysize)
+		diagInfo += fmt.Sprintf(" | sharedSecret=%d bytes, clientDHNonce=%d bytes, serverDHNonce=%d bytes",
+			len(sharedSecretBytes), len(clientDHNonce), len(rep.ServerDHNonce))
+
 		var fullKey []byte
 		fullKey = append(fullKey, sharedSecretBytes...)
 		fullKey = append(fullKey, clientDHNonce...)
@@ -394,7 +394,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	// Decrypt the AS-REP EncPart using the session key
 	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)
 	if err != nil {
-		return errorf("Error decrypting AS-REP: %v", err)
+		return errorf("Error decrypting AS-REP: %v | %s | etype=%d", err, diagInfo, asRep.EncPart.EType)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
