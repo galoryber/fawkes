@@ -47,8 +47,10 @@ Outputs tickets in kirbi format (for Rubeus/Mimikatz on Windows) or ccache forma
 | `-target_user` | No | Diamond: user identity to embed in modified ticket (defaults to username) |
 | `-target_rid` | No | Diamond: RID for the target user (default: 500) |
 | `-ticket` | No* | Base64 kirbi ticket for renewal. *Required for renew.* |
-| `-certificate` | No* | PEM certificate or file path on target (e.g., `/tmp/cert.pem`). *Required for pkinit.* |
-| `-private_key` | No* | PEM private key or file path on target (RSA PKCS#1/PKCS#8, EC). *Required for pkinit.* |
+| `-certificate` | No* | PEM certificate or file path on target (e.g., `/tmp/cert.pem`). *Required for pkinit (unless pfx is provided).* |
+| `-private_key` | No* | PEM private key or file path on target (RSA PKCS#1/PKCS#8, EC). *Required for pkinit (unless pfx is provided).* |
+| `-pfx` | No* | Base64-encoded PFX/PKCS#12 file or file path on target. *Alternative to certificate+private_key for pkinit.* |
+| `-pfx_password` | No | Password for PFX file (empty string for no password). |
 
 ## Usage
 
@@ -156,6 +158,18 @@ With inline PEM content (also supported):
 
 ```
 ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate "-----BEGIN CERTIFICATE-----\nMIID...base64...\n-----END CERTIFICATE-----" -private_key "-----BEGIN PRIVATE KEY-----\nMIIE...base64...\n-----END PRIVATE KEY-----"
+```
+
+With PFX/PKCS#12 file (common Windows export format):
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -pfx /tmp/cert.pfx -pfx_password "MyPassword"
+```
+
+With base64-encoded PFX data (no password):
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -pfx <base64_pfx_data>
 ```
 
 ### ADCS + PKINIT Workflow
