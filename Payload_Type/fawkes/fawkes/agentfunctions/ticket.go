@@ -233,7 +233,7 @@ func init() {
 				Name:             "certificate",
 				CLIName:          "certificate",
 				ModalDisplayName: "Certificate (PEM)",
-				Description:      "PKINIT: PEM-encoded X.509 certificate with Smart Card Logon or Client Authentication EKU. Obtained from ADCS certificate request or Shadow Credentials.",
+				Description:      "PKINIT: PEM certificate or file path on target (e.g., /tmp/cert.pem). Smart Card Logon or Client Auth EKU required.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -244,7 +244,7 @@ func init() {
 				Name:             "private_key",
 				CLIName:          "private_key",
 				ModalDisplayName: "Private Key (PEM)",
-				Description:      "PKINIT: PEM-encoded private key matching the certificate. Supports RSA (PKCS#1/PKCS#8) and EC keys.",
+				Description:      "PKINIT: PEM private key or file path on target. Supports RSA (PKCS#1/PKCS#8) and EC keys.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{

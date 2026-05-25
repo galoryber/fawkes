@@ -17,6 +17,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -183,8 +184,12 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	certPEM := args.Certificate
 	keyPEM := args.PrivateKey
 	if certPEM == "" || keyPEM == "" {
-		return errorResult("Error: certificate and private_key (PEM) are required for pkinit")
+		return errorResult("Error: certificate and private_key are required for pkinit")
 	}
+
+	// If values look like file paths, read the files
+	certPEM = readIfPath(certPEM)
+	keyPEM = readIfPath(keyPEM)
 
 	realm := strings.ToUpper(args.Realm)
 	if args.Format == "" {
@@ -977,3 +982,13 @@ func pkinitOctetstring2Key(value []byte, keySize int) []byte {
 	return derived[:keySize]
 }
 
+func readIfPath(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "/") || (len(s) > 2 && s[1] == ':' && (s[2] == '\\' || s[2] == '/')) {
+		data, err := os.ReadFile(s)
+		if err == nil {
+			return string(data)
+		}
+	}
+	return s
+}
