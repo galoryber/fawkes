@@ -689,18 +689,19 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		return types.EncryptionKey{}, fmt.Errorf("parse ContentInfo: %w", err)
 	}
 
-	// Get EnvelopedData SEQUENCE content
-	remain := ci.Content.Bytes
-	if len(remain) == 0 {
-		var edSeq gokrb5asn1.RawValue
-		if _, err := gokrb5asn1.Unmarshal(ci.Content.FullBytes, &edSeq); err != nil {
-			return types.EncryptionKey{}, fmt.Errorf("parse EnvelopedData: %w", err)
-		}
-		remain = edSeq.Bytes
+	// ci.Content is the [0] EXPLICIT wrapper — .Bytes contains the EnvelopedData SEQUENCE TLV
+	edBytes := ci.Content.Bytes
+	if len(edBytes) == 0 {
+		edBytes = ci.Content.FullBytes
 	}
+	var edSeq gokrb5asn1.RawValue
+	if _, err := gokrb5asn1.Unmarshal(edBytes, &edSeq); err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse EnvelopedData SEQUENCE: %w", err)
+	}
+	remain := edSeq.Bytes
 
-	dbg := fmt.Sprintf("ci.Content: tag=%d class=%d bytesLen=%d fullBytesLen=%d | remain[0:min(8)]=%x",
-		ci.Content.Tag, ci.Content.Class, len(ci.Content.Bytes), len(ci.Content.FullBytes), remain[:min(8, len(remain))])
+	dbg := fmt.Sprintf("ci.Content: tag=%d class=%d | edSeq: tag=%d bytesLen=%d | remain[0:8]=%x",
+		ci.Content.Tag, ci.Content.Class, edSeq.Tag, len(edSeq.Bytes), remain[:min(8, len(remain))])
 
 	// Element 1: version INTEGER
 	var version int
@@ -774,16 +775,30 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		return types.EncryptionKey{}, fmt.Errorf("encKeyPack requires RSA private key")
 	}
 
+	// Verify our private key modulus matches cert public key
+	certPubKey, ok2 := ck.Cert.PublicKey.(*rsa.PublicKey)
+	if ok2 {
+		dbg += fmt.Sprintf(" | keyMatch=%v keyBits=%d", rsaKey.N.Cmp(certPubKey.N) == 0, rsaKey.N.BitLen())
+	}
+
+	// Try OAEP first (Windows Server 2016+ may use it), then PKCS1v15
 	var cek []byte
 	if keyEncAlg.Algorithm.Equal(oidRSAOAEP) {
 		cek, err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
 	} else {
 		cek, err = rsa.DecryptPKCS1v15(rand.Reader, rsaKey, encryptedKey)
-	}
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("decrypt CEK: %w | %s", err, dbg)
+		if err != nil {
+			// Fallback: try OAEP in case alg OID is generic rsaEncryption but OAEP was used
+			cek, err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
+			if err != nil {
+				dbg += fmt.Sprintf(" | encKey[0:8]=%x", encryptedKey[:min(8, len(encryptedKey))])
+				return types.EncryptionKey{}, fmt.Errorf("decrypt CEK (tried PKCS1v15+OAEP): %w | %s", err, dbg)
+			}
+		}
 	}
 	defer structs.ZeroBytes(cek)
+
+	dbg += fmt.Sprintf(" | cekLen=%d cek[0:min(8)]=%x", len(cek), cek[:min(8, len(cek))])
 
 	if len(cek) < 16 {
 		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes) | %s", len(cek), dbg)
