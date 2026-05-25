@@ -233,7 +233,7 @@ func init() {
 				Name:             "certificate",
 				CLIName:          "certificate",
 				ModalDisplayName: "Certificate (PEM)",
-				Description:      "PKINIT: PEM certificate or file path on target (e.g., /tmp/cert.pem). Smart Card Logon or Client Auth EKU required.",
+				Description:      "PKINIT: PEM certificate or file path on target (e.g., /tmp/cert.pem). Alternative: use pfx param for PKCS#12. Smart Card Logon or Client Auth EKU required.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -245,6 +245,28 @@ func init() {
 				CLIName:          "private_key",
 				ModalDisplayName: "Private Key (PEM)",
 				Description:      "PKINIT: PEM private key or file path on target. Supports RSA (PKCS#1/PKCS#8) and EC keys.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "pfx",
+				CLIName:          "pfx",
+				ModalDisplayName: "PFX/PKCS#12 File",
+				Description:      "PKINIT: Base64-encoded PFX/PKCS#12 (.pfx/.p12) data or file path on target. Contains both certificate and private key. Alternative to separate certificate + private_key params.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "pfx_password",
+				CLIName:          "pfx_password",
+				ModalDisplayName: "PFX Password",
+				Description:      "PKINIT: Password for the PFX/PKCS#12 file. Leave empty if the PFX has no password.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{

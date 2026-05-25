@@ -52,6 +52,8 @@ type ticketArgs struct {
 	Ticket        string `json:"ticket"`          // Renew: base64 kirbi ticket to renew
 	Certificate   string `json:"certificate"`     // PKINIT: PEM-encoded certificate
 	PrivateKey    string `json:"private_key"`     // PKINIT: PEM-encoded private key
+	PFX           string `json:"pfx"`             // PKINIT: base64-encoded PFX/PKCS#12 file or file path
+	PFXPassword   string `json:"pfx_password"`    // PKINIT: PFX file password (empty string for no password)
 }
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {

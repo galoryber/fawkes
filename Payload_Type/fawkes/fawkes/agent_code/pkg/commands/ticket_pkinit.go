@@ -29,6 +29,7 @@ import (
 	"github.com/jcmturner/gokrb5/v8/iana/nametype"
 	"github.com/jcmturner/gokrb5/v8/messages"
 	"github.com/jcmturner/gokrb5/v8/types"
+	"golang.org/x/crypto/pkcs12"
 )
 
 // PKINIT OIDs
@@ -155,25 +156,31 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		return errorResult("Error: username is required (SAN/UPN from certificate or explicit)")
 	}
 
-	certPEM := args.Certificate
-	keyPEM := args.PrivateKey
-	if certPEM == "" || keyPEM == "" {
-		return errorResult("Error: certificate and private_key are required for pkinit")
-	}
-
-	// If values look like file paths, read the files
-	certPEM = readIfPath(certPEM)
-	keyPEM = readIfPath(keyPEM)
-
 	realm := strings.ToUpper(args.Realm)
 	if args.Format == "" {
 		args.Format = "kirbi"
 	}
 
-	// Parse certificate and private key
-	ck, err := parsePEMCertKey(certPEM, keyPEM)
-	if err != nil {
-		return errorf("Error loading certificate/key: %v", err)
+	var ck *pkinitCertKey
+	var err error
+
+	if args.PFX != "" {
+		ck, err = parsePFXCertKey(args.PFX, args.PFXPassword)
+		if err != nil {
+			return errorf("Error loading PFX/PKCS#12: %v", err)
+		}
+	} else {
+		certPEM := args.Certificate
+		keyPEM := args.PrivateKey
+		if certPEM == "" || keyPEM == "" {
+			return errorResult("Error: certificate+private_key or pfx is required for pkinit")
+		}
+		certPEM = readIfPath(certPEM)
+		keyPEM = readIfPath(keyPEM)
+		ck, err = parsePEMCertKey(certPEM, keyPEM)
+		if err != nil {
+			return errorf("Error loading certificate/key: %v", err)
+		}
 	}
 
 	// Resolve KDC
@@ -462,6 +469,43 @@ func parsePEMCertKey(certPEM, keyPEM string) (*pkinitCertKey, error) {
 		Cert:    cert,
 		Key:     key,
 		CertDER: certBlock.Bytes,
+	}, nil
+}
+
+func parsePFXCertKey(pfxInput, password string) (*pkinitCertKey, error) {
+	pfxInput = strings.TrimSpace(pfxInput)
+
+	var pfxData []byte
+	var err error
+
+	// Check if it's a file path
+	if strings.HasPrefix(pfxInput, "/") || (len(pfxInput) > 2 && pfxInput[1] == ':' && (pfxInput[2] == '\\' || pfxInput[2] == '/')) {
+		pfxData, err = os.ReadFile(pfxInput)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read PFX file %s: %w", pfxInput, err)
+		}
+	} else {
+		pfxData, err = base64.StdEncoding.DecodeString(pfxInput)
+		if err != nil {
+			pfxData, err = base64.RawStdEncoding.DecodeString(pfxInput)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode PFX base64 (not a valid file path or base64 data)")
+			}
+		}
+	}
+
+	key, cert, err := pkcs12.Decode(pfxData, password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode PFX/PKCS#12: %w", err)
+	}
+	if cert == nil {
+		return nil, fmt.Errorf("PFX contains no certificate")
+	}
+
+	return &pkinitCertKey{
+		Cert:    cert,
+		Key:     key.(crypto.PrivateKey),
+		CertDER: cert.Raw,
 	}, nil
 }
 
