@@ -91,7 +91,7 @@ type subjectPublicKeyInfo struct {
 type dhParams struct {
 	P *big.Int
 	G *big.Int
-	Q *big.Int `asn1:"optional"`
+	Q *big.Int
 }
 
 type contentInfo struct {
@@ -509,7 +509,7 @@ func generateDHKeyPair() (priv *big.Int, pubBytes []byte, clientNonce []byte, er
 
 // buildDHSubjectPublicKeyInfo constructs a SubjectPublicKeyInfo for DH.
 func buildDHSubjectPublicKeyInfo(pubBytes []byte) ([]byte, error) {
-	params := dhParams{P: dhGroupP, G: dhGroupG}
+	params := dhParams{P: dhGroupP, G: dhGroupG, Q: big.NewInt(0)}
 	paramsBytes, err := gokrb5asn1.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal DH params: %w", err)
@@ -541,9 +541,9 @@ func buildCMSSignedData(authPackBytes []byte, ck *pkinitCertKey) ([]byte, error)
 	var hashFunc crypto.Hash
 	switch ck.Key.(type) {
 	case *rsa.PrivateKey:
-		digestOID = oidSHA256
-		sigOID = oidSHA256WithRSA
-		hashFunc = crypto.SHA256
+		digestOID = oidSHA1
+		sigOID = oidSHA1WithRSA
+		hashFunc = crypto.SHA1
 	case *ecdsa.PrivateKey:
 		digestOID = oidSHA256
 		sigOID = oidECDSAWithSHA256
