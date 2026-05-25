@@ -129,7 +129,10 @@ func ldapQueryGMSA(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 		output.Accounts = append(output.Accounts, account)
 	}
 
-	outputJSON, _ := json.Marshal(output)
+	outputJSON, err := json.Marshal(output)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(outputJSON))
 }
 

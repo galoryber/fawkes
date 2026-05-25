@@ -45,7 +45,10 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.DCOMConnect = "skipped"
 		result.ObjectAccess = "skipped"
 		result.Recommendation = "Port 135 (RPC) is not reachable. DCOM requires RPC on port 135 + dynamic high ports."
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
@@ -74,7 +77,10 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 			} else {
 				result.Recommendation = fmt.Sprintf("DCOM connection failed: %v", res.err)
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
+			data, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return errorf("Error: failed to marshal result: %v", err)
+			}
 			return successResult(string(data))
 		}
 		result.DCOMConnect = "pass (WMI/DCOM accessible)"
@@ -91,7 +97,10 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.DCOMConnect = "timeout"
 		result.ObjectAccess = "skipped"
 		result.Recommendation = "DCOM connection timed out. Host may be firewalled."
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
@@ -102,6 +111,9 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.Recommendation = "Some prerequisites failed. Review individual check results."
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

@@ -189,7 +189,10 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 		SourcePath:    srcPath,
 	}
 
-	metadataJSON, _ := json.Marshal(metadata)
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 
 	return structs.CommandResult{
 		Output:    string(metadataJSON),

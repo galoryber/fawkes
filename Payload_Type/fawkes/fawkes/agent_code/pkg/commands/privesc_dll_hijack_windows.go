@@ -109,7 +109,10 @@ func winHijackExecute(args privescCheckArgs) structs.CommandResult {
 		TargetDir:   args.TargetDir,
 	}
 
-	data, _ := json.Marshal(result)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 

@@ -77,7 +77,10 @@ func aclEditRead(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Comma
 		})
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -379,7 +382,10 @@ func aclEditBackup(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Com
 		Backup: encoded,
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 

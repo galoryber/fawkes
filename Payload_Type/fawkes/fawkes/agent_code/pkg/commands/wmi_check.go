@@ -47,7 +47,10 @@ func wmiCheck(target string, timeout int) structs.CommandResult {
 		result.WMIQuery = "skipped"
 		result.ProcessCreate = "skipped"
 		result.Recommendation = "Port 135 (RPC) is not reachable. WMI requires RPC on port 135 + dynamic high ports."
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
@@ -80,7 +83,10 @@ func wmiCheck(target string, timeout int) structs.CommandResult {
 			} else {
 				result.Recommendation = fmt.Sprintf("WMI connection failed: %v", res.err)
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
+			data, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return errorf("Error: failed to marshal result: %v", err)
+			}
 			return successResult(string(data))
 		}
 		conn = res.conn
@@ -92,7 +98,10 @@ func wmiCheck(target string, timeout int) structs.CommandResult {
 		result.WMIQuery = "skipped"
 		result.ProcessCreate = "skipped"
 		result.Recommendation = "WMI connection timed out. DCOM/RPC may be firewalled."
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
@@ -134,6 +143,9 @@ func wmiCheck(target string, timeout int) structs.CommandResult {
 		result.Recommendation = "Some prerequisites failed. Review individual check results."
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

@@ -326,14 +326,23 @@ func formatLDAPResults(result *ldap.SearchResult, action, desc, baseDN, filter s
 
 	for _, entry := range result.Entries {
 		row := make(map[string]json.RawMessage)
-		dnBytes, _ := json.Marshal(entry.DN)
+		dnBytes, err := json.Marshal(entry.DN)
+		if err != nil {
+			return fmt.Sprintf("Error: failed to marshal result: %v", err)
+		}
 		row["dn"] = dnBytes
 		for _, attr := range entry.Attributes {
 			if len(attr.Values) == 1 {
-				valBytes, _ := json.Marshal(attr.Values[0])
+				valBytes, err := json.Marshal(attr.Values[0])
+				if err != nil {
+					return fmt.Sprintf("Error: failed to marshal result: %v", err)
+				}
 				row[attr.Name] = valBytes
 			} else if len(attr.Values) > 1 {
-				valBytes, _ := json.Marshal(strings.Join(attr.Values, "; "))
+				valBytes, err := json.Marshal(strings.Join(attr.Values, "; "))
+				if err != nil {
+					return fmt.Sprintf("Error: failed to marshal result: %v", err)
+				}
 				row[attr.Name] = valBytes
 			}
 		}

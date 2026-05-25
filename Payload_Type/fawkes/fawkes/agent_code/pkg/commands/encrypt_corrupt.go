@@ -75,7 +75,10 @@ func corruptFile(args encryptArgs) structs.CommandResult {
 		Method:       "random-overwrite-head",
 	}
 
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 
@@ -159,7 +162,10 @@ func corruptFiles(args encryptArgs) structs.CommandResult {
 		Errors:         errors,
 	}
 
-	jsonBytes, _ := json.Marshal(output)
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Corrupted %d files\n", len(results)))

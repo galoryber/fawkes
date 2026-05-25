@@ -92,7 +92,10 @@ func neLinuxUsers() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -129,7 +132,10 @@ func neLinuxGroups() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -198,7 +204,10 @@ func neLinuxGroupMembers(group string) structs.CommandResult {
 				}
 			}
 		}
-		data, _ := json.Marshal(entries)
+		data, err := json.Marshal(entries)
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 	return successResult(string(data))
 	}
 
@@ -254,7 +263,10 @@ func neLinuxAdmins() structs.CommandResult {
 		Source: "uid=0",
 	})
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -266,7 +278,10 @@ func neLinuxSessions() structs.CommandResult {
 		// Fallback: parse /etc/passwd login shells as "potential users"
 		return errorf("Failed to read utmp: %v", err)
 	}
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -377,10 +392,16 @@ func neLinuxShares() structs.CommandResult {
 
 	if len(entries) == 0 {
 		noShares := []netEnumEntry{{Name: "(none)", Type: "info", Comment: "No NFS exports or Samba shares found"}}
-		data, _ := json.Marshal(noShares)
+		data, err := json.Marshal(noShares)
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

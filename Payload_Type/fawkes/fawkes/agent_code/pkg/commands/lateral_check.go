@@ -208,7 +208,10 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return successResult("[]")
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 

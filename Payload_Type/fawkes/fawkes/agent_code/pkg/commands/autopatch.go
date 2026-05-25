@@ -98,7 +98,10 @@ func autopatchScan() structs.CommandResult {
 		results = append(results, ScanTarget(target))
 	}
 
-	output, _ := json.MarshalIndent(results, "", "  ")
+	output, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 

@@ -71,7 +71,10 @@ func (c *RegCommand) Execute(task structs.Task) structs.CommandResult {
 			"path":   args.Path,
 			"output": args.Output,
 		}
-		data, _ := json.Marshal(saveArgs)
+		data, err := json.Marshal(saveArgs)
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		saveTask.Params = string(data)
 		return (&RegSaveCommand{}).Execute(saveTask)
 	default:
@@ -156,7 +159,10 @@ func regActionDelete(task structs.Task, args regArgs) structs.CommandResult {
 		"name":      args.Name,
 		"recursive": args.Recursive,
 	}
-	data, _ := json.Marshal(deleteArgs)
+	data, err := json.Marshal(deleteArgs)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	deleteTask := task
 	deleteTask.Params = string(data)
 	return (&RegDeleteCommand{}).Execute(deleteTask)

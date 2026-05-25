@@ -56,7 +56,10 @@ func netEnumLocalShares() structs.CommandResult {
 		out = append(out, e)
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -108,7 +111,10 @@ func netEnumRemoteShares(target string) structs.CommandResult {
 		out = append(out, e)
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -172,6 +178,9 @@ func netEnumMappedDrives() structs.CommandResult {
 		return successResult("[]")
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

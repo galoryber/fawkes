@@ -39,26 +39,42 @@ type dcsyncHelperOutput struct {
 
 func RunDcsyncHelper(args []string) {
 	if len(args) != 1 {
-		out, _ := json.Marshal(dcsyncHelperOutput{Error: "expected 1 JSON argument"})
+		out, err := json.Marshal(dcsyncHelperOutput{Error: "expected 1 JSON argument"})
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stdout, `{"error":"expected 1 JSON argument"}`+"\n")
+			os.Exit(1)
+		}
 		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		os.Exit(1)
 	}
 
 	var ha dcsyncHelperArgs
 	if err := json.Unmarshal([]byte(args[0]), &ha); err != nil {
-		out, _ := json.Marshal(dcsyncHelperOutput{Error: fmt.Sprintf("invalid JSON: %v", err)})
+		out, marshalErr := json.Marshal(dcsyncHelperOutput{Error: fmt.Sprintf("invalid JSON: %v", err)})
+		if marshalErr != nil {
+			_, _ = fmt.Fprintf(os.Stdout, `{"error":"invalid JSON: %v"}`+"\n", err)
+			os.Exit(1)
+		}
 		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		os.Exit(1)
 	}
 
 	results, err := dcsyncNTLMStandalone(ha)
 	if err != nil {
-		out, _ := json.Marshal(dcsyncHelperOutput{Error: err.Error()})
+		out, marshalErr := json.Marshal(dcsyncHelperOutput{Error: err.Error()})
+		if marshalErr != nil {
+			_, _ = fmt.Fprintf(os.Stdout, `{"error":"failed to marshal error response"}`+"\n")
+			os.Exit(1)
+		}
 		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		os.Exit(1)
 	}
 
-	out, _ := json.Marshal(dcsyncHelperOutput{Results: results})
+	out, err := json.Marshal(dcsyncHelperOutput{Results: results})
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, `{"error":"failed to marshal result: %v"}`+"\n", err)
+		os.Exit(1)
+	}
 	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
@@ -212,7 +228,10 @@ func dcsyncViaSubprocess(args dcsyncArgs, targets []string) ([]dcsyncResult, err
 		Targets:  targets,
 		Timeout:  args.Timeout,
 	}
-	argsJSON, _ := json.Marshal(ha)
+	argsJSON, err := json.Marshal(ha)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(args.Timeout+10)*time.Second)
 	defer cancel()

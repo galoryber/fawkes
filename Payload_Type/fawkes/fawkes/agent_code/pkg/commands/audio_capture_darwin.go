@@ -106,7 +106,10 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 				DataSize:    len(wavData),
 				DeviceUsed:  "default",
 			}
-			output, _ := json.Marshal(result)
+			output, err := json.Marshal(result)
+			if err != nil {
+				return errorf("Error: failed to marshal result: %v", err)
+			}
 			return successResult(string(output))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {

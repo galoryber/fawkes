@@ -60,7 +60,10 @@ func netEnumLoggedOn(target string) structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -125,7 +128,10 @@ func neEnumSessions502(target string) (string, error) {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return string(data), nil
 }
 
@@ -173,6 +179,9 @@ func neEnumSessions10(target string) (string, error) {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return string(data), nil
 }

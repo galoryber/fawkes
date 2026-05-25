@@ -224,7 +224,10 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	if len(trusts) == 0 {
 		topLevel := trustTopLevelOutput{Forest: forestInfo}
-		data, _ := json.Marshal(topLevel)
+		data, err := json.Marshal(topLevel)
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 

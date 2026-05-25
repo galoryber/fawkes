@@ -328,6 +328,9 @@ func parseLaunchdListOutput(output string) []struct {
 // schtaskDarwinListJSON returns the list as JSON for testing
 func schtaskDarwinListJSON() string {
 	entries := enumerateLaunchdJobs()
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return fmt.Sprintf("Error: failed to marshal result: %v", err)
+	}
 	return string(data)
 }

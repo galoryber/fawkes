@@ -231,7 +231,10 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		sniffUploadPCAP(&task, pcapData, result)
 	}
 
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 

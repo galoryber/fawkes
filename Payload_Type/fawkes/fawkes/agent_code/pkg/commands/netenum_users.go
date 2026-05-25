@@ -61,7 +61,10 @@ func netEnumLocalUsers() structs.CommandResult {
 	if len(entries) == 0 {
 		return successResult("[]")
 	}
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -127,7 +130,10 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 	if len(entries) == 0 {
 		return successResult("[]")
 	}
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -256,7 +262,10 @@ func netEnumDomainUsers() structs.CommandResult {
 	if len(entries) == 0 {
 		return successResult("[]")
 	}
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -313,7 +322,10 @@ func netEnumDomainGroups() structs.CommandResult {
 	if len(entries) == 0 {
 		return successResult("[]")
 	}
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -393,6 +405,9 @@ func netEnumDomainInfo() structs.CommandResult {
 		procNetApiBufferFree.Call(trustBuf)
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

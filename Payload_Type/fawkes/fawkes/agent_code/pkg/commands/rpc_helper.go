@@ -84,12 +84,20 @@ func RunRPCHelper(args []string) {
 	}
 
 	resp := rpcHelperResponse{Output: output}
-	out, _ := json.Marshal(resp)
+	out, err := json.Marshal(resp)
+	if err != nil {
+		writeRPCError(fmt.Sprintf("failed to marshal response: %v", err))
+		os.Exit(1)
+	}
 	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
 func writeRPCError(msg string) {
-	out, _ := json.Marshal(rpcHelperResponse{Error: msg})
+	out, err := json.Marshal(rpcHelperResponse{Error: msg})
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stdout, `{"error":"failed to marshal error: %s"}`+"\n", msg)
+		return
+	}
 	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
@@ -123,7 +131,10 @@ func rpcViaSubprocess(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("cannot find self: %v", err)
 	}
 
-	argsJSON, _ := json.Marshal(req)
+	argsJSON, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.Timeout+10)*time.Second)
 	defer cancel()
@@ -171,6 +182,9 @@ func rpcHelperDcsync(req rpcHelperRequest) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, _ := json.Marshal(results)
+	out, err := json.Marshal(results)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }

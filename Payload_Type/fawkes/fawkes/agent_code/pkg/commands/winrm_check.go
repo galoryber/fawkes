@@ -50,7 +50,10 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.Authentication = "skipped"
 		result.ShellCreate = "skipped"
 		result.Recommendation = "Neither WinRM port (5985/5986) is reachable. WinRM may be disabled."
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
@@ -60,7 +63,10 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.ShellCreate = "skipped"
 		result.OverallStatus = "partial"
 		result.Recommendation = "Ports reachable. Provide credentials to test authentication."
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
@@ -104,7 +110,10 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.Authentication = fmt.Sprintf("fail: %v", err)
 		result.ShellCreate = "skipped"
 		result.Recommendation = fmt.Sprintf("WinRM client creation failed: %v", err)
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
@@ -149,6 +158,9 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.Recommendation = "WinRM authentication timed out."
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

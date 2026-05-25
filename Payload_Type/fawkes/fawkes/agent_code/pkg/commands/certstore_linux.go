@@ -184,7 +184,10 @@ func certstoreListLinux(store, filter string) structs.CommandResult {
 		})
 	}
 
-	jsonBytes, _ := json.Marshal(entries)
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("=== Linux Certificate Store (%d certificates) ===\n\n", len(entries)))

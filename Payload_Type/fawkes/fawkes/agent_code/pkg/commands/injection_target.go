@@ -194,7 +194,10 @@ func scoreProcess(p ProcessInfo, myPID int32, myArch, myUser string, myIntegrity
 
 // FormatTargetSelection returns a JSON string with the scored target list
 func FormatTargetSelection(targets []InjectionTarget) string {
-	data, _ := json.MarshalIndent(targets, "", "  ")
+	data, err := json.MarshalIndent(targets, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Error: failed to marshal result: %v", err)
+	}
 	return string(data)
 }
 

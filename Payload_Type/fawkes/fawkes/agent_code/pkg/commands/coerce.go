@@ -123,10 +123,17 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func coerceViaSubprocess(args coerceArgs, method string) coerceResult {
-	params, _ := json.Marshal(coerceSubprocessParams{
+	params, err := json.Marshal(coerceSubprocessParams{
 		Listener: args.Listener,
 		Method:   method,
 	})
+	if err != nil {
+		return coerceResult{
+			Method:  method,
+			Success: false,
+			Message: fmt.Sprintf("failed to marshal params: %v", err),
+		}
+	}
 
 	output, err := rpcViaSubprocess(rpcHelperRequest{
 		Operation: "coerce",

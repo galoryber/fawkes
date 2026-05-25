@@ -88,7 +88,10 @@ func neDarwinUsers() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -115,7 +118,10 @@ func neDarwinGroups() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -142,11 +148,17 @@ func neDarwinGroupMembers(group string) structs.CommandResult {
 
 	if len(entries) == 0 {
 		empty := []netEnumEntry{{Name: group, Type: "info", Comment: "No members found"}}
-		data, _ := json.Marshal(empty)
+		data, err := json.Marshal(empty)
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -217,7 +229,10 @@ func neDarwinSessions() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -262,10 +277,16 @@ func neDarwinShares() structs.CommandResult {
 
 	if len(entries) == 0 {
 		empty := []netEnumEntry{{Name: "(none)", Type: "info", Comment: "No NFS exports or SMB shares found"}}
-		data, _ := json.Marshal(empty)
+		data, err := json.Marshal(empty)
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

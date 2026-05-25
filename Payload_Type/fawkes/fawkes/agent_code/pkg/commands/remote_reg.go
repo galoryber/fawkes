@@ -88,13 +88,16 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Either -password or -hash is required for remote registry access")
 	}
 
-	params, _ := json.Marshal(winregParams{
+	params, err := json.Marshal(winregParams{
 		Hive:    args.Hive,
 		Path:    args.Path,
 		Name:    args.Name,
 		Data:    args.Data,
 		RegType: args.RegType,
 	})
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 
 	output, err := rpcViaSubprocess(rpcHelperRequest{
 		Operation: op,

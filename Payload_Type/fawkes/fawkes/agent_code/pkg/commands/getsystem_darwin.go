@@ -136,7 +136,10 @@ func getsystemCheckDarwin(currentIdentity string) structs.CommandResult {
 		"total":            len(vectors),
 	}
 
-	output, _ := json.MarshalIndent(result, "", "  ")
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 

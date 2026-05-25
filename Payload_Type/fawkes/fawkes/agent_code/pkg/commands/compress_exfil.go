@@ -97,7 +97,10 @@ func compressExfil(task structs.Task, params CompressParams) structs.CommandResu
 				CleanedUp:   cleanedUp,
 				Status:      "transferred",
 			}
-			metadataJSON, _ := json.Marshal(metadata)
+			metadataJSON, err := json.Marshal(metadata)
+			if err != nil {
+				return errorf("Error: failed to marshal result: %v", err)
+			}
 			return structs.CommandResult{
 				Output:    string(metadataJSON),
 				Status:    "success",
@@ -166,7 +169,10 @@ func compressStageExfil(task structs.Task, params CompressParams) structs.Comman
 		CleanedUp:     exfil.CleanedUp,
 		Status:        "staged_and_transferred",
 	}
-	combinedJSON, _ := json.Marshal(combined)
+	combinedJSON, err := json.Marshal(combined)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 
 	return structs.CommandResult{
 		Output:    string(combinedJSON),

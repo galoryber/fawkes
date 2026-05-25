@@ -98,7 +98,10 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if strings.ToLower(args.Format) == "json" {
-		data, _ := json.Marshal(entries)
+		data, err := json.Marshal(entries)
+		if err != nil {
+			return errorf("Error: failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 

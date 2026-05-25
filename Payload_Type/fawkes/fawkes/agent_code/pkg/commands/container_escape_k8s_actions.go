@@ -70,7 +70,10 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 		},
 	}
 
-	podJSON, _ := json.Marshal(podSpec)
+	podJSON, err := json.Marshal(podSpec)
+	if err != nil {
+		return fmt.Sprintf("Error: failed to marshal pod spec: %v", err), "error"
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] Creating pod '%s' in namespace '%s'\n", podName, ns))
@@ -201,7 +204,10 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 		},
 	}
 
-	podJSON, _ := json.Marshal(podSpec)
+	podJSON, err := json.Marshal(podSpec)
+	if err != nil {
+		return fmt.Sprintf("Error: failed to marshal pod spec: %v", err), "error"
+	}
 	data, code, postErr := kc.k8sPost(fmt.Sprintf("/api/v1/namespaces/%s/pods", ns), podJSON)
 	if postErr != nil || code < 200 || code >= 300 {
 		return fmt.Sprintf("Failed to create exec pod (HTTP %d): %v\n%s", code, postErr, string(data)), "error"

@@ -154,6 +154,9 @@ func screenshotRecordLoop(task structs.Task, capture captureFunc, params screens
 		ActualDuration: actualDuration,
 		StoppedBy:      stoppedBy,
 	}
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
