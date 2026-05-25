@@ -47,8 +47,8 @@ Outputs tickets in kirbi format (for Rubeus/Mimikatz on Windows) or ccache forma
 | `-target_user` | No | Diamond: user identity to embed in modified ticket (defaults to username) |
 | `-target_rid` | No | Diamond: RID for the target user (default: 500) |
 | `-ticket` | No* | Base64 kirbi ticket for renewal. *Required for renew.* |
-| `-certificate` | No* | PEM-encoded X.509 certificate with Smart Card Logon or Client Auth EKU. *Required for pkinit.* |
-| `-private_key` | No* | PEM-encoded private key matching the certificate (RSA PKCS#1/PKCS#8, EC). *Required for pkinit.* |
+| `-certificate` | No* | PEM certificate or file path on target (e.g., `/tmp/cert.pem`). *Required for pkinit.* |
+| `-private_key` | No* | PEM private key or file path on target (RSA PKCS#1/PKCS#8, EC). *Required for pkinit.* |
 
 ## Usage
 
@@ -140,16 +140,22 @@ ticket -action renew -realm CORP.LOCAL -server dc01.corp.local -ticket <base64_k
 
 ### PKINIT — Certificate-Based TGT
 
-Request a TGT using a certificate obtained from ADCS:
+Request a TGT using certificate files on the target:
 
 ```
-ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate "-----BEGIN CERTIFICATE-----\nMIID...base64...\n-----END CERTIFICATE-----" -private_key "-----BEGIN RSA PRIVATE KEY-----\nMIIE...base64...\n-----END RSA PRIVATE KEY-----"
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate /tmp/cert.pem -private_key /tmp/key.pem
 ```
 
 With ccache output for Linux:
 
 ```
-ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate <pem_cert> -private_key <pem_key> -format ccache
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate /tmp/cert.pem -private_key /tmp/key.pem -format ccache
+```
+
+With inline PEM content (also supported):
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate "-----BEGIN CERTIFICATE-----\nMIID...base64...\n-----END CERTIFICATE-----" -private_key "-----BEGIN PRIVATE KEY-----\nMIIE...base64...\n-----END PRIVATE KEY-----"
 ```
 
 ### ADCS + PKINIT Workflow
