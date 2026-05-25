@@ -33,22 +33,15 @@ import (
 
 // PKINIT OIDs
 var (
-	oidSignedData        = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
-	oidData              = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
-	oidPKINITAuthData    = gokrb5asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 1}
-	oidSHA1              = gokrb5asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}
-	oidSHA256            = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
-	oidRSAEncryption     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
-	oidSHA1WithRSA       = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 5}
-	oidSHA256WithRSA     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}
-	oidECDSAWithSHA256   = gokrb5asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2}
-	oidDHPublicNumber    = gokrb5asn1.ObjectIdentifier{1, 2, 840, 10046, 2, 1}
-	oidPKINITDHKeyData   = gokrb5asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 2}
-	oidContentType       = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
-	oidMessageDigest     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
-	oidRSAOAEP           = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 7}
-	oidAES256CBC         = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 42}
-	oidAES128CBC         = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}
+	oidSignedData      = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}
+	oidPKINITAuthData  = gokrb5asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 1}
+	oidSHA1            = gokrb5asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}
+	oidSHA256          = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
+	oidSHA1WithRSA     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 5}
+	oidECDSAWithSHA256 = gokrb5asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2}
+	oidDHPublicNumber  = gokrb5asn1.ObjectIdentifier{1, 2, 840, 10046, 2, 1}
+	oidContentType     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
+	oidMessageDigest   = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 )
 
 // IKE Group 2 (1024-bit MODP) parameters from RFC 2412 Appendix E.2.
@@ -739,7 +732,9 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 	// Element 2: originatorInfo [0] IMPLICIT (optional, skip if present)
 	if len(remain) > 0 && remain[0] == 0xa0 {
 		var skip gokrb5asn1.RawValue
-		remain, _ = gokrb5asn1.Unmarshal(remain, &skip)
+		if rest, err := gokrb5asn1.Unmarshal(remain, &skip); err == nil {
+			remain = rest
+		}
 	}
 
 	if len(remain) > 0 {
@@ -805,43 +800,40 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		dbg += fmt.Sprintf(" | keyMatch=%v keyBits=%d", rsaKey.N.Cmp(certPubKey.N) == 0, rsaKey.N.BitLen())
 	}
 
-	// Windows PKINIT uses OAEP-SHA1 even when the OID says rsaEncryption.
 	var cek []byte
-	var oaep1Err, oaep256Err, pkcs1Err error
+	var oaep1Err, oaep256Err error
 	cek, oaep1Err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
 	if oaep1Err != nil {
 		cek, oaep256Err = rsa.DecryptOAEP(crypto.SHA256.New(), rand.Reader, rsaKey, encryptedKey, nil)
 	}
 	if oaep1Err != nil && oaep256Err != nil {
-		cek, pkcs1Err = rsa.DecryptPKCS1v15(rand.Reader, rsaKey, encryptedKey)
-	}
-	if oaep1Err != nil && oaep256Err != nil && pkcs1Err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("decrypt CEK failed: oaep1=%v oaep256=%v pkcs1=%v | %s",
-			oaep1Err, oaep256Err, pkcs1Err, dbg)
+		return types.EncryptionKey{}, fmt.Errorf("decrypt CEK failed: oaep1=%v oaep256=%v | %s",
+			oaep1Err, oaep256Err, dbg)
 	}
 	defer structs.ZeroBytes(cek)
 
-	usedPadding := "OAEP-SHA1"
-	if oaep1Err != nil && oaep256Err == nil {
-		usedPadding = "OAEP-SHA256"
-	} else if oaep1Err != nil && oaep256Err != nil {
-		usedPadding = "PKCS1v15"
-	}
-
 	if len(cek) < 16 {
-		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes, padding=%s), decryption likely used wrong padding | oaep1=%v | %s",
-			len(cek), usedPadding, oaep1Err, dbg)
+		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes) | oaep1=%v | %s",
+			len(cek), oaep1Err, dbg)
 	}
 
 	// Element 4: EncryptedContentInfo SEQUENCE
 	var eciSeq gokrb5asn1.RawValue
-	gokrb5asn1.Unmarshal(remain, &eciSeq)
+	if _, err := gokrb5asn1.Unmarshal(remain, &eciSeq); err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse EncryptedContentInfo: %w | %s", err, dbg)
+	}
 	eciRemain := eciSeq.Bytes
 
 	var eciContentType gokrb5asn1.ObjectIdentifier
-	eciRemain, _ = gokrb5asn1.Unmarshal(eciRemain, &eciContentType)
+	eciRemain, err = gokrb5asn1.Unmarshal(eciRemain, &eciContentType)
+	if err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse ECI contentType: %w | %s", err, dbg)
+	}
 	var ceAlg algorithmIdentifier
-	eciRemain, _ = gokrb5asn1.Unmarshal(eciRemain, &ceAlg)
+	eciRemain, err = gokrb5asn1.Unmarshal(eciRemain, &ceAlg)
+	if err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse ECI algorithm: %w | %s", err, dbg)
+	}
 
 	// Extract IV from content encryption algorithm parameters
 	var iv []byte
@@ -858,7 +850,9 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 
 	// Extract encrypted content [0] IMPLICIT OCTET STRING
 	var encContentRaw gokrb5asn1.RawValue
-	gokrb5asn1.Unmarshal(eciRemain, &encContentRaw)
+	if _, err := gokrb5asn1.Unmarshal(eciRemain, &encContentRaw); err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse encrypted content: %w | %s", err, dbg)
+	}
 	encContent := encContentRaw.Bytes
 
 	if len(encContent) == 0 {
