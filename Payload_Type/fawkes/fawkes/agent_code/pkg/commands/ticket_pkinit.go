@@ -106,25 +106,6 @@ type encapContentInfo struct {
 	EContent     gokrb5asn1.RawValue `asn1:"optional,explicit,tag:0"`
 }
 
-type signerInfo struct {
-	Version            int
-	SID                issuerAndSerialNumber
-	DigestAlgorithm    algorithmIdentifier
-	SignedAttrs        gokrb5asn1.RawValue `asn1:"optional,tag:0"`
-	SignatureAlgorithm algorithmIdentifier
-	Signature          []byte
-}
-
-type issuerAndSerialNumber struct {
-	Issuer       gokrb5asn1.RawValue
-	SerialNumber *big.Int
-}
-
-type attribute struct {
-	Type   gokrb5asn1.ObjectIdentifier
-	Values gokrb5asn1.RawValue `asn1:"set"`
-}
-
 // PA-PK-AS-REQ per RFC 4556 Section 3.2.1.
 type paPkAsReq struct {
 	SignedAuthPack []byte              `asn1:"tag:0"`
