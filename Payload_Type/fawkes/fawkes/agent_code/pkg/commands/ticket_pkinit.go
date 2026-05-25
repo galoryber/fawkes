@@ -77,7 +77,7 @@ type algorithmIdentifier struct {
 	Parameters gokrb5asn1.RawValue `asn1:"optional"`
 }
 
-type subjectPublicKeyInfo struct {
+type pkinitSPKI struct {
 	Algorithm algorithmIdentifier
 	PublicKey gokrb5asn1.BitString
 }
@@ -506,7 +506,7 @@ func buildDHSubjectPublicKeyInfo(pubBytes []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to marshal DH public key INTEGER: %w", err)
 	}
 
-	spki := subjectPublicKeyInfo{
+	spki := pkinitSPKI{
 		Algorithm: algorithmIdentifier{
 			Algorithm:  oidDHPublicNumber,
 			Parameters: gokrb5asn1.RawValue{FullBytes: paramsBytes},
