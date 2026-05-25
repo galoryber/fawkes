@@ -770,6 +770,11 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 	}
 
 	// AES-CBC decrypt
+	if len(cek) < 16 {
+		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes); keyEncAlg=%v encKeyLen=%d riTag=%d riClass=%d edVer=%d",
+			len(cek), ktri.KeyEncryptionAlgorithm.Algorithm, len(ktri.EncryptedKey),
+			ed.RecipientInfos.Tag, ed.RecipientInfos.Class, ed.Version)
+	}
 	block, err := aes.NewCipher(cek)
 	if err != nil {
 		return types.EncryptionKey{}, fmt.Errorf("create AES cipher: %w", err)
