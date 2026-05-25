@@ -16,10 +16,10 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "credharvest_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Harvest credentials from system files, cloud configs, application secrets, shell history, Windows sources, and M365 OAuth tokens",
-		HelpString:          "cred-harvest -action <shadow|cloud|configs|history|windows|m365-tokens|browser-live|all> [-user <filter>]\nLinux/macOS: shadow, cloud, configs, history, browser-live, all\nWindows: cloud, configs, windows, m365-tokens, history, browser-live, all\nhistory: Scan shell history files for leaked passwords, tokens, and API keys\nm365-tokens: Extract OAuth/JWT tokens from TokenBroker, Teams, and Outlook\nbrowser-live: Steal live cookies, localStorage, sessionStorage via Chrome DevTools Protocol (CDP)",
+		Description:         "Harvest credentials from system files, cloud configs, application secrets, shell history, Windows sources, M365 OAuth tokens, and Outlook PST/OST files",
+		HelpString:          "cred-harvest -action <shadow|cloud|configs|history|windows|m365-tokens|pst|browser-live|all> [-user <filter>]\nLinux/macOS: shadow, cloud, configs, history, browser-live, all\nWindows: cloud, configs, windows, m365-tokens, history, pst, browser-live, all\nhistory: Scan shell history files for leaked passwords, tokens, and API keys\nm365-tokens: Extract OAuth/JWT tokens from TokenBroker, Teams, and Outlook\npst: Discover Outlook PST/OST files with size, lock status, and profile info\nbrowser-live: Steal live cookies, localStorage, sessionStorage via Chrome DevTools Protocol (CDP)",
 		Version:             4,
-		MitreAttackMappings: []string{"T1552.001", "T1552.003", "T1552.004", "T1003.008", "T1528", "T1539"},
+		MitreAttackMappings: []string{"T1552.001", "T1552.003", "T1552.004", "T1003.008", "T1528", "T1539", "T1114.001"},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -34,8 +34,8 @@ func init() {
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. history: scan shell history for leaked credentials. windows: PowerShell history, env vars, RDP, WiFi. m365-tokens: OAuth/JWT from TokenBroker, Teams, Outlook (Windows). browser-live: steal live cookies, localStorage, sessionStorage via Chrome DevTools Protocol (CDP). all: run all platform-appropriate actions. dump-all: automated chain — runs hashdump + lsa-secrets + cred-harvest all in parallel via subtasks (Windows).",
-				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens", "browser-live", "dump-all", "full-sweep"},
+				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. history: scan shell history for leaked credentials. windows: PowerShell history, env vars, RDP, WiFi. m365-tokens: OAuth/JWT from TokenBroker, Teams, Outlook (Windows). pst: discover Outlook PST/OST files with size and lock status (Windows). browser-live: steal live cookies, localStorage, sessionStorage via Chrome DevTools Protocol (CDP). all: run all platform-appropriate actions. dump-all: automated chain — runs hashdump + lsa-secrets + cred-harvest all in parallel via subtasks (Windows).",
+				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens", "pst", "browser-live", "dump-all", "full-sweep"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
@@ -324,6 +324,10 @@ func init() {
 			if action == "m365-tokens" || action == "all" {
 				createArtifact(taskData.Task.ID, "File Read", "%LOCALAPPDATA%\\Microsoft\\TokenBroker\\Cache\\*.tbres")
 				createArtifact(taskData.Task.ID, "API Call", "CryptUnprotectData (DPAPI)")
+			}
+			if action == "pst" || action == "all" {
+				createArtifact(taskData.Task.ID, "File Read", "%USERPROFILE%\\Documents\\Outlook Files\\*.pst, *.ost")
+				createArtifact(taskData.Task.ID, "Registry Read", "HKCU\\Software\\Microsoft\\Office\\*\\Outlook\\Profiles")
 			}
 
 			return response

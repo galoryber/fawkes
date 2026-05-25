@@ -15,7 +15,7 @@ Cross-platform credential harvesting across system files, cloud infrastructure, 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `history`: scan shell history for leaked passwords, tokens, and API keys. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `browser-live`: steal live cookies, localStorage, sessionStorage from Chrome/Edge via CDP. `all`: run all platform-appropriate actions. `dump-all` (Windows): automated subtask chain — runs hashdump + lsa-secrets + cred-harvest all in parallel. |
+| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `history`: scan shell history for leaked passwords, tokens, and API keys. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `pst` (Windows): discover Outlook PST/OST files with size, lock status, and profile info. `browser-live`: steal live cookies, localStorage, sessionStorage from Chrome/Edge via CDP. `all`: run all platform-appropriate actions. `dump-all` (Windows): automated subtask chain — runs hashdump + lsa-secrets + cred-harvest all in parallel. |
 | user | No | Filter results by username (case-insensitive substring match) |
 
 ## Usage
@@ -193,6 +193,33 @@ cred-harvest -action browser-live
 
 Reports total cookies, auth-related cookies with domain/name/value/flags, localStorage/sessionStorage entries with auth-related keys, and a list of open tabs. Auth cookies and storage entries are automatically registered in the Mythic Credential Vault.
 
+## PST Action (Windows Only)
+
+Discovers Outlook PST and OST files on the system. PST files contain email, calendar, contacts, and often credentials, VPN configurations, and sensitive communications. OST files are offline copies of Exchange mailboxes.
+
+### Discovery Sources
+
+| Source | What's Checked |
+|--------|---------------|
+| **Default Outlook Paths** | `%USERPROFILE%\Documents\Outlook Files\`, `%LOCALAPPDATA%\Microsoft\Outlook\` |
+| **Roaming Outlook Path** | `%APPDATA%\Microsoft\Outlook\` (older Outlook versions) |
+| **Registry Profiles** | `HKCU\Software\Microsoft\Office\{16.0,15.0,14.0}\Outlook\Profiles\` — walks all subkeys for PST path values (MAPI properties `001f6700`, `001e6700`, `001f6610`, `001e6610`) |
+
+### Output
+
+Reports each PST/OST file with type, size, last modified date, owning user, discovery source, associated Outlook profile name (if from registry), and lock status (indicates if Outlook is actively using the file).
+
+### Usage
+```
+# Discover all PST/OST files
+cred-harvest -action pst
+
+# Filter by user
+cred-harvest -action pst -user admin
+```
+
+{{% notice info %}}This action only **discovers** PST/OST files — it does not exfiltrate them. Use `download -path <filepath>` for selective exfiltration. PST files can be very large (100MB-10GB+); consider off-hours exfiltration and bandwidth constraints.{{% /notice %}}
+
 ## Credential Vault Integration
 
 Harvested credentials are automatically reported to Mythic's Credentials store:
@@ -247,6 +274,8 @@ cred-harvest -action dump-all
 - `browser-live` reads `DevToolsActivePort` files and connects to localhost debug ports — EDR may flag debug port probing
 - CDP WebSocket connections use unencrypted `ws://` on localhost — no network-level exposure
 - `Network.getAllCookies` extracts ALL cookies including HttpOnly — more comprehensive than JavaScript-based theft
+- `pst` action reads directory listings and file metadata — low footprint. Registry reads to Outlook profile keys. Locked file detection uses `OpenFile` with `O_RDWR` (file audit event)
+- PST/OST download via `download` generates file-read events and significant network traffic — plan exfiltration timing carefully
 
 ## MITRE ATT&CK Mapping
 
@@ -257,3 +286,4 @@ cred-harvest -action dump-all
 - **T1528** — Steal Application Access Token
 - **T1539** — Steal Web Session Cookie
 - **T1555.003** — Credentials from Web Browsers
+- **T1114.001** — Email Collection: Local Email Collection
