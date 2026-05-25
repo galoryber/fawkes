@@ -217,6 +217,17 @@ func init() {
 						fmt.Sprintf("[LaunchAgent] %s", path))
 				}
 			}
+			// Log operation event for persistence install/remove
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			label, _ := processResponse.TaskData.Args.GetStringArg("label")
+			host := processResponse.TaskData.Callback.Host
+			if action == "install" && (strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "installed")) {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[PERSIST] LaunchAgent installed: %s on %s", label, host), true)
+			} else if action == "remove" && (strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "removed")) {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[PERSIST] LaunchAgent removed: %s on %s", label, host), true)
+			}
 			return response
 		},
 	})

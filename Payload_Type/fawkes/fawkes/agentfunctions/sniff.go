@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -288,6 +289,21 @@ func init() {
 				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			// Log operation event when credentials are captured
+			if len(creds) > 0 {
+				host := processResponse.TaskData.Callback.Host
+				// Summarize captured credential types
+				typeCount := make(map[string]int)
+				for _, c := range result.Credentials {
+					typeCount[c.Protocol]++
+				}
+				var types []string
+				for proto, count := range typeCount {
+					types = append(types, fmt.Sprintf("%d %s", count, proto))
+				}
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] Network sniff captured credentials on %s: %s", host, strings.Join(types, ", ")), true)
+			}
 			return response
 		},
 	})

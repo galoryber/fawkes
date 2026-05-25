@@ -255,6 +255,10 @@ func init() {
 					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
 						"SPN set for Kerberoasting (T1558.003)")
 				}
+				target, _ := processResponse.TaskData.Args.GetStringArg("target")
+				server, _ := processResponse.TaskData.Args.GetStringArg("server")
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[LATERAL] LDAP modification succeeded: %s on %s (DC: %s)", action, target, server), true)
 			}
 			return response
 		},

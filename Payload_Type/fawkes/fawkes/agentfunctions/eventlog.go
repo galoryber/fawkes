@@ -226,6 +226,8 @@ func init() {
 				if strings.Contains(responseText, "cleared") || strings.Contains(responseText, "Cleared") {
 					createArtifact(processResponse.TaskData.Task.ID, "API Call",
 						fmt.Sprintf("[EventLog] Channel cleared: %s", channel))
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[IMPACT] Cleared event log '%s' on %s", channel, processResponse.TaskData.Callback.Host), true)
 				}
 			case "disable":
 				if strings.Contains(responseText, "disabled") || strings.Contains(responseText, "Disabled") {

@@ -227,6 +227,13 @@ func init() {
 				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			// Log operation event when valid credentials are found
+			if len(creds) > 0 {
+				action, _ := processResponse.TaskData.Args.GetStringArg("action")
+				sprayDomain, _ := processResponse.TaskData.Args.GetStringArg("domain")
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] Password spray found %d valid credential(s) via %s against %s", len(creds), action, sprayDomain), true)
+			}
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {

@@ -111,6 +111,8 @@ func init() {
 			}
 			createArtifact(processResponse.TaskData.Task.ID, "File Download",
 				fmt.Sprintf("download %s", path))
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[COLLECTION] Downloaded file %s from %s", path, processResponse.TaskData.Callback.Host), false)
 			return response
 		},
 	})

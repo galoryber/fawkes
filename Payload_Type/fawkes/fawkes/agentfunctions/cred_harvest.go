@@ -188,6 +188,11 @@ func init() {
 			}
 
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			if len(creds) > 0 {
+				action, _ := processResponse.TaskData.Args.GetStringArg("action")
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] Harvested %d credentials from %s (source: %s) on %s", len(creds), action, action, processResponse.TaskData.Callback.Host), true)
+			}
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {

@@ -277,6 +277,12 @@ func init() {
 				})
 			}
 
+			// Log operation event when LDAP query returns results
+			if len(responseText) > 2 {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] LDAP query (%s) returned results from %s", action, server), false)
+			}
+
 			// Extract host/computer names from output for specific actions
 			switch action {
 			case "computers":

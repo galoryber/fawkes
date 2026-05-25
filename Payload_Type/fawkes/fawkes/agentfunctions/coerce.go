@@ -249,6 +249,8 @@ func init() {
 			if method, ok := detectCoercionSuccess(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
 					fmt.Sprintf("[Coerce] Successful: %s authenticated to %s via %s", server, listener, method))
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[LATERAL] Authentication coercion succeeded: %s → %s via %s", server, listener, method), true)
 			}
 			return response
 		},
