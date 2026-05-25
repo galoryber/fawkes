@@ -458,11 +458,17 @@ func generateDHKeyPair() (priv *big.Int, pubBytes []byte, err error) {
 
 // buildDHSubjectPublicKeyInfo constructs a SubjectPublicKeyInfo for DH.
 func buildDHSubjectPublicKeyInfo(pubBytes []byte) ([]byte, error) {
-	// DH parameters (P, G)
 	params := dhParams{P: dhGroup14P, G: dhGroup14G}
 	paramsBytes, err := gokrb5asn1.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal DH params: %w", err)
+	}
+
+	// DH public key must be DER-encoded as an INTEGER inside the BitString (RFC 3279 §2.3.3)
+	pubInt := new(big.Int).SetBytes(pubBytes)
+	pubIntDER, err := gokrb5asn1.Marshal(pubInt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal DH public key INTEGER: %w", err)
 	}
 
 	spki := subjectPublicKeyInfo{
@@ -471,16 +477,16 @@ func buildDHSubjectPublicKeyInfo(pubBytes []byte) ([]byte, error) {
 			Parameters: gokrb5asn1.RawValue{FullBytes: paramsBytes},
 		},
 		PublicKey: gokrb5asn1.BitString{
-			Bytes:     pubBytes,
-			BitLength: len(pubBytes) * 8,
+			Bytes:     pubIntDER,
+			BitLength: len(pubIntDER) * 8,
 		},
 	}
 	return gokrb5asn1.Marshal(spki)
 }
 
 // buildCMSSignedData creates a CMS SignedData structure signing the AuthPack.
+// Uses explicit DER construction for reliable encoding of CMS structures.
 func buildCMSSignedData(authPackBytes []byte, ck *pkinitCertKey) ([]byte, error) {
-	// Determine signature algorithm based on key type
 	var digestOID, sigOID gokrb5asn1.ObjectIdentifier
 	var hashFunc crypto.Hash
 	switch ck.Key.(type) {
@@ -496,72 +502,35 @@ func buildCMSSignedData(authPackBytes []byte, ck *pkinitCertKey) ([]byte, error)
 		return nil, fmt.Errorf("unsupported key type for signing")
 	}
 
-	// Build encapsulated content
-	eContentOctetString, err := gokrb5asn1.Marshal(gokrb5asn1.RawValue{
-		Class: gokrb5asn1.ClassUniversal,
-		Tag:   gokrb5asn1.TagOctetString,
-		Bytes: authPackBytes,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal eContent: %w", err)
-	}
-
-	encapContent := encapContentInfo{
-		EContentType: oidPKINITAuthData,
-		EContent:     gokrb5asn1.RawValue{FullBytes: eContentOctetString},
-	}
-
-	// Compute digest of AuthPack
+	// Compute digest of AuthPack content
 	h := hashFunc.New()
 	h.Write(authPackBytes)
 	digest := h.Sum(nil)
 
-	// Build signed attributes
-	contentTypeAttr := attribute{
-		Type: oidContentType,
-		Values: gokrb5asn1.RawValue{
-			Class:      gokrb5asn1.ClassUniversal,
-			Tag:        gokrb5asn1.TagSet,
-			IsCompound: true,
-		},
-	}
+	// Build signed attributes as raw DER to avoid struct-level tag ambiguities.
+	// Each Attribute: SEQUENCE { OID, SET OF { value } }
 	contentTypeOIDBytes, _ := gokrb5asn1.Marshal(oidPKINITAuthData)
-	contentTypeAttr.Values.Bytes = contentTypeOIDBytes
+	ctAttrBytes := derSequence(
+		derMarshal(oidContentType),
+		derSet(contentTypeOIDBytes),
+	)
+	digestOctetBytes := derOctetString(digest)
+	mdAttrBytes := derSequence(
+		derMarshal(oidMessageDigest),
+		derSet(digestOctetBytes),
+	)
 
-	digestAttr := attribute{
-		Type: oidMessageDigest,
-		Values: gokrb5asn1.RawValue{
-			Class:      gokrb5asn1.ClassUniversal,
-			Tag:        gokrb5asn1.TagSet,
-			IsCompound: true,
-		},
-	}
-	digestOctetBytes, _ := gokrb5asn1.Marshal(gokrb5asn1.RawValue{
-		Class: gokrb5asn1.ClassUniversal,
-		Tag:   gokrb5asn1.TagOctetString,
-		Bytes: digest,
-	})
-	digestAttr.Values.Bytes = digestOctetBytes
+	// SET OF Attribute for signing (explicit SET tag 0x31)
+	signedAttrsContent := append(ctAttrBytes, mdAttrBytes...)
+	signedAttrsForSig := derWrap(0x31, signedAttrsContent)
 
-	attrs := []attribute{contentTypeAttr, digestAttr}
-	attrsBytes, err := gokrb5asn1.Marshal(attrs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal signed attrs: %w", err)
-	}
-
-	// For signing: SET OF (tag 0x31) version of the attributes
-	signedAttrsForSig := make([]byte, len(attrsBytes))
-	copy(signedAttrsForSig, attrsBytes)
-	if len(signedAttrsForSig) > 0 {
-		signedAttrsForSig[0] = 0x31 // SEQUENCE → SET for signature computation
-	}
-
-	// Sign the attributes
+	// Hash signed attributes and sign
 	h2 := hashFunc.New()
 	h2.Write(signedAttrsForSig)
 	attrDigest := h2.Sum(nil)
 
 	var signature []byte
+	var err error
 	switch key := ck.Key.(type) {
 	case *rsa.PrivateKey:
 		signature, err = rsa.SignPKCS1v15(rand.Reader, key, hashFunc, attrDigest)
@@ -572,77 +541,112 @@ func buildCMSSignedData(authPackBytes []byte, ck *pkinitCertKey) ([]byte, error)
 		return nil, fmt.Errorf("failed to sign: %w", err)
 	}
 
-	// Wrap signed attrs with IMPLICIT [0] tag
-	signedAttrsTagged := make([]byte, len(attrsBytes))
-	copy(signedAttrsTagged, attrsBytes)
-	if len(signedAttrsTagged) > 0 {
-		signedAttrsTagged[0] = 0xa0 // context-specific [0] constructed
-	}
+	// Signed attrs in SignerInfo use IMPLICIT [0] (tag 0xa0)
+	signedAttrsTagged := derWrap(0xa0, signedAttrsContent)
 
-	// Build SignerInfo
-	si := signerInfo{
-		Version: 1,
-		SID: issuerAndSerialNumber{
-			Issuer:       gokrb5asn1.RawValue{FullBytes: ck.Cert.RawIssuer},
-			SerialNumber: ck.Cert.SerialNumber,
-		},
-		DigestAlgorithm:    algorithmIdentifier{Algorithm: digestOID},
-		SignedAttrs:        gokrb5asn1.RawValue{FullBytes: signedAttrsTagged},
-		SignatureAlgorithm: algorithmIdentifier{Algorithm: sigOID},
-		Signature:          signature,
-	}
-	siBytes, err := gokrb5asn1.Marshal(si)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal SignerInfo: %w", err)
-	}
+	// Build SignerInfo SEQUENCE
+	issuerBytes, _ := gokrb5asn1.Marshal(gokrb5asn1.RawValue{FullBytes: ck.Cert.RawIssuer})
+	serialBytes, _ := gokrb5asn1.Marshal(ck.Cert.SerialNumber)
+	sidBytes := derSequence(issuerBytes, serialBytes)
 
-	// Digest algorithm SET
-	digestAlgBytes, err := gokrb5asn1.Marshal(algorithmIdentifier{Algorithm: digestOID})
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal digest alg: %w", err)
+	digestAlgBytes := derAlgID(digestOID)
+	var sigAlgBytes []byte
+	switch ck.Key.(type) {
+	case *ecdsa.PrivateKey:
+		sigAlgBytes = derAlgIDNoParams(sigOID)
+	default:
+		sigAlgBytes = derAlgID(sigOID)
 	}
-	digestAlgSet := gokrb5asn1.RawValue{
-		Class:      gokrb5asn1.ClassUniversal,
-		Tag:        gokrb5asn1.TagSet,
-		IsCompound: true,
-		Bytes:      digestAlgBytes,
-	}
+	sigValueBytes := derOctetString(signature)
 
-	// Certificates [0] IMPLICIT
-	certSetBytes := gokrb5asn1.RawValue{
-		Class:      gokrb5asn1.ClassContextSpecific,
-		Tag:        0,
-		IsCompound: true,
-		Bytes:      ck.CertDER,
-	}
+	versionBytes, _ := gokrb5asn1.Marshal(1)
+	siBytes := derSequence(
+		versionBytes,
+		sidBytes,
+		digestAlgBytes,
+		signedAttrsTagged,
+		sigAlgBytes,
+		sigValueBytes,
+	)
 
-	// SignerInfos SET
-	siSet := gokrb5asn1.RawValue{
-		Class:      gokrb5asn1.ClassUniversal,
-		Tag:        gokrb5asn1.TagSet,
-		IsCompound: true,
-		Bytes:      siBytes,
-	}
+	// Build SignedData SEQUENCE
+	sdVersionBytes, _ := gokrb5asn1.Marshal(3)
+	digestAlgSetBytes := derSet(digestAlgBytes)
 
-	// Build SignedData
-	sd := signedData{
-		Version:          3, // PKINIT uses version 3 (has certificates)
-		DigestAlgorithms: digestAlgSet,
-		EncapContentInfo: encapContent,
-		Certificates:     certSetBytes,
-		SignerInfos:      siSet,
-	}
-	sdBytes, err := gokrb5asn1.Marshal(sd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal SignedData: %w", err)
-	}
+	eContentOctet := derOctetString(authPackBytes)
+	eContentTypeBytes := derMarshal(oidPKINITAuthData)
+	eContentExplicit := derWrap(0xa0, eContentOctet) // [0] EXPLICIT
+	encapContentBytes := derSequence(eContentTypeBytes, eContentExplicit)
+
+	certsImplicit := derWrap(0xa0, ck.CertDER)  // [0] IMPLICIT certificates
+	siSetBytes := derSet(siBytes)
+
+	sdBytes := derSequence(
+		sdVersionBytes,
+		digestAlgSetBytes,
+		encapContentBytes,
+		certsImplicit,
+		siSetBytes,
+	)
 
 	// Wrap in ContentInfo
-	ci := contentInfo{
-		ContentType: oidSignedData,
-		Content:     gokrb5asn1.RawValue{FullBytes: sdBytes},
+	sdOIDBytes := derMarshal(oidSignedData)
+	sdExplicit := derWrap(0xa0, sdBytes) // [0] EXPLICIT content
+	ciBytes := derSequence(sdOIDBytes, sdExplicit)
+
+	return ciBytes, nil
+}
+
+// DER construction helpers
+
+func derWrap(tag byte, content []byte) []byte {
+	return append(derTL(tag, len(content)), content...)
+}
+
+func derTL(tag byte, length int) []byte {
+	if length < 128 {
+		return []byte{tag, byte(length)}
 	}
-	return gokrb5asn1.Marshal(ci)
+	if length < 256 {
+		return []byte{tag, 0x81, byte(length)}
+	}
+	return []byte{tag, 0x82, byte(length >> 8), byte(length)}
+}
+
+func derSequence(elements ...[]byte) []byte {
+	var content []byte
+	for _, e := range elements {
+		content = append(content, e...)
+	}
+	return derWrap(0x30, content)
+}
+
+func derSet(elements ...[]byte) []byte {
+	var content []byte
+	for _, e := range elements {
+		content = append(content, e...)
+	}
+	return derWrap(0x31, content)
+}
+
+func derOctetString(data []byte) []byte {
+	return derWrap(0x04, data)
+}
+
+func derMarshal(v interface{}) []byte {
+	b, _ := gokrb5asn1.Marshal(v)
+	return b
+}
+
+func derAlgID(oid gokrb5asn1.ObjectIdentifier) []byte {
+	oidBytes := derMarshal(oid)
+	nullBytes := []byte{0x05, 0x00}
+	return derSequence(oidBytes, nullBytes)
+}
+
+func derAlgIDNoParams(oid gokrb5asn1.ObjectIdentifier) []byte {
+	oidBytes := derMarshal(oid)
+	return derSequence(oidBytes)
 }
 
 // extractKDCDHPublicKey extracts the KDC's DH public key from the signed reply.
