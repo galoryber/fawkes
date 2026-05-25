@@ -18,8 +18,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "privesc-check",
 		Description:         "Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC. Linux: SUID/SGID, capabilities, sudo, containers, cron hijacking, NFS, systemd units, sudo tokens, PATH hijacking, docker group, dangerous groups, Polkit rules, modprobe hooks, ld.so.preload, security modules. macOS: LaunchDaemons, TCC, dylib hijacking, SIP (T1548)",
-		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload, dll-exports, hijack-execute, hijack-deploy, hijack-cleanup, service-registry. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
-		Version:             10,
+		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload, dll-exports, hijack-execute, hijack-deploy, hijack-cleanup, hijack-trigger, service-registry. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
+		Version:             11,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1548", "T1548.001", "T1548.002", "T1574.001", "T1574.002", "T1574.009", "T1574.011", "T1552.001", "T1613", "T1082"},
@@ -41,8 +41,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "dll-sideload", "dll-exports", "hijack-execute", "hijack-deploy", "hijack-cleanup", "service-registry", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
-				Description:      "Check to perform. auto-escalate: automated chain. hijack-execute: read DLL exports for proxy DLL generation — server compiles proxy DLL with shellcode. hijack-deploy: deploy compiled proxy DLL (rename original, place proxy). hijack-cleanup: reverse a deployed hijack (delete proxy, restore original). Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload (T1574.002), dll-exports (PE export table), service-registry (T1574.011). Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
+				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "dll-sideload", "dll-exports", "hijack-execute", "hijack-deploy", "hijack-cleanup", "hijack-trigger", "service-registry", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. auto-escalate: automated chain. hijack-execute: read DLL exports for proxy DLL generation — server compiles proxy DLL with shellcode. hijack-deploy: deploy compiled proxy DLL (rename original, place proxy). hijack-cleanup: reverse a deployed hijack (delete proxy, restore original). hijack-trigger: trigger the hijack — restart a service or spawn a process to load the proxy DLL. Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload (T1574.002), dll-exports (PE export table), service-registry (T1574.011). Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -123,6 +123,35 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "trigger",
+				ModalDisplayName: "Trigger Type",
+				CLIName:          "trigger",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"restart", "spawn"},
+				Description:      "How to trigger DLL loading after hijack-deploy. restart: stop and restart a Windows service (loads DLL from service binary directory). spawn: launch an executable (loads DLL from application directory).",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:             "service_name",
+				ModalDisplayName: "Service Name",
+				CLIName:          "service_name",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Service to restart for hijack-trigger (trigger=restart). Must be the exact Windows service name (not display name).",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:            "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -153,6 +182,8 @@ func init() {
 				msg = "OPSEC WARNING: DLL hijack deployment. Renames original DLL and places proxy. File rename + creation in sensitive directories triggers EDR behavioral detections."
 			case "hijack-cleanup":
 				msg = "OPSEC WARNING: Reverses a deployed DLL hijack. Deletes proxy DLL and restores the original. File deletion + rename in sensitive directories may trigger EDR alerts."
+			case "hijack-trigger":
+				msg = "OPSEC WARNING: Triggers a deployed DLL hijack by restarting a service (SCM stop/start — Event IDs 7036, 7040) or spawning a process. Service restart requires sufficient privileges and creates Service Control Manager audit events. Process spawn creates a new process with the hijacked DLL loaded."
 			default:
 				msg = "OPSEC WARNING: Privilege escalation enumeration accesses system configuration (services, registry, SUID binaries, sudo, cron, systemd). "
 				switch taskData.Payload.OS {
@@ -259,6 +290,20 @@ func init() {
 				return response
 			}
 
+			if action == "hijack-trigger" {
+				trigger, _ := taskData.Args.GetStringArg("trigger")
+				serviceName, _ := taskData.Args.GetStringArg("service_name")
+				source, _ := taskData.Args.GetStringArg("source")
+				var display string
+				if trigger == "restart" {
+					display = fmt.Sprintf("hijack-trigger restart service: %s", serviceName)
+				} else {
+					display = fmt.Sprintf("hijack-trigger spawn: %s", source)
+				}
+				response.DisplayParams = &display
+				return response
+			}
+
 			if action != "" && action != "all" {
 				response.DisplayParams = &action
 			}
@@ -277,6 +322,14 @@ func init() {
 			// Check for hijack-execute export JSON response
 			if strings.Contains(responseText, `"action":"hijack-execute"`) {
 				processHijackExecuteResponse(processResponse.TaskData, responseText)
+				return response
+			}
+
+			if strings.Contains(responseText, "Triggering DLL hijack via") {
+				host := processResponse.TaskData.Callback.Host
+				trigger, _ := processResponse.TaskData.Args.GetStringArg("trigger")
+				detail := fmt.Sprintf("[EXECUTION] DLL hijack triggered (%s) on %s", trigger, host)
+				logOperationEvent(processResponse.TaskData.Task.ID, detail, true)
 				return response
 			}
 
