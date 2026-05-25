@@ -78,11 +78,11 @@ func init() {
 				Name:             "key",
 				CLIName:          "key",
 				ModalDisplayName: "Key (hex)",
-				Description:      "Encryption key in hex (AES256=64 chars, AES128=32 chars, RC4/NTLM=32 chars)",
+				Description:      "Encryption key in hex (AES256=64 chars, AES128=32 chars, RC4/NTLM=32 chars). Required for forge/request/diamond/s4u. Not needed for pkinit/renew.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: true, GroupName: "Default"},
+					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
 			{
