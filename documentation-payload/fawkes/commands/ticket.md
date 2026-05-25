@@ -21,7 +21,7 @@ Forge, request, renew, delegate, or certificate-auth Kerberos tickets using extr
 
 **S4U — Constrained Delegation** (T1134.001): Performs S4U2Self + S4U2Proxy to obtain a service ticket for an impersonated user via constrained delegation. Requires a service account with `msDS-AllowedToDelegateTo` and `TrustedToAuthForDelegation` (protocol transition). Online operation against the KDC.
 
-**PKINIT — Certificate-Based Authentication** (T1649): Performs an AS-REQ with PA-PK-AS-REQ pre-authentication using a client certificate instead of a password/hash. Uses Diffie-Hellman key exchange (IKE Group 14) and CMS SignedData for proof of possession. Certificates can be obtained from ADCS certificate requests (e.g., via `adcs -action request`) or Shadow Credentials (`msDS-KeyCredentialLink` via `ldap-write`). Online operation against the KDC.
+**PKINIT — Certificate-Based Authentication** (T1649): Performs an AS-REQ with PA-PK-AS-REQ pre-authentication using a client certificate instead of a password/hash. Uses Diffie-Hellman key exchange (IKE Group 2, 1024-bit MODP) and CMS SignedData for proof of possession. Certificates can be obtained from ADCS certificate requests (e.g., via `adcs -action request`) or Shadow Credentials (`msDS-KeyCredentialLink` via `ldap-write`). Online operation against the KDC.
 
 Outputs tickets in kirbi format (for Rubeus/Mimikatz on Windows) or ccache format (for Linux/macOS `KRB5CCNAME`).
 
