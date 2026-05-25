@@ -74,7 +74,7 @@ type pkAuthenticator struct {
 
 type authPack struct {
 	PKAuthenticator   pkAuthenticator       `asn1:"explicit,tag:0"`
-	ClientPublicValue gokrb5asn1.RawValue   `asn1:"optional,explicit,tag:1"`
+	ClientPublicValue gokrb5asn1.RawValue   `asn1:"optional"`
 	ClientDHNonce     []byte                `asn1:"optional,explicit,tag:3"`
 }
 
@@ -256,7 +256,9 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	}
 
 	// Build AuthPack with clientDHNonce (required for key derivation)
-	spkiRaw := gokrb5asn1.RawValue{FullBytes: spki}
+	// RawValue.FullBytes bypasses struct tags, so pre-wrap SPKI in [1] EXPLICIT
+	spkiTagged := derWrap(0xa1, spki)
+	spkiRaw := gokrb5asn1.RawValue{FullBytes: spkiTagged}
 	ap := authPack{
 		PKAuthenticator:   pkAuth,
 		ClientPublicValue: spkiRaw,
@@ -612,13 +614,7 @@ func buildCMSSignedData(authPackBytes []byte, ck *pkinitCertKey) ([]byte, error)
 	sidBytes := derSequence(issuerBytes, serialBytes)
 
 	digestAlgBytes := derAlgID(digestOID)
-	var sigAlgBytes []byte
-	switch ck.Key.(type) {
-	case *ecdsa.PrivateKey:
-		sigAlgBytes = derAlgIDNoParams(sigOID)
-	default:
-		sigAlgBytes = derAlgID(sigOID)
-	}
+	sigAlgBytes := derAlgIDNoParams(sigOID)
 	sigValueBytes := derOctetString(signature)
 
 	versionBytes, _ := gokrb5asn1.Marshal(1)
