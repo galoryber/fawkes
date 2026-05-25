@@ -50,21 +50,17 @@ var (
 	oidAES128CBC         = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}
 )
 
-// IKE Group 14 (2048-bit MODP) parameters from RFC 3526 Section 3.
+// IKE Group 2 (1024-bit MODP) parameters from RFC 2412 Appendix E.2.
+// Windows KDC PKINIT only supports this group; Group 14 causes encKeyPack fallback.
 var (
-	dhGroup14P, _ = new(big.Int).SetString(
-		"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"+
+	dhGroupP, _ = new(big.Int).SetString(
+		"00FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"+
 			"29024E088A67CC74020BBEA63B139B22514A08798E3404DD"+
 			"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245"+
 			"E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"+
-			"EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D"+
-			"C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F"+
-			"83655D23DCA3AD961C62F356208552BB9ED529077096966D"+
-			"670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"+
-			"E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9"+
-			"DE2BCBF6955817183995497CEA956AE515D2261898FA0510"+
-			"15728E5A8AACAA68FFFFFFFFFFFFFFFF", 16)
-	dhGroup14G = big.NewInt(2)
+			"EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE65381"+
+			"FFFFFFFFFFFFFFFF", 16)
+	dhGroupG = big.NewInt(2)
 )
 
 // PKINIT ASN.1 types per RFC 4556 and MS-PKCA.
@@ -77,8 +73,9 @@ type pkAuthenticator struct {
 }
 
 type authPack struct {
-	PKAuthenticator pkAuthenticator           `asn1:"explicit,tag:0"`
-	ClientPublicValue gokrb5asn1.RawValue     `asn1:"optional,explicit,tag:1"`
+	PKAuthenticator   pkAuthenticator       `asn1:"explicit,tag:0"`
+	ClientPublicValue gokrb5asn1.RawValue   `asn1:"optional,explicit,tag:1"`
+	ClientDHNonce     []byte                `asn1:"optional,explicit,tag:3"`
 }
 
 type algorithmIdentifier struct {
@@ -141,9 +138,10 @@ type paPkAsReq struct {
 	KDCPKId        []byte              `asn1:"optional,tag:2"`
 }
 
-// PA-PK-AS-REP DH variant per RFC 4556 Section 3.2.3.
+// PA-PK-AS-REP DH variant (DHRepInfo) per RFC 4556 Section 3.2.3.
 type paPkAsRepDH struct {
-	DHSignedData []byte `asn1:"tag:0"`
+	DHSignedData  []byte `asn1:"tag:0"`
+	ServerDHNonce []byte `asn1:"optional,explicit,tag:1"`
 }
 
 type kdcDHKeyInfo struct {
@@ -235,8 +233,8 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		return errorf("Error marshaling AS-REQ body: %v", err)
 	}
 
-	// Generate DH key pair (IKE Group 14 / 2048-bit)
-	dhPriv, dhPubBytes, err := generateDHKeyPair()
+	// Generate DH key pair (IKE Group 2 / 1024-bit)
+	dhPriv, dhPubBytes, clientDHNonce, err := generateDHKeyPair()
 	if err != nil {
 		return errorf("Error generating DH key pair: %v", err)
 	}
@@ -257,11 +255,12 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		PaChecksum: bodyChecksum[:],
 	}
 
-	// Build AuthPack
+	// Build AuthPack with clientDHNonce (required for key derivation)
 	spkiRaw := gokrb5asn1.RawValue{FullBytes: spki}
 	ap := authPack{
 		PKAuthenticator:   pkAuth,
 		ClientPublicValue: spkiRaw,
+		ClientDHNonce:     clientDHNonce,
 	}
 	authPackBytes, err := gokrb5asn1.Marshal(ap)
 	if err != nil {
@@ -347,12 +346,29 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		if err != nil {
 			return errorf("Error extracting KDC DH key: %v", err)
 		}
-		sharedSecret := new(big.Int).Exp(kdcDHPub, dhPriv, dhGroup14P)
+		sharedSecret := new(big.Int).Exp(kdcDHPub, dhPriv, dhGroupP)
 		sharedSecretBytes := sharedSecret.Bytes()
 		defer structs.ZeroBytes(sharedSecretBytes)
-		keyBytes := pkinitDeriveKey(sharedSecretBytes, int(asReq.ReqBody.Nonce), 32)
+
+		// Key derivation per RFC 4556 §3.2.3.1:
+		// fullKey = sharedSecret || clientDHNonce || serverDHNonce
+		// sessionKey = octetstring2key(fullKey, keysize)
+		var fullKey []byte
+		fullKey = append(fullKey, sharedSecretBytes...)
+		fullKey = append(fullKey, clientDHNonce...)
+		fullKey = append(fullKey, rep.ServerDHNonce...)
+		defer structs.ZeroBytes(fullKey)
+
+		etype := int32(asRep.EncPart.EType)
+		keySize := 32 // AES-256
+		keyType := int32(18)
+		if etype == 17 {
+			keySize = 16 // AES-128
+			keyType = 17
+		}
+		keyBytes := pkinitOctetstring2Key(fullKey, keySize)
 		defer structs.ZeroBytes(keyBytes)
-		sessionKey = types.EncryptionKey{KeyType: 18, KeyValue: keyBytes}
+		sessionKey = types.EncryptionKey{KeyType: keyType, KeyValue: keyBytes}
 
 	case 1:
 		// encKeyPack variant — decrypt CMS EnvelopedData with our RSA key
@@ -464,38 +480,41 @@ func parsePEMCertKey(certPEM, keyPEM string) (*pkinitCertKey, error) {
 	}, nil
 }
 
-// generateDHKeyPair generates a DH key pair using IKE Group 14 (2048-bit).
-func generateDHKeyPair() (priv *big.Int, pubBytes []byte, err error) {
-	// Generate random private key (256-bit is sufficient for DH Group 14)
+// generateDHKeyPair generates a DH key pair using IKE Group 2 (1024-bit).
+// Also returns a 32-byte clientDHNonce for key derivation.
+func generateDHKeyPair() (priv *big.Int, pubBytes []byte, clientNonce []byte, err error) {
 	privBytes := make([]byte, 32)
 	if _, err := rand.Read(privBytes); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate DH private key: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to generate DH private key: %w", err)
 	}
 	priv = new(big.Int).SetBytes(privBytes)
 
-	// Compute public key: g^x mod p
-	pub := new(big.Int).Exp(dhGroup14G, priv, dhGroup14P)
+	pub := new(big.Int).Exp(dhGroupG, priv, dhGroupP)
 	pubBytes = pub.Bytes()
 
-	// Pad to 256 bytes (2048 bits)
-	if len(pubBytes) < 256 {
-		padded := make([]byte, 256)
-		copy(padded[256-len(pubBytes):], pubBytes)
+	// Pad to 128 bytes (1024 bits)
+	if len(pubBytes) < 128 {
+		padded := make([]byte, 128)
+		copy(padded[128-len(pubBytes):], pubBytes)
 		pubBytes = padded
 	}
 
-	return priv, pubBytes, nil
+	clientNonce = make([]byte, 32)
+	if _, err := rand.Read(clientNonce); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate DH nonce: %w", err)
+	}
+
+	return priv, pubBytes, clientNonce, nil
 }
 
 // buildDHSubjectPublicKeyInfo constructs a SubjectPublicKeyInfo for DH.
 func buildDHSubjectPublicKeyInfo(pubBytes []byte) ([]byte, error) {
-	params := dhParams{P: dhGroup14P, G: dhGroup14G}
+	params := dhParams{P: dhGroupP, G: dhGroupG}
 	paramsBytes, err := gokrb5asn1.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal DH params: %w", err)
 	}
 
-	// DH public key must be DER-encoded as an INTEGER inside the BitString (RFC 3279 §2.3.3)
 	pubInt := new(big.Int).SetBytes(pubBytes)
 	pubIntDER, err := gokrb5asn1.Marshal(pubInt)
 	if err != nil {
@@ -933,47 +952,19 @@ func extractKDCDHPublicKey(dhSignedDataBytes []byte) (*big.Int, error) {
 	return pubKey, nil
 }
 
-// pkinitDeriveKey derives a session key from the DH shared secret using SP800-56A
-// Concatenation KDF (as specified by MS-PKCA for PKINIT key derivation).
-func pkinitDeriveKey(sharedSecret []byte, nonce int, keyLen int) []byte {
-	// SP800-56A Concatenation KDF: key = KDF(Z, OtherInfo)
-	// For MS-PKCA PKINIT:
-	//   Hash = SHA1
-	//   Z = DH shared secret
-	//   OtherInfo = counter(4) || "PKINIT" || nonce(4) || keyLength(4)
-	//
-	// Simplified: iterate SHA1(counter || Z || OtherInfo) until enough bytes
+// pkinitOctetstring2Key derives a session key per RFC 4556 §3.2.3.1.
+// key = SHA1(0x00 || value) || SHA1(0x01 || value) || ... truncated to keySize.
+func pkinitOctetstring2Key(value []byte, keySize int) []byte {
 	var derived []byte
-	counter := uint32(1)
-
-	nonceBytes := make([]byte, 4)
-	nonceBytes[0] = byte(nonce >> 24)
-	nonceBytes[1] = byte(nonce >> 16)
-	nonceBytes[2] = byte(nonce >> 8)
-	nonceBytes[3] = byte(nonce)
-
-	keyLenBits := uint32(keyLen * 8)
-	klBytes := make([]byte, 4)
-	klBytes[0] = byte(keyLenBits >> 24)
-	klBytes[1] = byte(keyLenBits >> 16)
-	klBytes[2] = byte(keyLenBits >> 8)
-	klBytes[3] = byte(keyLenBits)
-
-	for len(derived) < keyLen {
+	counter := byte(0)
+	for len(derived) < keySize {
 		h := sha1.New()
-		ctrBytes := make([]byte, 4)
-		ctrBytes[0] = byte(counter >> 24)
-		ctrBytes[1] = byte(counter >> 16)
-		ctrBytes[2] = byte(counter >> 8)
-		ctrBytes[3] = byte(counter)
-		h.Write(ctrBytes)
-		h.Write(sharedSecret)
-		h.Write(nonceBytes)
-		h.Write(klBytes)
+		h.Write([]byte{counter})
+		h.Write(value)
 		derived = append(derived, h.Sum(nil)...)
 		counter++
 	}
 
-	return derived[:keyLen]
+	return derived[:keySize]
 }
 
