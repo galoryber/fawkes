@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,24 @@ import (
 
 	"github.com/hirochachacha/go-smb2"
 )
+
+type smbDirListing struct {
+	Action     string         `json:"action"`
+	Host       string         `json:"host"`
+	Share      string         `json:"share"`
+	IsFile     bool           `json:"is_file"`
+	Name       string         `json:"name"`
+	ParentPath string         `json:"parent_path"`
+	Success    bool           `json:"success"`
+	Files      []smbFileEntry `json:"files"`
+}
+
+type smbFileEntry struct {
+	Name       string `json:"name"`
+	IsFile     bool   `json:"is_file"`
+	Size       int64  `json:"size"`
+	ModifyTime string `json:"modify_time"`
+}
 
 type SmbCommand struct{}
 
@@ -204,7 +223,6 @@ func smbListDir(args smbArgs) structs.CommandResult {
 	defer func() { _ = share.Umount() }()
 
 	dirPath := args.Path
-	// Normalize path: strip leading backslashes/slashes (users often try UNC-style \\)
 	dirPath = strings.TrimLeft(dirPath, "\\/")
 	if dirPath == "" {
 		dirPath = "."
@@ -217,22 +235,41 @@ func smbListDir(args smbArgs) structs.CommandResult {
 		return errorf("Error listing \\\\%s\\%s\\%s: %v", args.Host, args.Share, dirPath, err)
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] \\\\%s\\%s\\%s (%d entries)\n", args.Host, args.Share, dirPath, len(entries)))
-	sb.WriteString(fmt.Sprintf("%-12s  %-20s  %s\n", "Size", "Modified", "Name"))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() {
-			name += "/"
-		}
-		size := formatFileSize(entry.Size())
-		modified := entry.ModTime().Format("2006-01-02 15:04:05")
-		sb.WriteString(fmt.Sprintf("%-12s  %-20s  %s\n", size, modified, name))
+	parentPath := args.Share
+	name := dirPath
+	if dirPath == "." {
+		parentPath = ""
+		name = args.Share
+	} else if idx := strings.LastIndexAny(dirPath, "\\/"); idx >= 0 {
+		name = dirPath[idx+1:]
+		parentPath = args.Share + "\\" + dirPath[:idx]
 	}
 
-	return successResult(sb.String())
+	listing := smbDirListing{
+		Action:     "ls",
+		Host:       args.Host,
+		Share:      args.Share,
+		IsFile:     false,
+		Name:       name,
+		ParentPath: parentPath,
+		Success:    true,
+		Files:      make([]smbFileEntry, 0, len(entries)),
+	}
+
+	for _, entry := range entries {
+		listing.Files = append(listing.Files, smbFileEntry{
+			Name:       entry.Name(),
+			IsFile:     !entry.IsDir(),
+			Size:       entry.Size(),
+			ModifyTime: entry.ModTime().Format(time.RFC3339),
+		})
+	}
+
+	data, err := json.Marshal(listing)
+	if err != nil {
+		return errorf("Error: failed to marshal result: %v", err)
+	}
+	return successResult(string(data))
 }
 
 func smbReadFile(args smbArgs) structs.CommandResult {

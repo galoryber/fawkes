@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
@@ -304,6 +305,70 @@ func init() {
 			responseText, ok := processResponse.Response.(string)
 			if !ok || responseText == "" {
 				return response
+			}
+			// Register SMB directory listings in Mythic's file browser
+			var dirListing struct {
+				Action     string `json:"action"`
+				Host       string `json:"host"`
+				Share      string `json:"share"`
+				IsFile     bool   `json:"is_file"`
+				Name       string `json:"name"`
+				ParentPath string `json:"parent_path"`
+				Success    bool   `json:"success"`
+				Files      []struct {
+					Name       string `json:"name"`
+					IsFile     bool   `json:"is_file"`
+					Size       int64  `json:"size"`
+					ModifyTime string `json:"modify_time"`
+				} `json:"files"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &dirListing); err == nil && dirListing.Action == "ls" && dirListing.Success {
+				host := dirListing.Host
+				if host == "" {
+					host = processResponse.TaskData.Callback.Host
+				}
+
+				dirPath := filepath.Join(dirListing.ParentPath, dirListing.Name)
+
+				if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+					TaskID: processResponse.TaskData.Task.ID,
+					FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+						Host:       host,
+						IsFile:     false,
+						Name:       dirListing.Name,
+						ParentPath: dirListing.ParentPath,
+						Success:    true,
+					},
+				}); err != nil {
+					logging.LogError(err, "smb: failed to create directory browser entry",
+						"host", host, "path", dirPath)
+				}
+
+				for _, f := range dirListing.Files {
+					entry := mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+						Host:       host,
+						IsFile:     f.IsFile,
+						Name:       f.Name,
+						ParentPath: dirPath,
+						Success:    true,
+						Size:       uint64(f.Size),
+					}
+					if t, err := parseTimestamp(f.ModifyTime); err == nil {
+						entry.ModifyTime = t
+					}
+
+					if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+						TaskID:      processResponse.TaskData.Task.ID,
+						FileBrowser: entry,
+					}); err != nil {
+						logging.LogError(err, "smb: failed to create file browser entry",
+							"host", host, "file", f.Name)
+					}
+				}
+
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] SMB file listing: \\\\%s\\%s\\%s (%d entries)",
+						host, dirListing.Share, dirListing.Name, len(dirListing.Files)), false)
 			}
 			// Track SMB exfil operations
 			var exfilResult struct {

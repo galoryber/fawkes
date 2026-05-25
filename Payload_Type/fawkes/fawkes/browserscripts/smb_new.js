@@ -106,9 +106,33 @@ function(task, responses){
             }
             return {"table": [{"headers": headers, "rows": rows, "title": title || "SMB Shares \u2014 " + shares.length}]};
         }
-        // Detect taint result (JSON with action:"taint")
+        // Detect JSON results (ls, taint)
         try {
             let parsed = JSON.parse(combined);
+            if(parsed.action === "ls" && parsed.files){
+                let headers = [
+                    {"plaintext": "Name", "type": "string", "fillWidth": true},
+                    {"plaintext": "Size", "type": "string", "width": 100},
+                    {"plaintext": "Modified", "type": "string", "width": 170},
+                ];
+                let rows = [];
+                for(let j = 0; j < parsed.files.length; j++){
+                    let f = parsed.files[j];
+                    let isDirectory = !f.is_file;
+                    let sizeStr = isDirectory ? "<DIR>" : formatBytes(f.size);
+                    let modStr = f.modify_time ? f.modify_time.replace("T", " ").replace(/Z$/, "").replace(/\+.*/, "") : "";
+                    let displayName = f.name + (isDirectory ? "/" : "");
+                    let bg = isDirectory ? "rgba(0,150,255,0.06)" : "transparent";
+                    rows.push({
+                        "Name": {"plaintext": displayName, "copyIcon": true, "cellStyle": isDirectory ? {"fontWeight": "bold"} : {}},
+                        "Size": {"plaintext": sizeStr, "cellStyle": isDirectory ? {"color": "#888"} : {}},
+                        "Modified": {"plaintext": modStr},
+                        "rowStyle": {"backgroundColor": bg},
+                    });
+                }
+                let title = "\\\\" + (parsed.host || "") + "\\" + (parsed.share || "") + "\\" + (parsed.name || "") + " — " + parsed.files.length + " entries";
+                return {"table": [{"headers": headers, "rows": rows, "title": title}]};
+            }
             if(parsed.action === "taint"){
                 let tables = [];
                 // Planted files table
@@ -215,4 +239,12 @@ function renderChainTable(text, chainName){
         if(errorCount > 0) title += ", " + errorCount + " errors";
     }
     return {"table": [{"headers": headers, "rows": rows, "title": title}]};
+}
+
+function formatBytes(bytes){
+    if(bytes === 0) return "0 B";
+    let units = ["B", "KB", "MB", "GB", "TB"];
+    let i = Math.floor(Math.log(bytes) / Math.log(1024));
+    if(i >= units.length) i = units.length - 1;
+    return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + " " + units[i];
 }
