@@ -84,18 +84,6 @@ func storeAgentData(uniqueID string, data []byte) {
 	}
 }
 
-// searchAgentData retrieves data from Mythic's AgentStorage by UniqueID.
-// Returns nil if not found or on error.
-func searchAgentData(uniqueID string) []byte {
-	resp, err := mythicrpc.SendMythicRPCAgentStorageSearch(mythicrpc.MythicRPCAgentstorageSearchMessage{
-		SearchUniqueID: uniqueID,
-	})
-	if err != nil || !resp.Success || len(resp.AgentStorageMessages) == 0 {
-		return nil
-	}
-	return resp.AgentStorageMessages[0].Data
-}
-
 // registerCredentials sends extracted credentials to Mythic's credential vault,
 // skipping duplicates that already exist. Used by ProcessResponse hooks to register
 // credentials discovered during command execution.

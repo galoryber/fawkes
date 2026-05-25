@@ -1,7 +1,6 @@
 package agentfunctions
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -159,12 +158,3 @@ func integrityLabel(level int) string {
 	}
 }
 
-// logOperationEventForCallback creates an operation event log entry.
-func logOperationEventForCallback(callbackID string, message string) {
-	_, err := mythicrpc.SendMythicRPCOperationEventLogCreate(mythicrpc.MythicRPCOperationEventLogCreateMessage{
-		Message: fmt.Sprintf("[CALLBACK] %s (callback: %s)", message, callbackID),
-	})
-	if err != nil {
-		logging.LogError(err, "Failed to create operation event log")
-	}
-}

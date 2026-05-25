@@ -417,7 +417,7 @@ func credVerifyAllDone(
 			successes := strings.Count(output, "SUCCESS")
 			failures := strings.Count(output, "FAILED")
 
-			status := "?"
+			var status string
 			if task.Status == "error" {
 				status = "ERROR"
 				errorCount++

@@ -11,39 +11,6 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
-// getCallbackList queries Mythic for active callbacks in the same operation.
-// Returns display strings like "host (user@process #ID)" for operator selection.
-// Used as DynamicQueryFunction for commands that target other callbacks (link, etc.).
-func getCallbackList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string {
-	var choices []string
-
-	resp, err := mythicrpc.SendMythicRPCCallbackSearch(mythicrpc.MythicRPCCallbackSearchMessage{
-		AgentCallbackID: msg.AgentCallbackID,
-	})
-	if err != nil {
-		logging.LogError(err, "Failed to search callbacks for dynamic query")
-		return choices
-	}
-	if !resp.Success {
-		logging.LogError(nil, "Callback search failed", "error", resp.Error)
-		return choices
-	}
-
-	for _, cb := range resp.Results {
-		if !cb.Active {
-			continue
-		}
-		// Skip the current callback (can't link to yourself)
-		if cb.AgentCallbackID == msg.AgentCallbackID {
-			continue
-		}
-		label := fmt.Sprintf("%s (%s@%s #%d)", cb.Host, cb.User, cb.ProcessName, cb.DisplayID)
-		choices = append(choices, label)
-	}
-
-	return choices
-}
-
 // getActiveHostList queries Mythic for unique hostnames from active callbacks.
 // Returns a list of host IPs/names for commands that target remote hosts.
 // Used as DynamicQueryFunction for lateral movement commands (psexec, wmi, dcom, etc.).
@@ -143,43 +110,6 @@ func getCallbackUserList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []st
 		}
 	}
 	sort.Strings(choices)
-
-	return choices
-}
-
-// getTokenUserList queries Mythic for unique users from tokens associated with the callback.
-// Returns user strings from discovered/stolen tokens. Used for steal-token and
-// make-token to suggest known user identities.
-func getTokenUserList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string {
-	var choices []string
-
-	callbackID := msg.Callback
-	resp, err := mythicrpc.SendMythicRPCCallbackTokenSearch(mythicrpc.MythicRPCCallbackTokenSearchMessage{
-		CallbackID: &callbackID,
-	})
-	if err != nil {
-		logging.LogError(err, "Failed to search callback tokens for user list")
-		return choices
-	}
-	if !resp.Success {
-		return choices
-	}
-
-	seen := make(map[string]bool)
-	for _, ct := range resp.CallbackTokens {
-		if ct.Deleted {
-			continue
-		}
-		user := ct.Token.User
-		if user == "" {
-			continue
-		}
-		label := fmt.Sprintf("%s (TokenID: %d, PID: %d)", user, ct.Token.TokenID, ct.Token.ProcessID)
-		if !seen[label] {
-			seen[label] = true
-			choices = append(choices, label)
-		}
-	}
 
 	return choices
 }

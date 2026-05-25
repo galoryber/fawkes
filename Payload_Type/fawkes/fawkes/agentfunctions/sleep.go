@@ -190,7 +190,7 @@ func init() {
 			}
 			stringPieces := strings.Split(input, " ")
 			if len(stringPieces) < 1 || len(stringPieces) > 5 {
-				return errors.New("Expected 1-5 arguments: interval [jitter] [working_start] [working_end] [working_days]")
+				return errors.New("expected 1-5 arguments: interval [jitter] [working_start] [working_end] [working_days]")
 			}
 			// Parse interval (required)
 			if interval, err := strconv.Atoi(stringPieces[0]); err != nil {
