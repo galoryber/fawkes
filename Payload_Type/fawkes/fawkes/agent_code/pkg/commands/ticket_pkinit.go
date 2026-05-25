@@ -347,14 +347,9 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	case 0:
 		// DH variant — extract KDC DH public key, compute shared secret
 		var rep paPkAsRepDH
-		// IMPLICIT [0] means rawRep.Bytes is the SEQUENCE content without the
-		// 0x30 header. Try original bytes first (EXPLICIT), fall back to wrapping
-		// rawRep.Bytes in a SEQUENCE (IMPLICIT).
-		if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rep); err != nil {
-			seqBytes := derWrap(0x30, rawRep.Bytes)
-			if _, err2 := gokrb5asn1.Unmarshal(seqBytes, &rep); err2 != nil {
-				return errorf("Error parsing PA-PK-AS-REP DH: %v (implicit: %v)", err, err2)
-			}
+		// EXPLICIT [0] wraps the DHRepInfo SEQUENCE; rawRep.Bytes is the inner SEQUENCE TLV.
+		if _, err := gokrb5asn1.Unmarshal(rawRep.Bytes, &rep); err != nil {
+			return errorf("Error parsing PA-PK-AS-REP DH: %v", err)
 		}
 		kdcDHPub, err := extractKDCDHPublicKey(rep.DHSignedData)
 		if err != nil {
