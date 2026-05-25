@@ -141,7 +141,7 @@ type paPkAsReq struct {
 // PA-PK-AS-REP DH variant (DHRepInfo) per RFC 4556 Section 3.2.3.
 type paPkAsRepDH struct {
 	DHSignedData  []byte `asn1:"tag:0"`
-	ServerDHNonce []byte `asn1:"optional,explicit,tag:1"`
+	ServerDHNonce []byte `asn1:"optional,tag:1"`
 }
 
 type kdcDHKeyInfo struct {
@@ -339,8 +339,14 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	case 0:
 		// DH variant — extract KDC DH public key, compute shared secret
 		var rep paPkAsRepDH
+		// IMPLICIT [0] means rawRep.Bytes is the SEQUENCE content without the
+		// 0x30 header. Try original bytes first (EXPLICIT), fall back to wrapping
+		// rawRep.Bytes in a SEQUENCE (IMPLICIT).
 		if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rep); err != nil {
-			return errorf("Error parsing PA-PK-AS-REP DH: %v", err)
+			seqBytes := derWrap(0x30, rawRep.Bytes)
+			if _, err2 := gokrb5asn1.Unmarshal(seqBytes, &rep); err2 != nil {
+				return errorf("Error parsing PA-PK-AS-REP DH: %v (implicit: %v)", err, err2)
+			}
 		}
 		kdcDHPub, err := extractKDCDHPublicKey(rep.DHSignedData)
 		if err != nil {
@@ -948,7 +954,10 @@ func extractKDCDHPublicKey(dhSignedDataBytes []byte) (*big.Int, error) {
 		return nil, fmt.Errorf("failed to parse KDCDHKeyInfo: %w", err)
 	}
 
-	pubKey := new(big.Int).SetBytes(kdcInfo.SubjectPublicKey.Bytes)
+	var pubKey *big.Int
+	if _, err := gokrb5asn1.Unmarshal(kdcInfo.SubjectPublicKey.Bytes, &pubKey); err != nil {
+		pubKey = new(big.Int).SetBytes(kdcInfo.SubjectPublicKey.Bytes)
+	}
 	return pubKey, nil
 }
 
