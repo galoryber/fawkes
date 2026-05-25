@@ -941,20 +941,19 @@ func extractKDCDHPublicKey(dhSignedDataBytes []byte) (*big.Int, error) {
 		}
 	}
 
-	// Extract encapsulated content (KDCDHKeyInfo)
-	var eContentOctetString gokrb5asn1.RawValue
-	if _, err := gokrb5asn1.Unmarshal(sd.EncapContentInfo.EContent.FullBytes, &eContentOctetString); err != nil {
-		if _, err2 := gokrb5asn1.Unmarshal(sd.EncapContentInfo.EContent.Bytes, &eContentOctetString); err2 != nil {
-			return nil, fmt.Errorf("failed to extract KDC DH content: %w", err)
-		}
+	// Extract encapsulated content (KDCDHKeyInfo).
+	// EContent is [0] EXPLICIT — .Bytes holds the OCTET STRING TLV.
+	eContentBytes := sd.EncapContentInfo.EContent.Bytes
+	if len(eContentBytes) == 0 {
+		eContentBytes = sd.EncapContentInfo.EContent.FullBytes
+	}
+	var eContentRaw []byte
+	if _, err := gokrb5asn1.Unmarshal(eContentBytes, &eContentRaw); err != nil {
+		return nil, fmt.Errorf("failed to extract KDC DH content OCTET STRING: %w", err)
 	}
 
 	var kdcInfo kdcDHKeyInfo
-	raw := eContentOctetString.Bytes
-	if len(raw) == 0 {
-		raw = eContentOctetString.FullBytes
-	}
-	if _, err := gokrb5asn1.Unmarshal(raw, &kdcInfo); err != nil {
+	if _, err := gokrb5asn1.Unmarshal(eContentRaw, &kdcInfo); err != nil {
 		return nil, fmt.Errorf("failed to parse KDCDHKeyInfo: %w", err)
 	}
 
