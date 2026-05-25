@@ -6,6 +6,8 @@ package commands
 
 import (
 	"crypto"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
@@ -43,6 +45,9 @@ var (
 	oidPKINITDHKeyData   = gokrb5asn1.ObjectIdentifier{1, 3, 6, 1, 5, 2, 3, 2}
 	oidContentType       = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	oidMessageDigest     = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
+	oidRSAOAEP           = gokrb5asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 7}
+	oidAES256CBC         = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 42}
+	oidAES128CBC         = gokrb5asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 2}
 )
 
 // IKE Group 14 (2048-bit MODP) parameters from RFC 3526 Section 3.
@@ -151,6 +156,42 @@ type pkinitCertKey struct {
 	Cert       *x509.Certificate
 	Key        crypto.PrivateKey
 	CertDER    []byte
+}
+
+// CMS EnvelopedData types for encKeyPack variant
+type envelopedDataASN struct {
+	Version              int
+	RecipientInfos       gokrb5asn1.RawValue `asn1:"set"`
+	EncryptedContentInfo encryptedContentInfoASN
+}
+
+type encryptedContentInfoASN struct {
+	ContentType                gokrb5asn1.ObjectIdentifier
+	ContentEncryptionAlgorithm algorithmIdentifier
+	EncryptedContent           gokrb5asn1.RawValue `asn1:"optional,tag:0"`
+}
+
+type keyTransRecipientInfo struct {
+	Version                int
+	RID                    gokrb5asn1.RawValue
+	KeyEncryptionAlgorithm algorithmIdentifier
+	EncryptedKey           []byte
+}
+
+// ReplyKeyPack per RFC 4556 Section 3.2.3
+type replyKeyPack struct {
+	ReplyKey   encryptionKeyASN1 `asn1:"explicit,tag:0"`
+	ASChecksum checksumASN1      `asn1:"explicit,tag:1"`
+}
+
+type encryptionKeyASN1 struct {
+	KeyType  int    `asn1:"explicit,tag:0"`
+	KeyValue []byte `asn1:"explicit,tag:1"`
+}
+
+type checksumASN1 struct {
+	CKSumType int    `asn1:"explicit,tag:0"`
+	Checksum  []byte `asn1:"explicit,tag:1"`
 }
 
 func ticketPKINIT(args ticketArgs) structs.CommandResult {
@@ -308,37 +349,47 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		return errorResult("Error: KDC response missing PA-PK-AS-REP (type 17)")
 	}
 
-	// Parse PA-PK-AS-REP (DH variant)
-	var rep paPkAsRepDH
-	if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rep); err != nil {
+	// Detect PA-PK-AS-REP variant: [0] DHRepInfo or [1] encKeyPack
+	var rawRep gokrb5asn1.RawValue
+	if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rawRep); err != nil {
 		return errorf("Error parsing PA-PK-AS-REP: %v", err)
 	}
 
-	// Extract KDC's DH public value from the signed reply
-	kdcDHPub, err := extractKDCDHPublicKey(rep.DHSignedData)
-	if err != nil {
-		return errorf("Error extracting KDC DH key: %v", err)
+	var sessionKey types.EncryptionKey
+	switch rawRep.Tag {
+	case 0:
+		// DH variant — extract KDC DH public key, compute shared secret
+		var rep paPkAsRepDH
+		if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rep); err != nil {
+			return errorf("Error parsing PA-PK-AS-REP DH: %v", err)
+		}
+		kdcDHPub, err := extractKDCDHPublicKey(rep.DHSignedData)
+		if err != nil {
+			return errorf("Error extracting KDC DH key: %v", err)
+		}
+		sharedSecret := new(big.Int).Exp(kdcDHPub, dhPriv, dhGroup14P)
+		sharedSecretBytes := sharedSecret.Bytes()
+		defer structs.ZeroBytes(sharedSecretBytes)
+		keyBytes := pkinitDeriveKey(sharedSecretBytes, int(asReq.ReqBody.Nonce), 32)
+		defer structs.ZeroBytes(keyBytes)
+		sessionKey = types.EncryptionKey{KeyType: 18, KeyValue: keyBytes}
+
+	case 1:
+		// encKeyPack variant — decrypt CMS EnvelopedData with our RSA key
+		var err error
+		sessionKey, err = decryptEncKeyPack(rawRep.Bytes, ck)
+		if err != nil {
+			return errorf("Error decrypting encKeyPack: %v", err)
+		}
+
+	default:
+		return errorf("Error: unexpected PA-PK-AS-REP tag: %d", rawRep.Tag)
 	}
 
-	// Compute DH shared secret
-	sharedSecret := new(big.Int).Exp(kdcDHPub, dhPriv, dhGroup14P)
-	sharedSecretBytes := sharedSecret.Bytes()
-	defer structs.ZeroBytes(sharedSecretBytes)
-
-	// Derive session key from DH shared secret
-	// MS-PKCA uses SP800-56A Concatenation KDF with SHA1
-	sessionKeyBytes := pkinitDeriveKey(sharedSecretBytes, int(asReq.ReqBody.Nonce), 32) // 32 bytes for AES-256
-	defer structs.ZeroBytes(sessionKeyBytes)
-
-	sessionKey := types.EncryptionKey{
-		KeyType:  18, // aes256-cts-hmac-sha1-96
-		KeyValue: sessionKeyBytes,
-	}
-
-	// Decrypt the AS-REP EncPart using the derived session key
+	// Decrypt the AS-REP EncPart using the session key
 	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)
 	if err != nil {
-		return errorf("Error decrypting AS-REP with derived key: %v", err)
+		return errorf("Error decrypting AS-REP: %v", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
@@ -647,6 +698,136 @@ func derAlgID(oid gokrb5asn1.ObjectIdentifier) []byte {
 func derAlgIDNoParams(oid gokrb5asn1.ObjectIdentifier) []byte {
 	oidBytes := derMarshal(oid)
 	return derSequence(oidBytes)
+}
+
+// decryptEncKeyPack handles the encKeyPack [1] variant of PA-PK-AS-REP.
+// The KDC encrypts the ReplyKeyPack using CMS EnvelopedData with our RSA public key.
+func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.EncryptionKey, error) {
+	// Parse outer ContentInfo (envelopedData)
+	var ci contentInfo
+	if _, err := gokrb5asn1.Unmarshal(encKeyPackBytes, &ci); err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse ContentInfo: %w", err)
+	}
+
+	// Parse EnvelopedData
+	var ed envelopedDataASN
+	edBytes := ci.Content.Bytes
+	if len(edBytes) == 0 {
+		edBytes = ci.Content.FullBytes
+	}
+	if _, err := gokrb5asn1.Unmarshal(edBytes, &ed); err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse EnvelopedData: %w", err)
+	}
+
+	// Extract first KeyTransRecipientInfo
+	var ktri keyTransRecipientInfo
+	riBytes := ed.RecipientInfos.Bytes
+	if len(riBytes) == 0 {
+		riBytes = ed.RecipientInfos.FullBytes
+	}
+	if _, err := gokrb5asn1.Unmarshal(riBytes, &ktri); err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse KeyTransRecipientInfo: %w", err)
+	}
+
+	// Decrypt the content-encryption key (CEK) with our RSA private key
+	rsaKey, ok := ck.Key.(*rsa.PrivateKey)
+	if !ok {
+		return types.EncryptionKey{}, fmt.Errorf("encKeyPack requires RSA private key")
+	}
+
+	var cek []byte
+	var err error
+	if ktri.KeyEncryptionAlgorithm.Algorithm.Equal(oidRSAOAEP) {
+		cek, err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, ktri.EncryptedKey, nil)
+	} else {
+		cek, err = rsa.DecryptPKCS1v15(rand.Reader, rsaKey, ktri.EncryptedKey)
+	}
+	if err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("decrypt CEK: %w", err)
+	}
+	defer structs.ZeroBytes(cek)
+
+	// Extract IV from contentEncryptionAlgorithm parameters
+	var iv []byte
+	paramBytes := ed.EncryptedContentInfo.ContentEncryptionAlgorithm.Parameters.FullBytes
+	if len(paramBytes) == 0 {
+		paramBytes = ed.EncryptedContentInfo.ContentEncryptionAlgorithm.Parameters.Bytes
+	}
+	if len(paramBytes) > 0 {
+		var rawIV gokrb5asn1.RawValue
+		if _, err := gokrb5asn1.Unmarshal(paramBytes, &rawIV); err == nil {
+			iv = rawIV.Bytes
+		}
+	}
+
+	// Extract encrypted content
+	encContent := ed.EncryptedContentInfo.EncryptedContent.Bytes
+	if len(encContent) == 0 {
+		encContent = ed.EncryptedContentInfo.EncryptedContent.FullBytes
+	}
+	if len(encContent) == 0 {
+		return types.EncryptionKey{}, fmt.Errorf("no encrypted content in EnvelopedData")
+	}
+
+	// AES-CBC decrypt
+	block, err := aes.NewCipher(cek)
+	if err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("create AES cipher: %w", err)
+	}
+	if len(iv) != block.BlockSize() {
+		return types.EncryptionKey{}, fmt.Errorf("IV size %d != block size %d", len(iv), block.BlockSize())
+	}
+	if len(encContent)%block.BlockSize() != 0 {
+		return types.EncryptionKey{}, fmt.Errorf("encrypted content size %d not aligned to block size", len(encContent))
+	}
+	decrypted := make([]byte, len(encContent))
+	cipher.NewCBCDecrypter(block, iv).CryptBlocks(decrypted, encContent)
+
+	// Remove PKCS#7 padding
+	if padLen := int(decrypted[len(decrypted)-1]); padLen > 0 && padLen <= block.BlockSize() {
+		decrypted = decrypted[:len(decrypted)-padLen]
+	}
+
+	// Decrypted content is CMS SignedData wrapping ReplyKeyPack (RFC 4556 §3.2.3)
+	return extractReplyKeyFromSignedData(decrypted)
+}
+
+// extractReplyKeyFromSignedData parses a CMS SignedData to extract the ReplyKeyPack.
+func extractReplyKeyFromSignedData(data []byte) (types.EncryptionKey, error) {
+	// Try as ContentInfo → SignedData first
+	var ci contentInfo
+	if _, err := gokrb5asn1.Unmarshal(data, &ci); err == nil {
+		sdBytes := ci.Content.Bytes
+		if len(sdBytes) == 0 {
+			sdBytes = ci.Content.FullBytes
+		}
+		var sd signedData
+		if _, err := gokrb5asn1.Unmarshal(sdBytes, &sd); err == nil {
+			eContent := sd.EncapContentInfo.EContent.Bytes
+			if len(eContent) == 0 {
+				eContent = sd.EncapContentInfo.EContent.FullBytes
+			}
+			// eContent may be OCTET STRING wrapping ReplyKeyPack
+			var octetStr gokrb5asn1.RawValue
+			if _, err := gokrb5asn1.Unmarshal(eContent, &octetStr); err == nil && octetStr.Tag == 4 {
+				return extractReplyKey(octetStr.Bytes)
+			}
+			return extractReplyKey(eContent)
+		}
+	}
+	// Try as bare ReplyKeyPack
+	return extractReplyKey(data)
+}
+
+func extractReplyKey(data []byte) (types.EncryptionKey, error) {
+	var rkp replyKeyPack
+	if _, err := gokrb5asn1.Unmarshal(data, &rkp); err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("parse ReplyKeyPack: %w", err)
+	}
+	return types.EncryptionKey{
+		KeyType:  int32(rkp.ReplyKey.KeyType),
+		KeyValue: rkp.ReplyKey.KeyValue,
+	}, nil
 }
 
 // extractKDCDHPublicKey extracts the KDC's DH public key from the signed reply.
