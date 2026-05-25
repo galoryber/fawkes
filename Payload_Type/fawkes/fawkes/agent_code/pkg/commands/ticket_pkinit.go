@@ -333,6 +333,12 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rawRep); err != nil {
 		return errorf("Error parsing PA-PK-AS-REP: %v", err)
 	}
+	repHdr := paPkAsRepBytes
+	if len(repHdr) > 16 {
+		repHdr = repHdr[:16]
+	}
+	diagInfo := fmt.Sprintf("PA-PK-AS-REP: tag=%d class=%d raw[0:16]=%x",
+		rawRep.Tag, rawRep.Class, repHdr)
 
 	var sessionKey types.EncryptionKey
 	switch rawRep.Tag {
@@ -381,7 +387,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		var err error
 		sessionKey, err = decryptEncKeyPack(rawRep.Bytes, ck)
 		if err != nil {
-			return errorf("Error decrypting encKeyPack: %v", err)
+			return errorf("Error decrypting encKeyPack: %v | %s", err, diagInfo)
 		}
 
 	default:
@@ -807,24 +813,31 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 	}
 
 	// Windows PKINIT uses OAEP-SHA1 even when the OID says rsaEncryption.
-	// Try OAEP-SHA1 first (matches impacket/certipy behavior), then OAEP-SHA256,
-	// then PKCS1v15. PKCS1v15 can false-positive (return short garbage) when the
-	// actual padding is OAEP, so it must be tried last.
 	var cek []byte
-	cek, err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
-	if err != nil {
-		cek, err = rsa.DecryptOAEP(crypto.SHA256.New(), rand.Reader, rsaKey, encryptedKey, nil)
+	var oaep1Err, oaep256Err, pkcs1Err error
+	cek, oaep1Err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
+	if oaep1Err != nil {
+		cek, oaep256Err = rsa.DecryptOAEP(crypto.SHA256.New(), rand.Reader, rsaKey, encryptedKey, nil)
 	}
-	if err != nil {
-		cek, err = rsa.DecryptPKCS1v15(rand.Reader, rsaKey, encryptedKey)
+	if oaep1Err != nil && oaep256Err != nil {
+		cek, pkcs1Err = rsa.DecryptPKCS1v15(rand.Reader, rsaKey, encryptedKey)
 	}
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("decrypt CEK (tried OAEP-SHA1/SHA256/PKCS1v15): %w | %s", err, dbg)
+	if oaep1Err != nil && oaep256Err != nil && pkcs1Err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("decrypt CEK failed: oaep1=%v oaep256=%v pkcs1=%v | %s",
+			oaep1Err, oaep256Err, pkcs1Err, dbg)
 	}
 	defer structs.ZeroBytes(cek)
 
+	usedPadding := "OAEP-SHA1"
+	if oaep1Err != nil && oaep256Err == nil {
+		usedPadding = "OAEP-SHA256"
+	} else if oaep1Err != nil && oaep256Err != nil {
+		usedPadding = "PKCS1v15"
+	}
+
 	if len(cek) < 16 {
-		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes), decryption likely used wrong padding | %s", len(cek), dbg)
+		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes, padding=%s), decryption likely used wrong padding | oaep1=%v | %s",
+			len(cek), usedPadding, oaep1Err, dbg)
 	}
 
 	// Element 4: EncryptedContentInfo SEQUENCE
