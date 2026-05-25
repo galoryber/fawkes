@@ -359,9 +359,6 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		sharedSecretBytes := sharedSecret.Bytes()
 		defer structs.ZeroBytes(sharedSecretBytes)
 
-		diagInfo += fmt.Sprintf(" | sharedSecret=%d bytes, clientDHNonce=%d bytes, serverDHNonce=%d bytes",
-			len(sharedSecretBytes), len(clientDHNonce), len(rep.ServerDHNonce))
-
 		var fullKey []byte
 		fullKey = append(fullKey, sharedSecretBytes...)
 		fullKey = append(fullKey, clientDHNonce...)
@@ -394,7 +391,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	// Decrypt the AS-REP EncPart using the session key
 	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)
 	if err != nil {
-		return errorf("Error decrypting AS-REP: %v | %s | etype=%d", err, diagInfo, asRep.EncPart.EType)
+		return errorf("Error decrypting AS-REP: %v", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
