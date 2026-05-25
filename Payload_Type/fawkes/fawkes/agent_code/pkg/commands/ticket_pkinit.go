@@ -781,27 +781,25 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		dbg += fmt.Sprintf(" | keyMatch=%v keyBits=%d", rsaKey.N.Cmp(certPubKey.N) == 0, rsaKey.N.BitLen())
 	}
 
-	// Try OAEP first (Windows Server 2016+ may use it), then PKCS1v15
+	// Windows PKINIT uses OAEP-SHA1 even when the OID says rsaEncryption.
+	// Try OAEP-SHA1 first (matches impacket/certipy behavior), then OAEP-SHA256,
+	// then PKCS1v15. PKCS1v15 can false-positive (return short garbage) when the
+	// actual padding is OAEP, so it must be tried last.
 	var cek []byte
-	if keyEncAlg.Algorithm.Equal(oidRSAOAEP) {
-		cek, err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
-	} else {
+	cek, err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
+	if err != nil {
+		cek, err = rsa.DecryptOAEP(crypto.SHA256.New(), rand.Reader, rsaKey, encryptedKey, nil)
+	}
+	if err != nil {
 		cek, err = rsa.DecryptPKCS1v15(rand.Reader, rsaKey, encryptedKey)
-		if err != nil {
-			// Fallback: try OAEP in case alg OID is generic rsaEncryption but OAEP was used
-			cek, err = rsa.DecryptOAEP(sha1.New(), rand.Reader, rsaKey, encryptedKey, nil)
-			if err != nil {
-				dbg += fmt.Sprintf(" | encKey[0:8]=%x", encryptedKey[:min(8, len(encryptedKey))])
-				return types.EncryptionKey{}, fmt.Errorf("decrypt CEK (tried PKCS1v15+OAEP): %w | %s", err, dbg)
-			}
-		}
+	}
+	if err != nil {
+		return types.EncryptionKey{}, fmt.Errorf("decrypt CEK (tried OAEP-SHA1/SHA256/PKCS1v15): %w | %s", err, dbg)
 	}
 	defer structs.ZeroBytes(cek)
 
-	dbg += fmt.Sprintf(" | cekLen=%d cek[0:min(8)]=%x", len(cek), cek[:min(8, len(cek))])
-
 	if len(cek) < 16 {
-		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes) | %s", len(cek), dbg)
+		return types.EncryptionKey{}, fmt.Errorf("CEK too short (%d bytes), decryption likely used wrong padding | %s", len(cek), dbg)
 	}
 
 	// Element 4: EncryptedContentInfo SEQUENCE
