@@ -74,9 +74,10 @@ func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
 		return fmt.Errorf("LDAP bind failed (code %d): %s", resultCode, errMsg)
 	}
 
-	// saslBindInProgress (14): SPNEGO exchange needs one more round.
-	// Send final SASL bind with empty credentials to complete the handshake.
-	finalPacket := lc.buildSASLBindRequest("GSS-SPNEGO", []byte{})
+	// saslBindInProgress (14): SPNEGO layer returned a final token.
+	// Send one more SASL bind without credentials to signal completion
+	// (per RFC 4513 §5.2.1: if no output token, send bind with no credentials).
+	finalPacket := lc.buildSASLBindRequestNoCredentials("GSS-SPNEGO")
 
 	_, err = lc.conn.Write(finalPacket.Bytes())
 	if err != nil {
@@ -93,6 +94,28 @@ func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
 		return fmt.Errorf("final LDAP bind failed (code %d): %s", finalCode, finalMsg)
 	}
 	return nil
+}
+
+// buildSASLBindRequestNoCredentials constructs a SASL BindRequest without
+// the credentials field (omitted, not empty). Used when the SASL exchange
+// has no output token to send (RFC 4513 §5.2.1).
+func (lc *ldapRelayConn) buildSASLBindRequestNoCredentials(mechanism string) *ber.Packet {
+	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Message")
+	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, lc.msgID, "MessageID"))
+	lc.msgID++
+
+	bindReq := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapAppBindRequest, nil, "Bind Request")
+	bindReq.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, 3, "Version"))
+	bindReq.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "Name"))
+
+	auth := ber.Encode(ber.ClassContext, ber.TypeConstructed, 3, nil, "SASL Auth")
+	auth.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, mechanism, "Mechanism"))
+	// No credentials child — omitted per RFC 4513 when no output token
+
+	bindReq.AppendChild(auth)
+	packet.AppendChild(bindReq)
+
+	return packet
 }
 
 // saslBind sends a SASL BindRequest and extracts the NTLM token from the response.
