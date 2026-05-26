@@ -100,7 +100,6 @@ func executeInsituFullInner() structs.CommandResult {
 	if err != nil {
 		return errorf("Phase 2B: %v", err)
 	}
-	_ = sigVariant
 	var cryptoReport *insituFullCryptoReport
 	var cryptoMaterial lsaCryptoMaterial
 	var cryptoErrStr string
@@ -114,7 +113,7 @@ func executeInsituFullInner() structs.CommandResult {
 	}
 	canDecrypt := cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey()
 
-	layout := LayoutWin10W8
+	layout := layoutForVariant(sigVariant)
 	nodes, walkErr := walkLogonSessionList(reader, anchor, layout.NodeReadSize, 64)
 
 	matchedLUIDs := make(map[uint64]bool, len(luidIndex))

