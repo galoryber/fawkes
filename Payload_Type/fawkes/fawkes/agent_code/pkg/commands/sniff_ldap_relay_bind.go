@@ -67,11 +67,30 @@ func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
 	}
 
 	resultCode, errMsg := lc.parseBindResult(respPacket)
-	// AD returns saslBindInProgress (14) after NTLM Type 3 within GSS-SPNEGO.
-	// The NTLM authentication is complete at this point — code 14 means the
-	// SPNEGO layer returned a final token but the bind is functionally done.
-	if resultCode != 0 && resultCode != 14 {
+	if resultCode == 0 {
+		return nil
+	}
+	if resultCode != 14 {
 		return fmt.Errorf("LDAP bind failed (code %d): %s", resultCode, errMsg)
+	}
+
+	// saslBindInProgress (14): SPNEGO exchange needs one more round.
+	// Send final SASL bind with empty credentials to complete the handshake.
+	finalPacket := lc.buildSASLBindRequest("GSS-SPNEGO", []byte{})
+
+	_, err = lc.conn.Write(finalPacket.Bytes())
+	if err != nil {
+		return fmt.Errorf("write final bind: %w", err)
+	}
+
+	finalResp, err := ber.ReadPacket(lc.conn)
+	if err != nil {
+		return fmt.Errorf("read final bind response: %w", err)
+	}
+
+	finalCode, finalMsg := lc.parseBindResult(finalResp)
+	if finalCode != 0 {
+		return fmt.Errorf("final LDAP bind failed (code %d): %s", finalCode, finalMsg)
 	}
 	return nil
 }
