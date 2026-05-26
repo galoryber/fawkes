@@ -297,6 +297,9 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 	}
 
 	user, domain := relayExtractType3Info(type3Data)
+
+	// Zero the MIC before relaying — it was computed against the modified Type 2
+	type3Data = relayZeroType3MIC(type3Data)
 	entry.Username = user
 	entry.Domain = domain
 
