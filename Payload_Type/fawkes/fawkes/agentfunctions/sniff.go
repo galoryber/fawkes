@@ -34,7 +34,7 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sniff",
 		Description:         "Network sniffing, poisoning, and relay. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder with SMB+HTTP NTLM hash capture. relay: NTLM relay to target SMB. ldap-relay: NTLM relay to target LDAP with post-auth operations.",
-		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]\nsniff -action relay -response_ip <target_smb_host> [-ports listen:target] [-duration 120]\nsniff -action ldap-relay -response_ip <target_dc> [-protocols whoami|add-computer:NAME$|rbcd:targetDN|SID] [-duration 120]",
+		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]\nsniff -action relay -response_ip <target_smb_host> [-ports listen:target] [-duration 120]\nsniff -action ldap-relay -response_ip <target_dc> [-ports 80:636] [-protocols whoami|add-computer:NAME$|rbcd:targetDN|SID] [-duration 120]\n  Ports: listen_port:target_port. Use 636 for LDAPS (required for add-computer/password changes).",
 		Version:             5,
 		MitreAttackMappings: []string{"T1040", "T1557.001"}, // Network Sniffing + LLMNR/NBT-NS Poisoning + Relay
 		Author:              "@galoryber",

