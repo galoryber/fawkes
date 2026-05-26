@@ -266,11 +266,6 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 		return
 	}
 
-	// Extract raw NTLM if wrapped in SPNEGO
-	if ntlm := spnegoExtractNTLMToken(type2Bytes); ntlm != nil {
-		type2Bytes = ntlm
-	}
-
 	if err := relayNTLMValidate(type2Bytes, ntlmTypeChallenge); err != nil {
 		entry.Detail = fmt.Sprintf("invalid LDAP Type 2: %v", err)
 		return

