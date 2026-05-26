@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"time"
@@ -38,6 +39,16 @@ func ldapRelayDial(target string, port int, timeout time.Duration) (*ldapRelayCo
 		return nil, fmt.Errorf("connect to %s: %w", addr, err)
 	}
 	_ = conn.SetDeadline(time.Now().Add(timeout))
+
+	if port == 636 {
+		tlsConn := tls.Client(conn, &tls.Config{InsecureSkipVerify: true})
+		if err := tlsConn.Handshake(); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("TLS handshake to %s: %w", addr, err)
+		}
+		return &ldapRelayConn{conn: tlsConn, msgID: 1}, nil
+	}
+
 	return &ldapRelayConn{conn: conn, msgID: 1}, nil
 }
 

@@ -323,7 +323,7 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 
 	// Step 6: Perform post-auth operation via go-ldap on the authenticated connection.
 	_ = lc.conn.SetDeadline(time.Now().Add(30 * time.Second))
-	opResult := executeLDAPRelayOperation(lc.conn, ops)
+	opResult := executeLDAPRelayOperation(lc.conn, ops, ops.targetPort == 636)
 	if opResult != "" {
 		entry.OpResult = opResult
 		entry.Detail += " | " + opResult
@@ -335,7 +335,7 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 // executeLDAPRelayOperation performs a post-auth LDAP operation using the
 // already-authenticated TCP connection. Creates a go-ldap client on top of
 // the existing connection for high-level LDAP operations.
-func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps) (opResult string) {
+func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps, isTLS bool) (opResult string) {
 	defer func() {
 		if r := recover(); r != nil {
 			opResult = fmt.Sprintf("post-auth panic: %v", r)
@@ -345,7 +345,7 @@ func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps) (opResult str
 	// Reset deadline so go-ldap operations get a fresh timeout
 	_ = rawConn.SetDeadline(time.Now().Add(30 * time.Second))
 
-	ldapConn := ldap.NewConn(rawConn, false)
+	ldapConn := ldap.NewConn(rawConn, isTLS)
 	ldapConn.Start()
 	defer ldapConn.Close()
 
