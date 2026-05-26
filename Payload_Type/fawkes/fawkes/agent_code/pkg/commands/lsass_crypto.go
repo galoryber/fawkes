@@ -101,6 +101,12 @@ var LsaCryptoWin10W8 = lsaCryptoLayout{
 	IVSize:           16,
 }
 
+// lsaCryptoLayouts lists all crypto layouts in preference order (newest first).
+// findLsaCryptoGlobalsMulti tries each until one matches and resolves.
+var lsaCryptoLayouts = []lsaCryptoLayout{
+	LsaCryptoWin10W8,
+}
+
 // lsaCryptoGlobals captures the LSASS-virtual addresses of the three globals
 // LsaInitializeProtectedMemory wires into BCryptEncrypt / BCryptDecrypt.
 type lsaCryptoGlobals struct {
