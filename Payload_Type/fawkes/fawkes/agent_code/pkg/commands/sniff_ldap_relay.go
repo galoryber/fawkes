@@ -340,6 +340,9 @@ func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps) (opResult str
 		}
 	}()
 
+	// Reset deadline so go-ldap operations get a fresh timeout
+	_ = rawConn.SetDeadline(time.Now().Add(30 * time.Second))
+
 	ldapConn := ldap.NewConn(rawConn, false)
 	ldapConn.Start()
 	defer ldapConn.Close()
@@ -357,14 +360,20 @@ func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps) (opResult str
 }
 
 func ldapRelayWhoami(conn *ldap.Conn) string {
-	result, err := conn.WhoAmI(nil)
+	// go-ldap's WhoAmI panics when resp.Value is nil (server returns no value
+	// child), so use Extended directly and handle nil safely.
+	req := ldap.NewExtendedRequest("1.3.6.1.4.1.4203.1.11.3", nil)
+	resp, err := conn.Extended(req)
 	if err != nil {
 		return fmt.Sprintf("whoami failed: %v", err)
 	}
-	if result.AuthzID != "" {
-		return fmt.Sprintf("whoami: %s", result.AuthzID)
+	if resp.Value != nil && resp.Value.Data != nil {
+		authzID := resp.Value.Data.String()
+		if authzID != "" {
+			return fmt.Sprintf("whoami: %s", authzID)
+		}
 	}
-	return "whoami: authenticated (empty response)"
+	return "whoami: authenticated (empty authzID)"
 }
 
 func ldapRelayAddComputer(conn *ldap.Conn, computerName string) string {
