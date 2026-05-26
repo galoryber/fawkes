@@ -315,27 +315,12 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 	entry.Status = "authenticated"
 	entry.Detail = fmt.Sprintf("Relayed %s\\%s to LDAP %s:%d", domain, user, ops.target, ops.targetPort)
 
-	// Step 6: Verify auth and perform post-auth operation.
+	// Step 6: Perform post-auth operation via go-ldap on the authenticated connection.
 	_ = lc.conn.SetDeadline(time.Now().Add(30 * time.Second))
-	authzID, whoErr := lc.rawWhoAmI()
-	if whoErr != nil {
-		entry.OpResult = fmt.Sprintf("raw-whoami error: %v", whoErr)
-		entry.Detail += " | " + entry.OpResult
-	} else if authzID != "" {
-		entry.OpResult = fmt.Sprintf("raw-whoami: %s", authzID)
-		entry.Detail += " | " + entry.OpResult
-	} else {
-		entry.OpResult = "raw-whoami: authenticated (empty authzID)"
-		entry.Detail += " | " + entry.OpResult
-	}
-
-	// If whoami succeeded and operation is not just whoami, do the operation
-	if whoErr == nil && ops.operation != "whoami" {
-		opResult := executeLDAPRelayOperation(lc.conn, ops)
-		if opResult != "" {
-			entry.OpResult += " | " + opResult
-			entry.Detail += " | " + opResult
-		}
+	opResult := executeLDAPRelayOperation(lc.conn, ops)
+	if opResult != "" {
+		entry.OpResult = opResult
+		entry.Detail += " | " + opResult
 	}
 
 	_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"))
