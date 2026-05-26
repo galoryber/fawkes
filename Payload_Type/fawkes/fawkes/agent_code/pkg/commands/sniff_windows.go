@@ -45,6 +45,9 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	if params.Action == "relay" {
 		return c.executeRelay(task)
 	}
+	if params.Action == "ldap-relay" {
+		return executeLDAPRelayCore(task)
+	}
 
 	if params.Duration <= 0 {
 		params.Duration = 30
