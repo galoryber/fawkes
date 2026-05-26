@@ -237,12 +237,10 @@ func executeInsituFullInner() structs.CommandResult {
 		return errorf("Phase 2B: marshal summary: %v", err)
 	}
 
-	sb := formatInsituFullOutput(phase1, protection, pid, mod, anchor, walkErr, nodes, layout,
+	header := formatInsituFullOutput(phase1, protection, pid, mod, anchor, walkErr, nodes, layout,
 		structParsed, matchedLUIDs, luidsOrdered, nodesWithCreds, credBlobsCaptured,
 		cryptoErrStr, cryptoReport, hashesExtracted, dumpLines)
-	sb.WriteString("\n")
-	sb.WriteString(string(jsonBytes))
-	return successResult(sb.String())
+	return successResult(header + "\n" + string(jsonBytes))
 }
 
 // buildCredentialReport constructs a single credential report entry, performing
@@ -303,7 +301,7 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 	structParsed int, matchedLUIDs map[uint64]bool, luidsOrdered []uint64,
 	nodesWithCreds, credBlobsCaptured int,
 	cryptoErrStr string, cryptoReport *insituFullCryptoReport,
-	hashesExtracted int, dumpLines []string) strings.Builder {
+	hashesExtracted int, dumpLines []string) string {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[+] Phase 1 LSA enumeration: %d session(s)\n", len(phase1)))
@@ -336,7 +334,7 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 			sb.WriteString("\n")
 		}
 	}
-	return sb
+	return sb.String()
 }
 
 // bcryptCbSecret returns the resolved cbSecret of a BCrypt key report or 0
