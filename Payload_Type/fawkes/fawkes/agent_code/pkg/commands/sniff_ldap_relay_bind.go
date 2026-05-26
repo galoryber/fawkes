@@ -202,6 +202,73 @@ func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, e
 	return nil, fmt.Errorf("no server SASL creds in bind response (resultCode=%d, msg=%s)", resultCode, errMsg)
 }
 
+const ldapAppExtendedRequest = 23
+const ldapAppExtendedResponse = 24
+
+// rawWhoAmI sends a WhoAmI Extended request at the BER level (no go-ldap)
+// and returns the authzID. Used to verify the connection is authenticated
+// without creating a go-ldap Conn.
+func (lc *ldapRelayConn) rawWhoAmI() (string, error) {
+	packet := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAP Message")
+	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, lc.msgID, "MessageID"))
+	lc.msgID++
+
+	// ExtendedRequest APPLICATION[23] { requestName [0] OID }
+	extReq := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapAppExtendedRequest, nil, "Extended Request")
+	reqName := ber.NewString(ber.ClassContext, ber.TypePrimitive, 0, "1.3.6.1.4.1.4203.1.11.3", "WhoAmI OID")
+	extReq.AppendChild(reqName)
+	packet.AppendChild(extReq)
+
+	_, err := lc.conn.Write(packet.Bytes())
+	if err != nil {
+		return "", fmt.Errorf("write WhoAmI: %w", err)
+	}
+
+	resp, err := ber.ReadPacket(lc.conn)
+	if err != nil {
+		return "", fmt.Errorf("read WhoAmI response: %w", err)
+	}
+
+	if len(resp.Children) < 2 {
+		return "", fmt.Errorf("malformed WhoAmI response")
+	}
+
+	extResp := resp.Children[1]
+	if extResp.Tag != ldapAppExtendedResponse {
+		return "", fmt.Errorf("expected ExtendedResponse (tag %d), got tag %d", ldapAppExtendedResponse, extResp.Tag)
+	}
+
+	// ExtendedResponse: { resultCode, matchedDN, diagnosticMessage, [10]responseName?, [11]responseValue? }
+	if len(extResp.Children) < 1 {
+		return "", fmt.Errorf("empty ExtendedResponse")
+	}
+
+	resultCode, ok := extResp.Children[0].Value.(int64)
+	if !ok {
+		return "", fmt.Errorf("cannot parse result code")
+	}
+	if resultCode != 0 {
+		errMsg := ""
+		if len(extResp.Children) >= 3 && extResp.Children[2].Value != nil {
+			errMsg = fmt.Sprintf("%v", extResp.Children[2].Value)
+		}
+		return "", fmt.Errorf("WhoAmI failed (code %d): %s", resultCode, errMsg)
+	}
+
+	// Look for responseValue [11]
+	for _, child := range extResp.Children {
+		if child.ClassType == ber.ClassContext && child.Tag == 11 {
+			val := child.ByteValue
+			if len(val) == 0 {
+				val = child.Data.Bytes()
+			}
+			return string(val), nil
+		}
+	}
+
+	return "", nil
+}
+
 func (lc *ldapRelayConn) parseBindResult(packet *ber.Packet) (int64, string) {
 	if len(packet.Children) < 2 {
 		return -1, "malformed response"
