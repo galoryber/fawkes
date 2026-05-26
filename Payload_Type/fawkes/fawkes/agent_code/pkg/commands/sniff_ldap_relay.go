@@ -403,11 +403,19 @@ func ldapRelayAddComputer(conn *ldap.Conn, computerName string) string {
 	password := generateComputerPassword()
 	unicodePwd := encodeUnicodePwd(password)
 
+	spns := []string{
+		"HOST/" + dnName,
+		"HOST/" + dnsName,
+		"RestrictedKrbHost/" + dnName,
+		"RestrictedKrbHost/" + dnsName,
+	}
+
 	addReq := ldap.NewAddRequest(computerDN, nil)
 	addReq.Attribute("objectClass", []string{"Computer"})
 	addReq.Attribute("sAMAccountName", []string{samName})
 	addReq.Attribute("userAccountControl", []string{"4096"})
 	addReq.Attribute("dNSHostName", []string{dnsName})
+	addReq.Attribute("servicePrincipalName", spns)
 	addReq.Attribute("unicodePwd", []string{string(unicodePwd)})
 
 	err = conn.Add(addReq)

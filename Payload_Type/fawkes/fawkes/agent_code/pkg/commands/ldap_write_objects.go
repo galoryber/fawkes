@@ -51,7 +51,7 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		addReq.Attribute("userAccountControl", []string{"4128"})
 	}
 
-	// Set DNS hostname if we can infer the domain
+	// Set DNS hostname and SPNs if we can infer the domain
 	dnsParts := strings.Split(baseDN, ",")
 	var domainParts []string
 	for _, part := range dnsParts {
@@ -63,6 +63,12 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 	if len(domainParts) > 0 {
 		fqdn := strings.ToLower(args.Target) + "." + strings.Join(domainParts, ".")
 		addReq.Attribute("dNSHostName", []string{fqdn})
+		addReq.Attribute("servicePrincipalName", []string{
+			"HOST/" + args.Target,
+			"HOST/" + fqdn,
+			"RestrictedKrbHost/" + args.Target,
+			"RestrictedKrbHost/" + fqdn,
+		})
 	}
 
 	if err := conn.Add(addReq); err != nil {
