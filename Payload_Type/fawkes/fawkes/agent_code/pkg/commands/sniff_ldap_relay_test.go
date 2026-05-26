@@ -125,15 +125,9 @@ func TestExecuteLDAPRelayCore_MissingTarget(t *testing.T) {
 	}
 }
 
-func TestLdapRelayBindNegotiate_RoundTrip(t *testing.T) {
-	// Verify BER packet construction for NTLM negotiate
+func TestLdapRelayConnInit(t *testing.T) {
 	lc := &ldapRelayConn{msgID: 1}
-
-	// We can't test the full negotiate without a real LDAP server,
-	// but we can verify the BER packet is well-formed
-	ntlmType1 := []byte("NTLMSSP\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-
-	_ = lc
-	_ = ntlmType1
-	// Structural test: just verify the code doesn't panic
+	if lc.msgID != 1 {
+		t.Errorf("msgID = %d, want 1", lc.msgID)
+	}
 }

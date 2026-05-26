@@ -60,7 +60,7 @@ func (lc *ldapRelayConn) negotiate(ntlmType1 []byte) ([]byte, error) {
 	// TagEnumerated (10) in context class = SICILY Negotiate
 	auth := ber.Encode(ber.ClassContext, ber.TypePrimitive, ber.TagEnumerated, nil, "NTLM Negotiate")
 	auth.Value = ntlmType1
-	auth.Data.Write(ntlmType1)
+	_, _ = auth.Data.Write(ntlmType1)
 	bindReq.AppendChild(auth)
 
 	packet.AppendChild(bindReq)
@@ -95,7 +95,7 @@ func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
 	// TagEmbeddedPDV (11) in context class = SICILY Response
 	auth := ber.Encode(ber.ClassContext, ber.TypePrimitive, ber.TagEmbeddedPDV, nil, "NTLM Authenticate")
 	auth.Value = ntlmType3
-	auth.Data.Write(ntlmType3)
+	_, _ = auth.Data.Write(ntlmType3)
 	bindReq.AppendChild(auth)
 
 	packet.AppendChild(bindReq)

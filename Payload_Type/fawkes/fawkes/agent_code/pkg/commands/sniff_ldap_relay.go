@@ -74,10 +74,10 @@ func parseLDAPRelayOps(params sniffParams) ldapRelayOps {
 	if params.Ports != "" {
 		parts := strings.SplitN(params.Ports, ":", 2)
 		if len(parts) == 2 {
-			fmt.Sscanf(parts[0], "%d", &p.listenPort)
-			fmt.Sscanf(parts[1], "%d", &p.targetPort)
+			_, _ = fmt.Sscanf(parts[0], "%d", &p.listenPort)
+			_, _ = fmt.Sscanf(parts[1], "%d", &p.targetPort)
 		} else {
-			fmt.Sscanf(parts[0], "%d", &p.targetPort)
+			_, _ = fmt.Sscanf(parts[0], "%d", &p.targetPort)
 		}
 	}
 
