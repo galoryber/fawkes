@@ -208,6 +208,10 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 		Status:    "error",
 	}
 	defer func() {
+		if r := recover(); r != nil {
+			entry.Status = "panic"
+			entry.Detail = fmt.Sprintf("relay handler panic: %v", r)
+		}
 		mu.Lock()
 		result.Relays = append(result.Relays, entry)
 		mu.Unlock()
@@ -329,10 +333,16 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 // executeLDAPRelayOperation performs a post-auth LDAP operation using the
 // already-authenticated TCP connection. Creates a go-ldap client on top of
 // the existing connection for high-level LDAP operations.
-func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps) string {
-	// Wrap the already-authenticated TCP connection in a go-ldap Conn
+func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps) (opResult string) {
+	defer func() {
+		if r := recover(); r != nil {
+			opResult = fmt.Sprintf("post-auth panic: %v", r)
+		}
+	}()
+
 	ldapConn := ldap.NewConn(rawConn, false)
 	ldapConn.Start()
+	defer ldapConn.Close()
 
 	switch ops.operation {
 	case "whoami":
