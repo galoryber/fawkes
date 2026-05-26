@@ -65,6 +65,8 @@ func TestParseLDAPRelayOps_Operations(t *testing.T) {
 		{"whoami", "whoami", "", ""},
 		{"add-computer:FAWKES$", "add-computer", "FAWKES$", ""},
 		{"rbcd:CN=DC01,DC=corp,DC=local|S-1-5-21-123", "rbcd", "CN=DC01,DC=corp,DC=local", "S-1-5-21-123"},
+		{"dump-laps", "dump-laps", "", ""},
+		{"dump-laps:SRV01", "dump-laps", "SRV01", ""},
 	}
 
 	for _, tt := range tests {

