@@ -67,7 +67,10 @@ func (lc *ldapRelayConn) authenticate(ntlmType3 []byte) error {
 	}
 
 	resultCode, errMsg := lc.parseBindResult(respPacket)
-	if resultCode != 0 {
+	// AD returns saslBindInProgress (14) after successful NTLM Type 3 within
+	// GSS-SPNEGO — the SPNEGO layer wants to continue but NTLM auth is done.
+	// go-ldap treats code 14 after Type 3 as success. Code 49 = invalidCredentials.
+	if resultCode != 0 && resultCode != 14 {
 		return fmt.Errorf("LDAP bind failed (code %d): %s", resultCode, errMsg)
 	}
 	return nil
