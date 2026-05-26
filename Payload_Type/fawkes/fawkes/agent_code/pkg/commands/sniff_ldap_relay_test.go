@@ -131,3 +131,31 @@ func TestLdapRelayConnInit(t *testing.T) {
 		t.Errorf("msgID = %d, want 1", lc.msgID)
 	}
 }
+
+func TestGenerateComputerPassword(t *testing.T) {
+	pw := generateComputerPassword()
+	if len(pw) != 16 {
+		t.Errorf("password length = %d, want 16", len(pw))
+	}
+	pw2 := generateComputerPassword()
+	if pw == pw2 {
+		t.Error("two generated passwords should not be identical")
+	}
+}
+
+func TestEncodeUnicodePwd(t *testing.T) {
+	encoded := encodeUnicodePwd("Test123!")
+	// unicodePwd = UTF-16LE("\"Test123!\"")
+	// The quoted string is 10 chars → 20 bytes
+	if len(encoded) != 20 {
+		t.Errorf("encoded length = %d, want 20 (10 UTF-16LE chars)", len(encoded))
+	}
+	// First two bytes should be UTF-16LE for '"' (0x22, 0x00)
+	if encoded[0] != 0x22 || encoded[1] != 0x00 {
+		t.Errorf("first char = %02x%02x, want 2200 (UTF-16LE quote)", encoded[0], encoded[1])
+	}
+	// Last two bytes should also be '"'
+	if encoded[18] != 0x22 || encoded[19] != 0x00 {
+		t.Errorf("last char = %02x%02x, want 2200 (UTF-16LE quote)", encoded[18], encoded[19])
+	}
+}
