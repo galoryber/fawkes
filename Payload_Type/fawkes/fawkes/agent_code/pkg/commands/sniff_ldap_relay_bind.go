@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
@@ -116,7 +117,7 @@ func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, e
 		return nil, fmt.Errorf("expected BindResponse (tag 1), got tag %d", bindResp.Tag)
 	}
 
-	// BindResponse: { resultCode, matchedDN, diagnosticMessage, [7]serverSaslCreds? }
+	// Try serverSaslCreds [7] first (SASL standard location)
 	for _, child := range bindResp.Children {
 		if child.ClassType == ber.ClassContext && child.Tag == 7 {
 			creds := child.ByteValue
@@ -129,22 +130,28 @@ func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, e
 		}
 	}
 
-	resultCode, errMsg := lc.parseBindResult(packet)
-	if resultCode == 14 {
-		// saslBindInProgress — scan all children for NTLM signature
-		for _, child := range bindResp.Children {
-			data := child.ByteValue
-			if len(data) == 0 {
-				data = child.Data.Bytes()
-			}
-			if len(data) >= 8 && bytes.HasPrefix(data, sniffNTLMSig) {
-				return data, nil
+	// Scan all children for NTLM signature (SICILY may put Type 2 in
+	// matchedDN or diagnosticMessage rather than serverSaslCreds)
+	var diag []string
+	for i, child := range bindResp.Children {
+		data := child.ByteValue
+		if len(data) == 0 {
+			data = child.Data.Bytes()
+		}
+		if len(data) == 0 {
+			if s, ok := child.Value.(string); ok && len(s) > 0 {
+				data = []byte(s)
 			}
 		}
-		return nil, fmt.Errorf("saslBindInProgress but no NTLM challenge found in %d children", len(bindResp.Children))
+		diag = append(diag, fmt.Sprintf("child[%d]: class=%d tag=%d type=%d len(bv)=%d len(data)=%d len(val)=%d",
+			i, child.ClassType, child.Tag, child.Type, len(child.ByteValue), len(child.Data.Bytes()), len(data)))
+		if len(data) >= 8 && bytes.HasPrefix(data, sniffNTLMSig) {
+			return data, nil
+		}
 	}
 
-	return nil, fmt.Errorf("no server SASL creds in bind response (resultCode=%d, msg=%s)", resultCode, errMsg)
+	resultCode, errMsg := lc.parseBindResult(packet)
+	return nil, fmt.Errorf("no NTLM challenge in bind response (resultCode=%d, msg=%s, children: %s)", resultCode, errMsg, strings.Join(diag, "; "))
 }
 
 const ldapAppExtendedRequest = 23
