@@ -316,7 +316,7 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 	entry.Detail = fmt.Sprintf("Relayed %s\\%s to LDAP %s:%d", domain, user, ops.target, ops.targetPort)
 
 	// Step 6: Verify auth and perform post-auth operation.
-	// Use raw BER WhoAmI first to verify auth state without go-ldap.
+	_ = lc.conn.SetDeadline(time.Now().Add(30 * time.Second))
 	authzID, whoErr := lc.rawWhoAmI()
 	if whoErr != nil {
 		entry.OpResult = fmt.Sprintf("raw-whoami error: %v", whoErr)
