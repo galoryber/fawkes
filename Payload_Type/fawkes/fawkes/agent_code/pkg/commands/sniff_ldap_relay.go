@@ -397,8 +397,7 @@ func ldapRelayAddComputer(conn *ldap.Conn, computerName string) string {
 	dnsName := strings.ToLower(dnName) + "." + ldapRelayDNToDomain(baseDN)
 
 	addReq := ldap.NewAddRequest(computerDN, nil)
-	addReq.Attribute("objectClass", []string{"top", "person", "organizationalPerson", "user", "computer"})
-	addReq.Attribute("cn", []string{dnName})
+	addReq.Attribute("objectClass", []string{"Computer"})
 	addReq.Attribute("sAMAccountName", []string{samName})
 	addReq.Attribute("userAccountControl", []string{"4096"})
 	addReq.Attribute("dNSHostName", []string{dnsName})
