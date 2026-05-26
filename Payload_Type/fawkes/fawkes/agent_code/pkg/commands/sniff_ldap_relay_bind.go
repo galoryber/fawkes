@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
@@ -117,7 +116,19 @@ func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, e
 		return nil, fmt.Errorf("expected BindResponse (tag 1), got tag %d", bindResp.Tag)
 	}
 
-	// Try serverSaslCreds [7] first (SASL standard location)
+	// SICILY returns Type 2 in matchedDN (child[1]); SASL uses
+	// serverSaslCreds (context tag 7). Scan all children for NTLM data.
+	for _, child := range bindResp.Children {
+		data := child.ByteValue
+		if len(data) == 0 {
+			data = child.Data.Bytes()
+		}
+		if len(data) >= 8 && bytes.HasPrefix(data, sniffNTLMSig) {
+			return data, nil
+		}
+	}
+
+	// Try serverSaslCreds [7] (may contain SPNEGO-wrapped NTLM)
 	for _, child := range bindResp.Children {
 		if child.ClassType == ber.ClassContext && child.Tag == 7 {
 			creds := child.ByteValue
@@ -130,28 +141,8 @@ func (lc *ldapRelayConn) extractBindResponseCreds(packet *ber.Packet) ([]byte, e
 		}
 	}
 
-	// Scan all children for NTLM signature (SICILY may put Type 2 in
-	// matchedDN or diagnosticMessage rather than serverSaslCreds)
-	var diag []string
-	for i, child := range bindResp.Children {
-		data := child.ByteValue
-		if len(data) == 0 {
-			data = child.Data.Bytes()
-		}
-		if len(data) == 0 {
-			if s, ok := child.Value.(string); ok && len(s) > 0 {
-				data = []byte(s)
-			}
-		}
-		diag = append(diag, fmt.Sprintf("child[%d]: class=%d tag=%d type=%d len(bv)=%d len(data)=%d len(val)=%d",
-			i, child.ClassType, child.Tag, child.Type, len(child.ByteValue), len(child.Data.Bytes()), len(data)))
-		if len(data) >= 8 && bytes.HasPrefix(data, sniffNTLMSig) {
-			return data, nil
-		}
-	}
-
 	resultCode, errMsg := lc.parseBindResult(packet)
-	return nil, fmt.Errorf("no NTLM challenge in bind response (resultCode=%d, msg=%s, children: %s)", resultCode, errMsg, strings.Join(diag, "; "))
+	return nil, fmt.Errorf("no NTLM challenge in bind response (resultCode=%d, msg=%s)", resultCode, errMsg)
 }
 
 const ldapAppExtendedRequest = 23
