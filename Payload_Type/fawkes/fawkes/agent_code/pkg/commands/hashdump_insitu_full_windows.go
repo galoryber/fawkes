@@ -106,14 +106,21 @@ func executeInsituFullInner() structs.CommandResult {
 	var cryptoLayoutName string
 	var cryptoErrs []string
 	for _, cl := range lsaCryptoLayouts {
-		cryptoReport, cryptoMaterial, cryptoErrStr = captureLsaCrypto(reader, lsasrvBytes, mod.Base, cl)
-		cryptoLayoutName = cl.Name
-		if cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey() {
+		report, material, errStr := captureLsaCrypto(reader, lsasrvBytes, mod.Base, cl)
+		if material.HasAESKey() || material.HasDESKey() {
+			cryptoReport = report
+			cryptoMaterial = material
+			cryptoLayoutName = cl.Name
 			cryptoErrs = nil
+			cryptoErrStr = ""
 			break
 		}
-		if cryptoErrStr != "" {
-			cryptoErrs = append(cryptoErrs, cl.Name+": "+cryptoErrStr)
+		if errStr != "" {
+			cryptoErrs = append(cryptoErrs, cl.Name+": "+errStr)
+		}
+		if report != nil && cryptoReport == nil {
+			cryptoReport = report
+			cryptoLayoutName = cl.Name
 		}
 	}
 	if len(cryptoErrs) > 0 {

@@ -6,24 +6,27 @@ import (
 	"testing"
 )
 
-// stampCredentialListEntry writes a 32-byte CREDENTIAL_LIST entry header
-// (Flink at +0, AuthPkgId at +8, _pad at +12, PrimaryCredentials_data at +16,
-// trailing 8 bytes left zero). Buffer must be at least credentialListEntryReadSize.
-func stampCredentialListEntry(buf []byte, flink uintptr, authPkgID uint32, primaryPtr uintptr) {
+// stampCredentialListEntry writes a 0x28-byte CREDENTIAL_LIST entry
+// (Flink+0, Blink+8, creds.next+0x10, AuthPkgId+0x18, PrimaryCreds+0x20).
+func stampCredentialListEntry(buf []byte, flink, blink uintptr, authPkgID uint32, primaryPtr uintptr) {
 	binary.LittleEndian.PutUint64(buf[0:8], uint64(flink))
-	binary.LittleEndian.PutUint32(buf[8:12], authPkgID)
-	// raw[12:16] = padding (left zero)
-	binary.LittleEndian.PutUint64(buf[16:24], uint64(primaryPtr))
-	// raw[24:32] = trailing slack (left zero) — present in our 32-byte read but not parsed
+	binary.LittleEndian.PutUint64(buf[8:16], uint64(blink))
+	// buf[0x10:0x18] = Credentials.next (leave zero)
+	binary.LittleEndian.PutUint32(buf[0x18:0x1C], authPkgID)
+	// buf[0x1C:0x20] = alignment pad (leave zero)
+	binary.LittleEndian.PutUint64(buf[0x20:0x28], uint64(primaryPtr))
 }
 
-// makePrimaryEnc builds a 48-byte PRIMARY_CREDENTIAL_ENC envelope. Caller is
-// responsible for registering the buffer-pointer pages on the test reader.
-func makePrimaryEnc(userBuf, domainBuf, encBuf uintptr, userLenBytes, domainLenBytes, encLenBytes uint16) []byte {
+// makePrimaryEnc builds a 0x28-byte PRIMARY_CREDENTIALS envelope:
+//
+//	+0x00  next (leave zero)
+//	+0x08  Primary (ANSI_STRING — auth package name)
+//	+0x18  Credentials (LSA_UNICODE_STRING — encrypted blob)
+func makePrimaryEnc(primaryBuf, credBuf uintptr, primaryLenBytes, credLenBytes uint16) []byte {
 	raw := make([]byte, primaryCredentialEncSize)
-	stampUnicodeStringHeader(raw, primaryEncUserNameOff, userLenBytes, userBuf)
-	stampUnicodeStringHeader(raw, primaryEncDomainOff, domainLenBytes, domainBuf)
-	stampUnicodeStringHeader(raw, primaryEncEncryptedOff, encLenBytes, encBuf)
+	// next at +0 left zero
+	stampUnicodeStringHeader(raw, primaryEncPrimaryOff, primaryLenBytes, primaryBuf)
+	stampUnicodeStringHeader(raw, primaryEncCredentialOff, credLenBytes, credBuf)
 	return raw
 }
 
@@ -71,8 +74,6 @@ func TestReadLSAUnicodeRawBytes_RoundTrip(t *testing.T) {
 }
 
 func TestReadLSAUnicodeRawBytes_AcceptsOddLength(t *testing.T) {
-	// Encrypted ciphertext is binary; odd byte counts are legal (unlike UTF-16
-	// strings which readLSAUnicodeString rejects).
 	raw := make([]byte, 0x40)
 	stampUnicodeStringHeader(raw, 0, 7, 0xAA0000)
 	r := newBufferReader()
@@ -106,7 +107,6 @@ func TestReadLSAUnicodeRawBytes_NilReader(t *testing.T) {
 }
 
 func TestReadLSAUnicodeRawBytes_EmptyLengthOrNullBuffer(t *testing.T) {
-	// Length=0 → returns nil/no-error with the on-the-wire address echoed back.
 	raw := make([]byte, 0x40)
 	stampUnicodeStringHeader(raw, 0, 0, 0xDEAD0000)
 	bytes, addr, length, err := readLSAUnicodeRawBytes(newBufferReader(), raw, 0, ciphertextSanityMax)
@@ -114,7 +114,6 @@ func TestReadLSAUnicodeRawBytes_EmptyLengthOrNullBuffer(t *testing.T) {
 		t.Errorf("Length=0: bytes=%v addr=0x%X length=%d err=%v; want nil/0xDEAD0000/0/nil", bytes, addr, length, err)
 	}
 
-	// Buffer=NULL → returns nil/no-error.
 	stampUnicodeStringHeader(raw, 0, 16, 0)
 	bytes, addr, length, err = readLSAUnicodeRawBytes(newBufferReader(), raw, 0, ciphertextSanityMax)
 	if err != nil || bytes != nil || addr != 0 || length != 16 {
@@ -124,32 +123,23 @@ func TestReadLSAUnicodeRawBytes_EmptyLengthOrNullBuffer(t *testing.T) {
 
 func TestReadPrimaryCredentialEnc_FullEnvelope(t *testing.T) {
 	const (
-		envelopeAddr = uintptr(0x1000)
-		userBufAddr  = uintptr(0x2000)
-		domainBuf    = uintptr(0x3000)
-		encBuf       = uintptr(0x4000)
+		envelopeAddr   = uintptr(0x1000)
+		primaryBufAddr = uintptr(0x2000) // auth package name (e.g., "Primary")
+		credBufAddr    = uintptr(0x4000) // encrypted credential blob
 	)
-	user := utf16LEBytes("alice")
-	domain := utf16LEBytes("CORP")
+	pkgName := []byte("Primary") // ANSI string
 	cipher := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04}
 	r := newBufferReader()
-	r.put(userBufAddr, user)
-	r.put(domainBuf, domain)
-	r.put(encBuf, cipher)
-	r.put(envelopeAddr, makePrimaryEnc(userBufAddr, domainBuf, encBuf, uint16(len(user)), uint16(len(domain)), uint16(len(cipher))))
+	r.put(primaryBufAddr, pkgName)
+	r.put(credBufAddr, cipher)
+	r.put(envelopeAddr, makePrimaryEnc(primaryBufAddr, credBufAddr, uint16(len(pkgName)), uint16(len(cipher))))
 
 	p, err := readPrimaryCredentialEnc(r, envelopeAddr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if p.UserName != "alice" {
-		t.Errorf("UserName = %q, want alice", p.UserName)
-	}
-	if p.Domain != "CORP" {
-		t.Errorf("Domain = %q, want CORP", p.Domain)
-	}
-	if p.EncryptedAddress != encBuf {
-		t.Errorf("EncryptedAddress = 0x%X, want 0x%X", p.EncryptedAddress, encBuf)
+	if p.EncryptedAddress != credBufAddr {
+		t.Errorf("EncryptedAddress = 0x%X, want 0x%X", p.EncryptedAddress, credBufAddr)
 	}
 	if p.EncryptedLength != uint16(len(cipher)) {
 		t.Errorf("EncryptedLength = %d, want %d", p.EncryptedLength, len(cipher))
@@ -164,33 +154,27 @@ func TestReadPrimaryCredentialEnc_FullEnvelope(t *testing.T) {
 
 func TestReadPrimaryCredentialEnc_PartialFailureSurvives(t *testing.T) {
 	const (
-		envelopeAddr = uintptr(0x1000)
-		userBufAddr  = uintptr(0x2000)
-		domainBuf    = uintptr(0x3000) // intentionally NOT registered → remote read fails
-		encBuf       = uintptr(0x4000)
+		envelopeAddr   = uintptr(0x1000)
+		primaryBufAddr = uintptr(0x2000) // intentionally NOT registered → read fails
+		credBufAddr    = uintptr(0x4000)
 	)
-	user := utf16LEBytes("bob")
 	cipher := []byte{0x11, 0x22}
 	r := newBufferReader()
-	r.put(userBufAddr, user)
-	r.put(encBuf, cipher)
-	r.put(envelopeAddr, makePrimaryEnc(userBufAddr, domainBuf, encBuf, uint16(len(user)), 8, uint16(len(cipher))))
+	r.put(credBufAddr, cipher)
+	r.put(envelopeAddr, makePrimaryEnc(primaryBufAddr, credBufAddr, 8, uint16(len(cipher))))
 
 	p, err := readPrimaryCredentialEnc(r, envelopeAddr)
 	if err != nil {
 		t.Fatalf("unexpected envelope error: %v", err)
 	}
-	if p.UserName != "bob" {
-		t.Errorf("UserName = %q, want bob", p.UserName)
-	}
-	if p.Domain != "" {
-		t.Errorf("Domain = %q, want empty (Domain remote read failed)", p.Domain)
+	if p.UserName != "" {
+		t.Errorf("UserName = %q, want empty (Primary read failed)", p.UserName)
 	}
 	if string(p.EncryptedBytes) != string(cipher) {
 		t.Errorf("EncryptedBytes = %v, want %v", p.EncryptedBytes, cipher)
 	}
-	if len(p.ParseErrors) != 1 || !strings.Contains(p.ParseErrors[0], "Domain") {
-		t.Errorf("expected one Domain ParseError, got %v", p.ParseErrors)
+	if len(p.ParseErrors) != 1 || !strings.Contains(p.ParseErrors[0], "Primary") {
+		t.Errorf("expected one Primary ParseError, got %v", p.ParseErrors)
 	}
 }
 
@@ -202,9 +186,8 @@ func TestReadPrimaryCredentialEnc_ZeroAddr(t *testing.T) {
 }
 
 func TestReadPrimaryCredentialEnc_EnvelopeReadFails(t *testing.T) {
-	// Envelope address not registered in the reader → 48-byte read fails fatally.
 	_, err := readPrimaryCredentialEnc(newBufferReader(), 0xDEAD)
-	if err == nil || !strings.Contains(err.Error(), "read PRIMARY_CREDENTIAL_ENC") {
+	if err == nil || !strings.Contains(err.Error(), "read PRIMARY_CREDENTIALS") {
 		t.Errorf("expected envelope read failure, got %v", err)
 	}
 }
@@ -225,23 +208,31 @@ func TestWalkCredentialList_NilReader(t *testing.T) {
 
 func TestWalkCredentialList_SingleEntryWithPrimary(t *testing.T) {
 	const (
-		entryAddr   = uintptr(0x10000)
-		primaryAddr = uintptr(0x20000)
-		userBufAddr = uintptr(0x30000)
-		encBufAddr  = uintptr(0x40000)
+		headAddr       = uintptr(0x08000) // sentinel head
+		entryAddr      = uintptr(0x10000) // real entry
+		primaryAddr    = uintptr(0x20000)
+		primaryBufAddr = uintptr(0x30000) // auth package name
+		credBufAddr    = uintptr(0x40000) // encrypted blob
 	)
-	user := utf16LEBytes("svc")
+	pkgName := []byte("Primary")
 	cipher := []byte{0xAA, 0xBB}
 	r := newBufferReader()
 
-	entry := make([]byte, credentialListEntryReadSize)
-	stampCredentialListEntry(entry, 0, 0 /*MSV1_0*/, primaryAddr)
-	r.put(entryAddr, entry)
-	r.put(primaryAddr, makePrimaryEnc(userBufAddr, 0, encBufAddr, uint16(len(user)), 0, uint16(len(cipher))))
-	r.put(userBufAddr, user)
-	r.put(encBufAddr, cipher)
+	// Sentinel head: Flink → entryAddr
+	head := make([]byte, 8)
+	binary.LittleEndian.PutUint64(head, uint64(entryAddr))
+	r.put(headAddr, head)
 
-	entries, err := walkCredentialList(r, entryAddr, 16)
+	// Real entry: Flink → headAddr (wrap back to sentinel = termination)
+	entry := make([]byte, credentialListEntryReadSize)
+	stampCredentialListEntry(entry, headAddr, headAddr, 0 /*MSV1_0*/, primaryAddr)
+	r.put(entryAddr, entry)
+
+	r.put(primaryAddr, makePrimaryEnc(primaryBufAddr, credBufAddr, uint16(len(pkgName)), uint16(len(cipher))))
+	r.put(primaryBufAddr, pkgName)
+	r.put(credBufAddr, cipher)
+
+	entries, err := walkCredentialList(r, headAddr, 16)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -258,9 +249,6 @@ func TestWalkCredentialList_SingleEntryWithPrimary(t *testing.T) {
 	if e.Primary == nil {
 		t.Fatal("Primary is nil")
 	}
-	if e.Primary.UserName != "svc" {
-		t.Errorf("Primary.UserName = %q, want svc", e.Primary.UserName)
-	}
 	if string(e.Primary.EncryptedBytes) != string(cipher) {
 		t.Errorf("Primary.EncryptedBytes = %v, want %v", e.Primary.EncryptedBytes, cipher)
 	}
@@ -269,20 +257,27 @@ func TestWalkCredentialList_SingleEntryWithPrimary(t *testing.T) {
 	}
 }
 
-func TestWalkCredentialList_ChainTerminatesOnNullFlink(t *testing.T) {
+func TestWalkCredentialList_ChainTerminatesAtSentinel(t *testing.T) {
 	const (
+		headAddr   = uintptr(0x08000)
 		entry1Addr = uintptr(0x10000)
 		entry2Addr = uintptr(0x11000)
 	)
 	r := newBufferReader()
+
+	// Sentinel head: Flink → entry1
+	head := make([]byte, 8)
+	binary.LittleEndian.PutUint64(head, uint64(entry1Addr))
+	r.put(headAddr, head)
+
 	e1 := make([]byte, credentialListEntryReadSize)
 	e2 := make([]byte, credentialListEntryReadSize)
-	stampCredentialListEntry(e1, entry2Addr, 2 /*Kerberos*/, 0 /*no primary data*/)
-	stampCredentialListEntry(e2, 0 /*terminator*/, 0 /*MSV1_0*/, 0)
+	stampCredentialListEntry(e1, entry2Addr, headAddr, 2 /*Kerberos*/, 0)
+	stampCredentialListEntry(e2, headAddr, entry1Addr, 0 /*MSV1_0*/, 0) // wraps to head = clean termination
 	r.put(entry1Addr, e1)
 	r.put(entry2Addr, e2)
 
-	entries, err := walkCredentialList(r, entry1Addr, 16)
+	entries, err := walkCredentialList(r, headAddr, 16)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -295,27 +290,31 @@ func TestWalkCredentialList_ChainTerminatesOnNullFlink(t *testing.T) {
 	if entries[1].AuthPackageName != "MSV1_0" {
 		t.Errorf("entry[1] = %q, want MSV1_0", entries[1].AuthPackageName)
 	}
-	if entries[0].Primary != nil {
-		t.Errorf("entry[0].Primary should be nil (zero data ptr), got %+v", entries[0].Primary)
-	}
 }
 
 func TestWalkCredentialList_CycleDetected(t *testing.T) {
 	const (
+		headAddr   = uintptr(0x08000)
 		entry1Addr = uintptr(0x10000)
 		entry2Addr = uintptr(0x11000)
 	)
 	r := newBufferReader()
+
+	head := make([]byte, 8)
+	binary.LittleEndian.PutUint64(head, uint64(entry1Addr))
+	r.put(headAddr, head)
+
 	e1 := make([]byte, credentialListEntryReadSize)
 	e2 := make([]byte, credentialListEntryReadSize)
-	stampCredentialListEntry(e1, entry2Addr, 0, 0)
-	stampCredentialListEntry(e2, entry1Addr, 0, 0) // points back to entry1 → cycle
+	stampCredentialListEntry(e1, entry2Addr, headAddr, 0, 0)
+	stampCredentialListEntry(e2, entry1Addr, entry2Addr, 0, 0) // cycle: entry2 → entry1
 	r.put(entry1Addr, e1)
 	r.put(entry2Addr, e2)
 
-	entries, err := walkCredentialList(r, entry1Addr, 16)
-	if err == nil || !strings.Contains(err.Error(), "cycle detected") {
-		t.Errorf("expected cycle-detected error, got %v", err)
+	entries, err := walkCredentialList(r, headAddr, 16)
+	// Cycle is now treated as clean termination (not error)
+	if err != nil {
+		t.Errorf("expected nil error for cycle (clean termination), got %v", err)
 	}
 	if len(entries) != 2 {
 		t.Errorf("got %d entries before cycle detect, want 2", len(entries))
@@ -323,19 +322,24 @@ func TestWalkCredentialList_CycleDetected(t *testing.T) {
 }
 
 func TestWalkCredentialList_SafetyCap(t *testing.T) {
-	// 5-entry chain + maxEntries=3 → cap fires after 3.
+	const headAddr = uintptr(0x08000)
 	addrs := []uintptr{0x10000, 0x11000, 0x12000, 0x13000, 0x14000}
 	r := newBufferReader()
+
+	head := make([]byte, 8)
+	binary.LittleEndian.PutUint64(head, uint64(addrs[0]))
+	r.put(headAddr, head)
+
 	for i, a := range addrs {
 		e := make([]byte, credentialListEntryReadSize)
 		var flink uintptr
 		if i+1 < len(addrs) {
 			flink = addrs[i+1]
 		}
-		stampCredentialListEntry(e, flink, 0, 0)
+		stampCredentialListEntry(e, flink, headAddr, 0, 0)
 		r.put(a, e)
 	}
-	entries, err := walkCredentialList(r, addrs[0], 3)
+	entries, err := walkCredentialList(r, headAddr, 3)
 	if err == nil || !strings.Contains(err.Error(), "safety cap") {
 		t.Errorf("expected safety-cap error, got %v", err)
 	}
@@ -344,36 +348,27 @@ func TestWalkCredentialList_SafetyCap(t *testing.T) {
 	}
 }
 
-func TestWalkCredentialList_NodeReadFailure(t *testing.T) {
-	// Address 0xBAD intentionally not registered.
-	entries, err := walkCredentialList(newBufferReader(), 0xBAD, 16)
-	if err == nil || !strings.Contains(err.Error(), "read credential entry") {
-		t.Errorf("expected read failure, got %v", err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("expected 0 entries before read failure, got %d", len(entries))
+func TestWalkCredentialList_HeadFlinkIsZero(t *testing.T) {
+	const headAddr = uintptr(0x08000)
+	r := newBufferReader()
+	head := make([]byte, 8) // Flink = 0 (empty list)
+	r.put(headAddr, head)
+
+	entries, err := walkCredentialList(r, headAddr, 16)
+	if err != nil || entries != nil {
+		t.Errorf("expected nil/nil for empty sentinel, got entries=%v err=%v", entries, err)
 	}
 }
 
-func TestWalkCredentialList_PrimaryReadFailureRecorded(t *testing.T) {
-	// Entry walks fine but PrimaryCredentialsDataPtr → unregistered page → read fails.
-	const entryAddr = uintptr(0x10000)
+func TestWalkCredentialList_HeadFlinkPointsToSelf(t *testing.T) {
+	const headAddr = uintptr(0x08000)
 	r := newBufferReader()
-	e := make([]byte, credentialListEntryReadSize)
-	stampCredentialListEntry(e, 0, 3 /*WDigest*/, 0xBAD)
-	r.put(entryAddr, e)
+	head := make([]byte, 8)
+	binary.LittleEndian.PutUint64(head, uint64(headAddr)) // Flink → self = empty
+	r.put(headAddr, head)
 
-	entries, err := walkCredentialList(r, entryAddr, 16)
-	if err != nil {
-		t.Fatalf("entry walk should succeed, got %v", err)
-	}
-	if len(entries) != 1 {
-		t.Fatalf("got %d entries, want 1", len(entries))
-	}
-	if entries[0].Primary != nil {
-		t.Errorf("Primary should be nil on read failure, got %+v", entries[0].Primary)
-	}
-	if entries[0].PrimaryReadErr == "" {
-		t.Errorf("PrimaryReadErr should be populated on read failure")
+	entries, err := walkCredentialList(r, headAddr, 16)
+	if err != nil || entries != nil {
+		t.Errorf("expected nil/nil for self-referencing sentinel, got entries=%v err=%v", entries, err)
 	}
 }

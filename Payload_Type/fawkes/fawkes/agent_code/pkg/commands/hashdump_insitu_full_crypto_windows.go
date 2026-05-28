@@ -8,6 +8,7 @@ package commands
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // lsaCryptoMaterial bundles the raw bytes captured by Phase 2C-ii-b alongside
@@ -62,6 +63,21 @@ func captureLsaCrypto(r lsassReader, lsasrvBytes []byte, lsasrvBase uintptr, lay
 	} else {
 		report.HAesKey = bcryptKeyReport(hk, k)
 		material.AESKey = append([]byte(nil), k.Key...)
+	}
+	if !material.HasAESKey() && !material.HasDESKey() {
+		var parts []string
+		if report.IVErr != "" {
+			parts = append(parts, "IV: "+report.IVErr)
+		}
+		if report.H3DesErr != "" {
+			parts = append(parts, "3DES: "+report.H3DesErr)
+		}
+		if report.HAesErr != "" {
+			parts = append(parts, "AES: "+report.HAesErr)
+		}
+		if len(parts) > 0 {
+			return report, material, fmt.Sprintf("signature matched but key extraction failed: %s", strings.Join(parts, "; "))
+		}
 	}
 	return report, material, ""
 }
