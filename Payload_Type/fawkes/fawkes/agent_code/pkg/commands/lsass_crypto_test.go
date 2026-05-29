@@ -101,27 +101,18 @@ func TestFindLsaCryptoGlobals_SignatureNotFound(t *testing.T) {
 	}
 }
 
-func TestFindLsaCryptoGlobals_ResolvedTargetOutsideBuffer(t *testing.T) {
-	// Pattern + key movs all land inside a small buffer, but the IV disp32
-	// is large enough that pattern_start + 16 + disp32 exceeds the buffer.
-	// When hardcoded offsets fail, the dynamic scanner also fails because
-	// the buffer is too small to contain valid data-section globals.
+func TestFindLsaCryptoGlobals_NoKeysInSmallBuffer(t *testing.T) {
+	// Pattern found but no valid key globals in a tiny buffer.
 	const (
-		patternOff = 0x100
-		bufSize    = 0x200
+		patternOff = 0x40
+		bufSize    = 0x80
 	)
 	buf := make([]byte, bufSize)
 	stampLsaInitProtectedMemoryPattern(buf, patternOff)
-	// Stamp h3DesKey + hAesKey movs with safe (in-buffer) targets so the IV
-	// is the one that fails.
-	stampMov48_8B_0D(buf, patternOff+LsaCryptoWin10W8.H3DesKeyMovStart, 0)
-	stampMov48_8B_0D(buf, patternOff+LsaCryptoWin10W8.HAesKeyMovStart, 0)
-	// IV disp32 = +0x1000, which pushes the target far past bufSize.
-	binary.LittleEndian.PutUint32(buf[patternOff+9+3:patternOff+9+7], uint32(int32(0x1000)))
 
 	_, err := findLsaCryptoGlobals(buf, 0, LsaCryptoWin10W8)
 	if err == nil {
-		t.Errorf("expected error for out-of-buffer target, got nil")
+		t.Errorf("expected error when no key globals found, got nil")
 	}
 }
 
