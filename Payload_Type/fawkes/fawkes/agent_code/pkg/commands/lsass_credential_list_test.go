@@ -127,7 +127,7 @@ func TestReadPrimaryCredentialEnc_FullEnvelope(t *testing.T) {
 		primaryBufAddr = uintptr(0x2000) // auth package name (e.g., "Primary")
 		credBufAddr    = uintptr(0x4000) // encrypted credential blob
 	)
-	pkgName := []byte("Primary") // ANSI string
+	pkgName := utf16LEBytes("Primary")
 	cipher := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04}
 	r := newBufferReader()
 	r.put(primaryBufAddr, pkgName)

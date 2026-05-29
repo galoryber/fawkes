@@ -104,6 +104,8 @@ func TestFindLsaCryptoGlobals_SignatureNotFound(t *testing.T) {
 func TestFindLsaCryptoGlobals_ResolvedTargetOutsideBuffer(t *testing.T) {
 	// Pattern + key movs all land inside a small buffer, but the IV disp32
 	// is large enough that pattern_start + 16 + disp32 exceeds the buffer.
+	// When hardcoded offsets fail, the dynamic scanner also fails because
+	// the buffer is too small to contain valid data-section globals.
 	const (
 		patternOff = 0x100
 		bufSize    = 0x200
@@ -118,8 +120,8 @@ func TestFindLsaCryptoGlobals_ResolvedTargetOutsideBuffer(t *testing.T) {
 	binary.LittleEndian.PutUint32(buf[patternOff+9+3:patternOff+9+7], uint32(int32(0x1000)))
 
 	_, err := findLsaCryptoGlobals(buf, 0, LsaCryptoWin10W8)
-	if err == nil || !strings.Contains(err.Error(), "outside captured") {
-		t.Errorf("expected target-outside-buffer error, got %v", err)
+	if err == nil {
+		t.Errorf("expected error for out-of-buffer target, got nil")
 	}
 }
 
