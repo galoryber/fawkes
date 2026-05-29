@@ -141,9 +141,9 @@ func executeInsituFullInner() structs.CommandResult {
 	hashesExtracted := 0
 	dumpLines := make([]string, 0, 8)
 	for _, n := range nodes {
-		preview := len(n.Raw)
-		if preview > 64 {
-			preview = 64
+		preview := 64
+		if len(n.Raw) < preview {
+			preview = len(n.Raw)
 		}
 		report := insituFullNodeReport{
 			Address:       fmt.Sprintf("0x%X", n.Address),
@@ -162,6 +162,10 @@ func executeInsituFullInner() structs.CommandResult {
 		report.ParsedLogonSrv = parsed.LogonServer
 		if name := logonSessionTypeName(parsed.LogonType); name != "" {
 			report.ParsedLogonType = name
+		}
+		// Dump bytes from 0xD0 to end of node for credentials offset analysis
+		if len(n.Raw) > 0xD0 {
+			report.RawCredsAreaHex = hex.EncodeToString(n.Raw[0xD0:])
 		}
 		if parsed.CredentialsPtr != 0 {
 			report.CredentialsPtr = fmt.Sprintf("0x%X", parsed.CredentialsPtr)

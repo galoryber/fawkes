@@ -24,6 +24,7 @@ type insituFullNodeReport struct {
 	MatchedUsers     []string                     `json:"matched_users,omitempty"`
 	ParseErrors      []string                     `json:"parse_errors,omitempty"`
 	RawPreviewHex    string                       `json:"raw_preview_hex"`
+	RawCredsAreaHex  string                       `json:"raw_creds_area_hex,omitempty"`
 	Credentials      []insituFullCredentialReport `json:"credentials,omitempty"`
 	CredentialWalkErr string                      `json:"credential_walk_err,omitempty"`
 	CredentialDiag   *credentialListDiag          `json:"credential_diag,omitempty"`
