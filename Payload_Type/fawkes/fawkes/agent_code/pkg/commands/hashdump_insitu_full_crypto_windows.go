@@ -11,6 +11,11 @@ import (
 	"strings"
 )
 
+var lsaCryptoLayouts = []lsaCryptoLayout{
+	LsaCryptoWin10_1607,
+	LsaCryptoWin10W8,
+}
+
 // lsaCryptoMaterial bundles the raw bytes captured by Phase 2C-ii-b alongside
 // their JSON projection.
 type lsaCryptoMaterial struct {

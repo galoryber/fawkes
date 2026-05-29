@@ -19,6 +19,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func layoutForVariant(variant string) logonSessionLayout {
+	switch variant {
+	case "Win10_1507_Server2016", "Win10_1703", "Win10_1803_Server2019", "Win10_1903_21H1":
+		return LayoutWin10Original
+	default:
+		return LayoutWin10New
+	}
+}
+
 // lsassRemoteReader implements the cross-platform lsassReader interface
 // against a live PROCESS_VM_READ handle.
 type lsassRemoteReader struct {

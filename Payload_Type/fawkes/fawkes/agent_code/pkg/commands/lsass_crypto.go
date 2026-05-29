@@ -126,11 +126,6 @@ var LsaCryptoWin10_1607 = lsaCryptoLayout{
 
 // lsaCryptoLayouts lists all crypto layouts in preference order.
 // captureLsaCrypto tries each until one matches and resolves.
-var lsaCryptoLayouts = []lsaCryptoLayout{
-	LsaCryptoWin10_1607,
-	LsaCryptoWin10W8,
-}
-
 // lsaCryptoGlobals captures the LSASS-virtual addresses of the three globals
 // LsaInitializeProtectedMemory wires into BCryptEncrypt / BCryptDecrypt.
 type lsaCryptoGlobals struct {
@@ -337,7 +332,7 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 	// are not referenced by any instruction near the signature.
 	if len(keyGlobals) < 2 && reader != nil {
 		dataStart := bufLen * 3 / 4
-		dataStart = dataStart &^ 7 // align to 8 bytes
+		dataStart &^= 7 // align to 8 bytes
 		for off := dataStart; off+8 <= bufLen; off += 8 {
 			if seen[off] {
 				continue
