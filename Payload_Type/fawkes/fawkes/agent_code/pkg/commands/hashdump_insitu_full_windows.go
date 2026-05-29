@@ -203,12 +203,9 @@ func executeInsituFullInner() structs.CommandResult {
 		}
 
 		if parsed.CredentialsPtr != 0 {
-			creds, credDiag, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
+			creds, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
 			if walkErr != nil {
 				report.CredentialWalkErr = walkErr.Error()
-			}
-			if credDiag != nil {
-				report.CredentialDiag = credDiag
 			}
 			if len(creds) > 0 {
 				nodesWithCreds++

