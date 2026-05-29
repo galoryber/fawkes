@@ -141,9 +141,9 @@ func executeInsituFullInner() structs.CommandResult {
 	hashesExtracted := 0
 	dumpLines := make([]string, 0, 8)
 	for _, n := range nodes {
-		preview := 32
-		if len(n.Raw) < preview {
-			preview = len(n.Raw)
+		preview := len(n.Raw)
+		if preview > 64 {
+			preview = 64
 		}
 		report := insituFullNodeReport{
 			Address:       fmt.Sprintf("0x%X", n.Address),
@@ -199,9 +199,12 @@ func executeInsituFullInner() structs.CommandResult {
 		}
 
 		if parsed.CredentialsPtr != 0 {
-			creds, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
+			creds, credDiag, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
 			if walkErr != nil {
 				report.CredentialWalkErr = walkErr.Error()
+			}
+			if credDiag != nil {
+				report.CredentialDiag = credDiag
 			}
 			if len(creds) > 0 {
 				nodesWithCreds++
@@ -209,12 +212,6 @@ func executeInsituFullInner() structs.CommandResult {
 				for _, c := range creds {
 					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, &credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted, &dumpLines)
 					report.Credentials = append(report.Credentials, credReport)
-				}
-			} else if walkErr == nil {
-				// Empty walk with no error — dump head bytes for layout analysis
-				headBytes, _ := reader.Read(parsed.CredentialsPtr, 0x30)
-				if len(headBytes) > 0 {
-					report.CredentialWalkErr = fmt.Sprintf("empty list; head hex (0x30): %s", hex.EncodeToString(headBytes))
 				}
 			}
 		}
@@ -271,6 +268,7 @@ func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaC
 		Address:       fmt.Sprintf("0x%X", c.Address),
 		AuthPackageId: c.AuthPackageId,
 		AuthPackage:   c.AuthPackageName,
+		RawHex:        c.RawHex,
 	}
 	if c.PrimaryCredentialsDataPtr != 0 {
 		credReport.PrimaryCredsAddr = fmt.Sprintf("0x%X", c.PrimaryCredentialsDataPtr)

@@ -26,6 +26,7 @@ type insituFullNodeReport struct {
 	RawPreviewHex    string                       `json:"raw_preview_hex"`
 	Credentials      []insituFullCredentialReport `json:"credentials,omitempty"`
 	CredentialWalkErr string                      `json:"credential_walk_err,omitempty"`
+	CredentialDiag   *credentialListDiag          `json:"credential_diag,omitempty"`
 }
 
 // insituFullCredentialReport is the JSON projection of a single
@@ -35,6 +36,7 @@ type insituFullCredentialReport struct {
 	Address             string                       `json:"address"`
 	AuthPackageId       uint32                       `json:"auth_package_id"`
 	AuthPackage         string                       `json:"auth_package"`
+	RawHex              string                       `json:"raw_hex,omitempty"`
 	PrimaryCredsAddr    string                       `json:"primary_credentials_address,omitempty"`
 	ParsedUserName      string                       `json:"parsed_username,omitempty"`
 	ParsedDomain        string                       `json:"parsed_domain,omitempty"`

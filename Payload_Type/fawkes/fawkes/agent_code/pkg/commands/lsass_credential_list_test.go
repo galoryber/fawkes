@@ -17,6 +17,15 @@ func stampCredentialListEntry(buf []byte, flink, blink uintptr, authPkgID uint32
 	binary.LittleEndian.PutUint64(buf[0x20:0x28], uint64(primaryPtr))
 }
 
+// makeSentinel creates a 16-byte LIST_ENTRY sentinel pointing to the given
+// first and last entries.
+func makeSentinel(flink, blink uintptr) []byte {
+	buf := make([]byte, 0x30)
+	binary.LittleEndian.PutUint64(buf[0:8], uint64(flink))
+	binary.LittleEndian.PutUint64(buf[8:16], uint64(blink))
+	return buf
+}
+
 // makePrimaryEnc builds a 0x28-byte PRIMARY_CREDENTIALS envelope:
 //
 //	+0x00  next (leave zero)
@@ -193,14 +202,14 @@ func TestReadPrimaryCredentialEnc_EnvelopeReadFails(t *testing.T) {
 }
 
 func TestWalkCredentialList_ZeroHead(t *testing.T) {
-	entries, err := walkCredentialList(newBufferReader(), 0, 16)
-	if err != nil || entries != nil {
-		t.Errorf("expected nil/nil for zero head, got entries=%d err=%v", len(entries), err)
+	entries, diag, err := walkCredentialList(newBufferReader(), 0, 16)
+	if err != nil || entries != nil || diag != nil {
+		t.Errorf("expected nil/nil/nil for zero head, got entries=%v diag=%v err=%v", entries, diag, err)
 	}
 }
 
 func TestWalkCredentialList_NilReader(t *testing.T) {
-	_, err := walkCredentialList(nil, 0x100, 16)
+	_, _, err := walkCredentialList(nil, 0x100, 16)
 	if err == nil || !strings.Contains(err.Error(), "nil lsassReader") {
 		t.Errorf("expected nil-reader error, got %v", err)
 	}
@@ -208,6 +217,7 @@ func TestWalkCredentialList_NilReader(t *testing.T) {
 
 func TestWalkCredentialList_SingleEntryWithPrimary(t *testing.T) {
 	const (
+		sentinelAddr   = uintptr(0x08000)
 		entryAddr      = uintptr(0x10000)
 		primaryAddr    = uintptr(0x20000)
 		primaryBufAddr = uintptr(0x30000)
@@ -217,18 +227,24 @@ func TestWalkCredentialList_SingleEntryWithPrimary(t *testing.T) {
 	cipher := []byte{0xAA, 0xBB}
 	r := newBufferReader()
 
-	// Single entry with Flink=0 (NULL-terminated)
+	// Sentinel: Flink → entry, Blink → entry
+	r.put(sentinelAddr, makeSentinel(entryAddr, entryAddr))
+
+	// Entry with Flink → sentinel (wraps back)
 	entry := make([]byte, credentialListEntryReadSize)
-	stampCredentialListEntry(entry, 0, 0, 0 /*MSV1_0*/, primaryAddr)
+	stampCredentialListEntry(entry, sentinelAddr, sentinelAddr, 0 /*MSV1_0*/, primaryAddr)
 	r.put(entryAddr, entry)
 
 	r.put(primaryAddr, makePrimaryEnc(primaryBufAddr, credBufAddr, uint16(len(pkgName)), uint16(len(cipher))))
 	r.put(primaryBufAddr, pkgName)
 	r.put(credBufAddr, cipher)
 
-	entries, err := walkCredentialList(r, entryAddr, 16)
+	entries, diag, err := walkCredentialList(r, sentinelAddr, 16)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if diag == nil {
+		t.Fatal("expected diagnostic data")
 	}
 	if len(entries) != 1 {
 		t.Fatalf("got %d entries, want 1", len(entries))
@@ -248,21 +264,25 @@ func TestWalkCredentialList_SingleEntryWithPrimary(t *testing.T) {
 	}
 }
 
-func TestWalkCredentialList_ChainTerminatesAtNull(t *testing.T) {
+func TestWalkCredentialList_ChainTerminatesAtSentinel(t *testing.T) {
 	const (
-		entry1Addr = uintptr(0x10000)
-		entry2Addr = uintptr(0x11000)
+		sentinelAddr = uintptr(0x08000)
+		entry1Addr   = uintptr(0x10000)
+		entry2Addr   = uintptr(0x11000)
 	)
 	r := newBufferReader()
 
+	// Sentinel → entry1
+	r.put(sentinelAddr, makeSentinel(entry1Addr, entry2Addr))
+
 	e1 := make([]byte, credentialListEntryReadSize)
 	e2 := make([]byte, credentialListEntryReadSize)
-	stampCredentialListEntry(e1, entry2Addr, 0, 2 /*Kerberos*/, 0)
-	stampCredentialListEntry(e2, 0, entry1Addr, 0 /*MSV1_0*/, 0) // Flink=0 = termination
+	stampCredentialListEntry(e1, entry2Addr, sentinelAddr, 2 /*Kerberos*/, 0)
+	stampCredentialListEntry(e2, sentinelAddr, entry1Addr, 0 /*MSV1_0*/, 0) // Flink → sentinel = wrap
 	r.put(entry1Addr, e1)
 	r.put(entry2Addr, e2)
 
-	entries, err := walkCredentialList(r, entry1Addr, 16)
+	entries, _, err := walkCredentialList(r, sentinelAddr, 16)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -279,19 +299,22 @@ func TestWalkCredentialList_ChainTerminatesAtNull(t *testing.T) {
 
 func TestWalkCredentialList_CycleDetected(t *testing.T) {
 	const (
-		entry1Addr = uintptr(0x10000)
-		entry2Addr = uintptr(0x11000)
+		sentinelAddr = uintptr(0x07000)
+		entry1Addr   = uintptr(0x10000)
+		entry2Addr   = uintptr(0x11000)
 	)
 	r := newBufferReader()
 
+	r.put(sentinelAddr, makeSentinel(entry1Addr, entry2Addr))
+
 	e1 := make([]byte, credentialListEntryReadSize)
 	e2 := make([]byte, credentialListEntryReadSize)
-	stampCredentialListEntry(e1, entry2Addr, 0, 0, 0)
-	stampCredentialListEntry(e2, entry1Addr, 0, 0, 0) // cycle: entry2 → entry1
+	stampCredentialListEntry(e1, entry2Addr, sentinelAddr, 0, 0)
+	stampCredentialListEntry(e2, entry1Addr, sentinelAddr, 0, 0) // cycle: entry2 → entry1
 	r.put(entry1Addr, e1)
 	r.put(entry2Addr, e2)
 
-	entries, err := walkCredentialList(r, entry1Addr, 16)
+	entries, _, err := walkCredentialList(r, sentinelAddr, 16)
 	if err != nil {
 		t.Errorf("expected nil error for cycle (clean termination), got %v", err)
 	}
@@ -301,8 +324,11 @@ func TestWalkCredentialList_CycleDetected(t *testing.T) {
 }
 
 func TestWalkCredentialList_SafetyCap(t *testing.T) {
+	sentinelAddr := uintptr(0x07000)
 	addrs := []uintptr{0x10000, 0x11000, 0x12000, 0x13000, 0x14000}
 	r := newBufferReader()
+
+	r.put(sentinelAddr, makeSentinel(addrs[0], addrs[len(addrs)-1]))
 
 	for i, a := range addrs {
 		e := make([]byte, credentialListEntryReadSize)
@@ -313,7 +339,7 @@ func TestWalkCredentialList_SafetyCap(t *testing.T) {
 		stampCredentialListEntry(e, flink, 0, 0, 0)
 		r.put(a, e)
 	}
-	entries, err := walkCredentialList(r, addrs[0], 3)
+	entries, _, err := walkCredentialList(r, sentinelAddr, 3)
 	if err == nil || !strings.Contains(err.Error(), "safety cap") {
 		t.Errorf("expected safety-cap error, got %v", err)
 	}
@@ -322,36 +348,38 @@ func TestWalkCredentialList_SafetyCap(t *testing.T) {
 	}
 }
 
-func TestWalkCredentialList_HeadFlinkIsZero(t *testing.T) {
-	const entryAddr = uintptr(0x08000)
+func TestWalkCredentialList_EmptyList_FlinkIsSentinel(t *testing.T) {
+	const sentinelAddr = uintptr(0x08000)
 	r := newBufferReader()
-	// Entry with Flink=0 and AuthPkgId=0 → should return 1 entry
-	entry := make([]byte, credentialListEntryReadSize)
-	r.put(entryAddr, entry) // all zeros
+	// Empty list: sentinel Flink points to itself
+	r.put(sentinelAddr, makeSentinel(sentinelAddr, sentinelAddr))
 
-	entries, err := walkCredentialList(r, entryAddr, 16)
+	entries, diag, err := walkCredentialList(r, sentinelAddr, 16)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	// The entry is valid (AuthPkgId=0=MSV1_0), Flink=0 terminates
-	if len(entries) != 1 {
-		t.Errorf("expected 1 entry (the entry itself), got %d", len(entries))
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for empty list, got %d", len(entries))
+	}
+	if diag == nil || !diag.FlinkIsHead {
+		t.Error("expected FlinkIsHead=true")
 	}
 }
 
-func TestWalkCredentialList_HeadFlinkPointsToSelf(t *testing.T) {
-	const entryAddr = uintptr(0x08000)
+func TestWalkCredentialList_EmptyList_FlinkIsZero(t *testing.T) {
+	const sentinelAddr = uintptr(0x08000)
 	r := newBufferReader()
-	entry := make([]byte, credentialListEntryReadSize)
-	binary.LittleEndian.PutUint64(entry, uint64(entryAddr)) // Flink → self
-	r.put(entryAddr, entry)
+	// Empty list variant: Flink=0
+	r.put(sentinelAddr, makeSentinel(0, 0))
 
-	entries, err := walkCredentialList(r, entryAddr, 16)
+	entries, diag, err := walkCredentialList(r, sentinelAddr, 16)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	// The entry itself is processed (Flink=self → cycle detected → 1 entry)
-	if len(entries) != 1 {
-		t.Errorf("expected 1 entry (self-referencing), got %d", len(entries))
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for empty list, got %d", len(entries))
+	}
+	if diag == nil {
+		t.Error("expected diagnostic data")
 	}
 }
