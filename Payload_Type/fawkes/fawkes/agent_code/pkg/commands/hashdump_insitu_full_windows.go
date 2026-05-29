@@ -210,6 +210,12 @@ func executeInsituFullInner() structs.CommandResult {
 					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, &credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted, &dumpLines)
 					report.Credentials = append(report.Credentials, credReport)
 				}
+			} else if walkErr == nil {
+				// Empty walk with no error — dump head bytes for layout analysis
+				headBytes, _ := reader.Read(parsed.CredentialsPtr, 0x30)
+				if len(headBytes) > 0 {
+					report.CredentialWalkErr = fmt.Sprintf("empty list; head hex (0x30): %s", hex.EncodeToString(headBytes))
+				}
 			}
 		}
 
