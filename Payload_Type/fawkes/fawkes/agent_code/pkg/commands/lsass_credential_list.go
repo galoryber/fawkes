@@ -114,20 +114,14 @@ func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credenti
 		maxEntries = credentialListMaxEntries
 	}
 
-	headBuf, err := r.Read(head, 8)
-	if err != nil {
-		return nil, fmt.Errorf("read credential list head at 0x%X: %w", head, err)
-	}
-	firstEntry := uintptr(binary.LittleEndian.Uint64(headBuf[0:8]))
-	if firstEntry == 0 || firstEntry == head {
-		return nil, nil
-	}
-
+	// The CredentialsPtr from the logon session points directly at the first
+	// KIWI_MSV1_0_CREDENTIAL_LIST entry (not a sentinel). Walk using Flink
+	// until NULL or cycle. Mimikatz follows the same pattern.
 	entries := make([]credentialListEntry, 0, 4)
 	visited := make(map[uintptr]bool, 4)
-	cursor := firstEntry
+	cursor := head
 	for i := 0; i < maxEntries; i++ {
-		if cursor == 0 || cursor == head {
+		if cursor == 0 {
 			return entries, nil
 		}
 		if visited[cursor] {
