@@ -360,8 +360,8 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 			cryptoReport.H3DesGlobal, bcryptCbSecret(cryptoReport.H3DesKey),
 			cryptoReport.HAesGlobal, bcryptCbSecret(cryptoReport.HAesKey)))
 	}
-	sb.WriteString(fmt.Sprintf("[+] Decryption: %d blob(s) yielded NT hash(es) (%s layout) — Phase 2C-ii-c\n",
-		hashesExtracted, PrimaryCredential10NewLayout.Name))
+	sb.WriteString(fmt.Sprintf("[+] Decryption: %d blob(s) yielded NT hash(es) (auto-detected layout) — Phase 2C-ii-c\n",
+		hashesExtracted))
 
 	if len(dumpLines) > 0 {
 		sb.WriteString("\n")

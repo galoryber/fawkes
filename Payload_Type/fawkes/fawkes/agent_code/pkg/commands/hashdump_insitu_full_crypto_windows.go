@@ -96,7 +96,8 @@ func decryptCredentialBlob(material lsaCryptoMaterial, ciphertext []byte, outerU
 		report.ParseErr = err.Error()
 		return report, ""
 	}
-	parsed, perr := parsePrimaryCredential10New(plaintext)
+	layout := detectPrimaryCredentialLayout(plaintext)
+	parsed, perr := parsePrimaryCredential10(plaintext, layout)
 	report := &insituFullDecryptedReport{
 		Algorithm:               string(alg),
 		PlaintextLength:         len(plaintext),
