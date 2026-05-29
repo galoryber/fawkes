@@ -347,3 +347,134 @@ func TestWalkCredentialList_SingleEntrySelfRef(t *testing.T) {
 		t.Errorf("expected 1 entry, got %d", len(entries))
 	}
 }
+
+func TestWalkPrimaryCredentialChain_MultipleEntries(t *testing.T) {
+	const (
+		primary1Addr    = uintptr(0x20000)
+		primary2Addr    = uintptr(0x21000)
+		pkg1BufAddr     = uintptr(0x30000)
+		cred1BufAddr    = uintptr(0x40000)
+		pkg2BufAddr     = uintptr(0x31000)
+		cred2BufAddr    = uintptr(0x41000)
+	)
+	r := newBufferReader()
+
+	// First entry: "Primary" → encrypted MSV1_0 blob, next → primary2Addr
+	pkg1 := utf16LEBytes("Primary")
+	cipher1 := []byte{0xAA, 0xBB}
+	enc1 := makePrimaryEnc(pkg1BufAddr, cred1BufAddr, uint16(len(pkg1)), uint16(len(cipher1)))
+	// Set next pointer at +0x00 to chain to second entry
+	binary.LittleEndian.PutUint64(enc1[0:8], uint64(primary2Addr))
+	r.put(primary1Addr, enc1)
+	r.put(pkg1BufAddr, pkg1)
+	r.put(cred1BufAddr, cipher1)
+
+	// Second entry: "Kerberos-Newer-Keys" → encrypted Kerberos blob, next → 0
+	pkg2 := utf16LEBytes("Kerberos-Newer-Keys")
+	cipher2 := []byte{0xCC, 0xDD, 0xEE}
+	enc2 := makePrimaryEnc(pkg2BufAddr, cred2BufAddr, uint16(len(pkg2)), uint16(len(cipher2)))
+	r.put(primary2Addr, enc2)
+	r.put(pkg2BufAddr, pkg2)
+	r.put(cred2BufAddr, cipher2)
+
+	entries, err := walkPrimaryCredentialChain(r, primary1Addr, 16)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	if string(entries[0].EncryptedBytes) != string(cipher1) {
+		t.Errorf("entry[0] cipher mismatch")
+	}
+	if string(entries[1].EncryptedBytes) != string(cipher2) {
+		t.Errorf("entry[1] cipher mismatch")
+	}
+}
+
+func TestWalkPrimaryCredentialChain_NullTerminated(t *testing.T) {
+	const (
+		primaryAddr = uintptr(0x22000)
+		pkgBufAddr  = uintptr(0x32000)
+		credBufAddr = uintptr(0x42000)
+	)
+	r := newBufferReader()
+
+	pkg := utf16LEBytes("WDigest")
+	cipher := []byte{0x11}
+	enc := makePrimaryEnc(pkgBufAddr, credBufAddr, uint16(len(pkg)), uint16(len(cipher)))
+	r.put(primaryAddr, enc)
+	r.put(pkgBufAddr, pkg)
+	r.put(credBufAddr, cipher)
+
+	entries, err := walkPrimaryCredentialChain(r, primaryAddr, 16)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+}
+
+func TestWalkPrimaryCredentialChain_ZeroHead(t *testing.T) {
+	entries, err := walkPrimaryCredentialChain(newBufferReader(), 0, 16)
+	if err != nil || entries != nil {
+		t.Errorf("expected nil/nil for zero head, got entries=%v err=%v", entries, err)
+	}
+}
+
+func TestWalkCredentialList_PrimaryEntries(t *testing.T) {
+	const (
+		entryAddr      = uintptr(0x50000)
+		primary1Addr   = uintptr(0x60000)
+		primary2Addr   = uintptr(0x61000)
+		pkg1BufAddr    = uintptr(0x70000)
+		cred1BufAddr   = uintptr(0x80000)
+		pkg2BufAddr    = uintptr(0x71000)
+		cred2BufAddr   = uintptr(0x81000)
+	)
+	r := newBufferReader()
+
+	entry := make([]byte, credentialEntryReadSize)
+	stampCredentialEntry(entry, 0, 2 /*Kerberos*/, primary1Addr)
+	r.put(entryAddr, entry)
+
+	pkg1 := utf16LEBytes("Kerberos")
+	cipher1 := []byte{0x11, 0x22}
+	enc1 := makePrimaryEnc(pkg1BufAddr, cred1BufAddr, uint16(len(pkg1)), uint16(len(cipher1)))
+	binary.LittleEndian.PutUint64(enc1[0:8], uint64(primary2Addr))
+	r.put(primary1Addr, enc1)
+	r.put(pkg1BufAddr, pkg1)
+	r.put(cred1BufAddr, cipher1)
+
+	pkg2 := utf16LEBytes("Kerberos-Newer-Keys")
+	cipher2 := []byte{0x33, 0x44, 0x55}
+	enc2 := makePrimaryEnc(pkg2BufAddr, cred2BufAddr, uint16(len(pkg2)), uint16(len(cipher2)))
+	r.put(primary2Addr, enc2)
+	r.put(pkg2BufAddr, pkg2)
+	r.put(cred2BufAddr, cipher2)
+
+	entries, err := walkCredentialList(r, entryAddr, 16)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	e := entries[0]
+	if e.AuthPackageName != "Kerberos" {
+		t.Errorf("AuthPackage = %q, want Kerberos", e.AuthPackageName)
+	}
+	if e.Primary == nil {
+		t.Fatal("Primary is nil")
+	}
+	if len(e.PrimaryEntries) != 2 {
+		t.Fatalf("PrimaryEntries = %d, want 2", len(e.PrimaryEntries))
+	}
+	if string(e.PrimaryEntries[0].EncryptedBytes) != string(cipher1) {
+		t.Error("PrimaryEntries[0] cipher mismatch")
+	}
+	if string(e.PrimaryEntries[1].EncryptedBytes) != string(cipher2) {
+		t.Error("PrimaryEntries[1] cipher mismatch")
+	}
+}

