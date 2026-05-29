@@ -449,7 +449,7 @@ func readBcryptKey81(r lsassReader, addr uintptr) (bcryptKey81, error) {
 		return k, nil
 	}
 	if k.CbSecret > bcryptKeySanityMaxBytes {
-		return k, fmt.Errorf("KIWI_HARD_KEY.cbSecret=%d exceeds sanity cap %d (likely garbage / wrong layout)", k.CbSecret, bcryptKeySanityMaxBytes)
+		return k, fmt.Errorf("KIWI_HARD_KEY.cbSecret=%d exceeds sanity cap %d (tag=0x%08X valid=%v bits=%d addr=0x%X — likely wrong key pointer or layout)", k.CbSecret, bcryptKeySanityMaxBytes, k.Tag, k.TagValid, k.Bits, addr)
 	}
 	keyBytes, err := r.Read(addr+uintptr(bcryptHardKeyDataOff), k.CbSecret)
 	if err != nil {
