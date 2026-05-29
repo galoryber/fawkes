@@ -32,6 +32,7 @@ package commands
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 )
 
@@ -282,7 +283,14 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, 
 	}
 
 	if len(keyGlobals) < 2 {
-		return lsaCryptoGlobals{}, fmt.Errorf("found %d BCrypt-tag-validated key globals (need 2) scanning 300 bytes before pattern at offset %d", len(keyGlobals), hit)
+		// Dump the 100 bytes before the pattern for manual analysis
+		dumpStart := hit - 100
+		if dumpStart < 0 {
+			dumpStart = 0
+		}
+		hexDump := hex.EncodeToString(lsasrvBytes[dumpStart:hit])
+		return lsaCryptoGlobals{}, fmt.Errorf("found %d BCrypt-tag-validated key globals (need 2) scanning 300 bytes before pattern at offset %d; pre-pattern hex (100 bytes at -%d): %s",
+			len(keyGlobals), hit, hit-dumpStart, hexDump)
 	}
 
 	return lsaCryptoGlobals{
