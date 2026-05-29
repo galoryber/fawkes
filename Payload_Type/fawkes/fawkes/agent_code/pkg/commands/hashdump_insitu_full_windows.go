@@ -163,10 +163,6 @@ func executeInsituFullInner() structs.CommandResult {
 		if name := logonSessionTypeName(parsed.LogonType); name != "" {
 			report.ParsedLogonType = name
 		}
-		// Dump bytes from 0xD0 to end of node for credentials offset analysis
-		if len(n.Raw) > 0xD0 {
-			report.RawCredsAreaHex = hex.EncodeToString(n.Raw[0xD0:])
-		}
 		if parsed.CredentialsPtr != 0 {
 			report.CredentialsPtr = fmt.Sprintf("0x%X", parsed.CredentialsPtr)
 		}
