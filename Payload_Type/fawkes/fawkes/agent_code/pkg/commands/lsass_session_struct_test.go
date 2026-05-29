@@ -264,3 +264,48 @@ func TestLogonSessionTypeName(t *testing.T) {
 		}
 	}
 }
+
+func TestReadAnsiString_Normal(t *testing.T) {
+	br := &bufferReader{pages: make(map[uintptr][]byte)}
+	data := []byte("Primary")
+	br.pages[0x5000] = data
+	raw := make([]byte, 16)
+	binary.LittleEndian.PutUint16(raw[0:2], 7)   // Length
+	binary.LittleEndian.PutUint16(raw[2:4], 8)    // MaxLength
+	binary.LittleEndian.PutUint64(raw[8:16], 0x5000)
+	s, err := readAnsiString(br, raw, 0, 1024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != "Primary" {
+		t.Errorf("got %q, want %q", s, "Primary")
+	}
+}
+
+func TestReadAnsiString_OddLength(t *testing.T) {
+	br := &bufferReader{pages: make(map[uintptr][]byte)}
+	br.pages[0x6000] = []byte("WDigest")
+	raw := make([]byte, 16)
+	binary.LittleEndian.PutUint16(raw[0:2], 7)   // Odd length = valid for ANSI
+	binary.LittleEndian.PutUint16(raw[2:4], 8)
+	binary.LittleEndian.PutUint64(raw[8:16], 0x6000)
+	s, err := readAnsiString(br, raw, 0, 1024)
+	if err != nil {
+		t.Fatalf("odd length should be accepted for ANSI: %v", err)
+	}
+	if s != "WDigest" {
+		t.Errorf("got %q, want %q", s, "WDigest")
+	}
+}
+
+func TestReadAnsiString_Empty(t *testing.T) {
+	br := &bufferReader{pages: make(map[uintptr][]byte)}
+	raw := make([]byte, 16) // All zeros → Length=0
+	s, err := readAnsiString(br, raw, 0, 1024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != "" {
+		t.Errorf("got %q, want empty", s)
+	}
+}

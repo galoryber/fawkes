@@ -140,6 +140,37 @@ func readLSAUnicodeString(r lsassReader, raw []byte, fieldOffset int, sanityMaxB
 	return utf16LEToString(bytes), nil
 }
 
+// readAnsiString parses an ANSI_STRING header (same binary layout as
+// LSA_UNICODE_STRING on x64: USHORT Length, USHORT MaxLen, pad, PCHAR Buffer)
+// and reads the string data as raw bytes interpreted as ASCII. Unlike
+// readLSAUnicodeString, odd-length values are valid since ANSI is single-byte.
+func readAnsiString(r lsassReader, raw []byte, fieldOffset int, sanityMaxBytes uint32) (string, error) {
+	if r == nil {
+		return "", fmt.Errorf("nil lsassReader")
+	}
+	if fieldOffset < 0 || fieldOffset+lsaUnicodeStringHeaderSize > len(raw) {
+		return "", fmt.Errorf("ANSI_STRING field at offset 0x%X falls outside captured node (size %d)", fieldOffset, len(raw))
+	}
+	length, maxLength, buffer, err := parseLSAUnicodeStringHeader(raw[fieldOffset : fieldOffset+lsaUnicodeStringHeaderSize])
+	if err != nil {
+		return "", err
+	}
+	if length == 0 || buffer == 0 {
+		return "", nil
+	}
+	if length > maxLength {
+		return "", fmt.Errorf("ANSI_STRING.Length=%d exceeds MaximumLength=%d", length, maxLength)
+	}
+	if uint32(length) > sanityMaxBytes {
+		return "", fmt.Errorf("ANSI_STRING.Length=%d exceeds sanity cap %d", length, sanityMaxBytes)
+	}
+	bytes, err := r.Read(buffer, uint32(length))
+	if err != nil {
+		return "", fmt.Errorf("read ANSI_STRING.Buffer at 0x%X (%d bytes): %w", buffer, length, err)
+	}
+	return string(bytes), nil
+}
+
 // readLSAUnicodeRawBytes parses an LSA_UNICODE_STRING header at raw[fieldOffset:],
 // dereferences the Buffer pointer in the remote process via r, and returns the
 // raw bytes WITHOUT a UTF-16 decode. Used for binary blobs (e.g. encrypted

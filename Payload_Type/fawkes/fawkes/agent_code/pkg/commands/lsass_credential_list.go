@@ -187,9 +187,7 @@ func readPrimaryCredentialEnc(r lsassReader, addr uintptr) (primaryCredentialEnc
 	}
 
 	// Primary (ANSI_STRING at +0x08): the auth package name (e.g. "Primary").
-	// Reuse readLSAUnicodeString since ANSI_STRING has the same layout on x64;
-	// the resulting "string" is ASCII in practice so UTF-16 decode is harmless.
-	if s, err := readLSAUnicodeString(r, raw, primaryEncPrimaryOff, 1024); err != nil {
+	if s, err := readAnsiString(r, raw, primaryEncPrimaryOff, 1024); err != nil {
 		addErr("Primary: %v", err)
 	} else {
 		p.UserName = s
