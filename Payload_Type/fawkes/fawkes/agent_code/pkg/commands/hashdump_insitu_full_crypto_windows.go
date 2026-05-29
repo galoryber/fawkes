@@ -35,7 +35,7 @@ func (m lsaCryptoMaterial) HasDESKey() bool {
 //  3. ReadProcessMemory the IV bytes and walk the BCrypt key chain.
 func captureLsaCrypto(r lsassReader, lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout) (*insituFullCryptoReport, lsaCryptoMaterial, string) {
 	var material lsaCryptoMaterial
-	globals, err := findLsaCryptoGlobals(lsasrvBytes, lsasrvBase, layout)
+	globals, err := findLsaCryptoGlobals(lsasrvBytes, lsasrvBase, layout, r)
 	if err != nil {
 		return nil, material, err.Error()
 	}
