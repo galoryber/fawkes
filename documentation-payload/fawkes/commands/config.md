@@ -7,15 +7,17 @@ hidden = false
 
 ## Summary
 
-View or modify the agent's runtime configuration. Allows operators to adjust timing, kill dates, and working hours without rebuilding the payload.
+View or modify the agent's runtime configuration, or replace the running agent binary with an updated version. Allows operators to adjust timing, kill dates, and working hours without rebuilding the payload. The `update` action downloads a new payload binary and launches it, replacing the current agent.
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | show | `show` displays current config, `set` modifies a value |
+| action | No | show | `show` displays current config, `set` modifies a value, `update` replaces the agent binary |
 | key | No | | Config key to modify (required for `set`) |
 | value | No | | New value (required for `set`) |
+| file | For update | | New payload binary (Mythic file upload, required for `update`) |
+| hash | No | | Expected SHA256 hash of the new binary (optional integrity check for `update`) |
 
 ### Settable Keys
 
@@ -69,6 +71,17 @@ config -action set -key default_ppid -value disable
 
 When `default_ppid` is set, child processes spawned by `run` and `powershell` commands use PPID spoofing via `UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS)`. This makes child processes appear as children of the specified PID (e.g., `explorer.exe`) instead of the agent process, defeating parent-child process relationship detection. Windows only; combines with BlockDLLs if both are active (T1134.004).
 
+### Self-update agent binary
+```
+config -action update -file <upload_new_payload_binary>
+config -action update -file <upload_new_payload_binary> -hash <expected_sha256>
+```
+
+The `update` action downloads the uploaded binary from Mythic, verifies it is a valid executable for the current OS (ELF/PE/Mach-O), optionally checks the SHA256 hash, writes it to a temp directory, launches it as a detached process, and exits the current agent. The new binary creates a separate callback.
+
+{{% notice warning %}}The update action writes a binary to disk and creates a new process. EDR may flag the process chain. The old callback will go silent after the update. Build the new payload with the same C2 configuration for operational continuity.{{% /notice %}}
+
 ## MITRE ATT&CK Mapping
 
 - T1134.004 — Access Token Manipulation: Parent PID Spoofing (when default_ppid is set)
+- T1105 — Ingress Tool Transfer (self-update downloads new binary via C2 channel)

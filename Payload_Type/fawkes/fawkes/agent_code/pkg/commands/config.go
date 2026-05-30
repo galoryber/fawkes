@@ -17,9 +17,11 @@ func (c *ConfigCommand) Description() string { return "View or modify runtime ag
 
 // ConfigParams holds the parsed parameters.
 type ConfigParams struct {
-	Action string `json:"action"` // "show" or "set"
+	Action string `json:"action"` // "show", "set", or "update"
 	Key    string `json:"key"`    // config key (for set)
 	Value  string `json:"value"`  // new value (for set)
+	FileID string `json:"file"`   // Mythic file ID (for update)
+	Hash   string `json:"hash"`   // expected SHA256 (for update, optional)
 }
 
 // ExecuteWithAgent implements AgentCommand for access to the Agent struct.
@@ -39,8 +41,14 @@ func (c *ConfigCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent
 		return configShow(agent)
 	case "set":
 		return configSet(agent, params.Key, params.Value)
+	case "update":
+		return configUpdate(task, configUpdateParams{
+			Action: params.Action,
+			FileID: params.FileID,
+			Hash:   params.Hash,
+		})
 	default:
-		return errorf("Unknown action '%s'. Use 'show' or 'set'.", params.Action)
+		return errorf("Unknown action '%s'. Use 'show', 'set', or 'update'.", params.Action)
 	}
 }
 
