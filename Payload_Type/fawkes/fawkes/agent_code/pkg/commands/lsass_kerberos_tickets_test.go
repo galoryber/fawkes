@@ -86,32 +86,28 @@ func kerbTimeToFiletime(t time.Time) uint64 {
 // Tests: findKerbSessionTable
 // ---------------------------------------------------------------------------
 
-func TestFindKerbSessionTable_Win10_1803(t *testing.T) {
-	// Build a synthetic kerberos.dll image with the Win10 1803 pattern.
-	// Pattern: 48 8B 08 48 85 C9 74 ?? 48
+func TestFindKerbSessionTable_Universal(t *testing.T) {
+	// Build a synthetic kerberos.dll image with the universal rbx pattern.
+	// Pattern: 48 8B 18 48 85 DB 74
 	// The lea instruction (48 8D 05 xx xx xx xx) precedes the pattern.
 	// disp32 field is at pattern_start - 4.
 
 	imgSize := 0x10000
 	img := make([]byte, imgSize)
 
-	// Place the target (KerbGlobalLogonSessionTable) at offset 0x8000
-	targetOffset := 0x8000
+	// Target must be in upper 75% of module (>= imgSize/4 = 0x4000)
+	targetOffset := 0xC000
 
-	// Place the pattern at offset 0x2000
+	// Pattern at offset 0x2000
 	patternOffset := 0x2000
-	pattern := []byte{0x48, 0x8B, 0x08, 0x48, 0x85, 0xC9, 0x74, 0x34, 0x48}
+	pattern := []byte{0x48, 0x8B, 0x18, 0x48, 0x85, 0xDB, 0x74}
 	copy(img[patternOffset:], pattern)
 
 	// Place the lea instruction before: 48 8D 05 <disp32>
-	// The disp32 field must end right at patternOffset.
-	// disp32 starts at patternOffset - 4.
-	// The lea instruction starts at patternOffset - 7.
 	leaStart := patternOffset - 7
 	img[leaStart] = 0x48
 	img[leaStart+1] = 0x8D
 	img[leaStart+2] = 0x05
-	// disp32: target = patternOffset + disp32, so disp32 = targetOffset - patternOffset
 	disp := int32(targetOffset - patternOffset)
 	binary.LittleEndian.PutUint32(img[leaStart+3:leaStart+7], uint32(disp))
 
@@ -125,21 +121,28 @@ func TestFindKerbSessionTable_Win10_1803(t *testing.T) {
 	if addr != expectedAddr {
 		t.Errorf("got addr 0x%X, want 0x%X", addr, expectedAddr)
 	}
-	if variant != "Win10_1803_Server2019" {
-		t.Errorf("got variant %q, want Win10_1803_Server2019", variant)
+	if variant != "Universal_rbx" {
+		t.Errorf("got variant %q, want Universal_rbx", variant)
 	}
 }
 
-func TestFindKerbSessionTable_Win10_1507(t *testing.T) {
+func TestFindKerbSessionTable_SkipsFalsePositive(t *testing.T) {
+	// Test that a pattern match without a valid lea instruction is skipped.
 	imgSize := 0x10000
 	img := make([]byte, imgSize)
 
-	targetOffset := 0x9000
-	patternOffset := 0x3000
-	// Pattern: 48 8B 18 48 85 DB 74
-	pattern := []byte{0x48, 0x8B, 0x18, 0x48, 0x85, 0xDB, 0x74}
-	copy(img[patternOffset:], pattern)
+	targetOffset := 0xC000
 
+	// Place a false positive match at 0x1000 — no lea instruction before it
+	fp := 0x1000
+	pattern := []byte{0x48, 0x8B, 0x18, 0x48, 0x85, 0xDB, 0x74}
+	copy(img[fp:], pattern)
+	// Garbage bytes before false positive (not a valid REX.W lea/mov)
+	img[fp-7] = 0x90 // NOP, not REX.W
+
+	// Place the real match at 0x3000 with valid lea
+	patternOffset := 0x3000
+	copy(img[patternOffset:], pattern)
 	leaStart := patternOffset - 7
 	img[leaStart] = 0x48
 	img[leaStart+1] = 0x8D
@@ -148,15 +151,12 @@ func TestFindKerbSessionTable_Win10_1507(t *testing.T) {
 	binary.LittleEndian.PutUint32(img[leaStart+3:leaStart+7], uint32(disp))
 
 	base := uintptr(0x7FF800000000)
-	addr, variant, err := findKerbSessionTable(img, base)
+	addr, _, err := findKerbSessionTable(img, base)
 	if err != nil {
 		t.Fatalf("findKerbSessionTable failed: %v", err)
 	}
 	if addr != base+uintptr(targetOffset) {
-		t.Errorf("got addr 0x%X, want 0x%X", addr, base+uintptr(targetOffset))
-	}
-	if variant != "Win10_1507_1703" {
-		t.Errorf("got variant %q, want Win10_1507_1703", variant)
+		t.Errorf("got addr 0x%X, want 0x%X (should skip false positive)", addr, base+uintptr(targetOffset))
 	}
 }
 

