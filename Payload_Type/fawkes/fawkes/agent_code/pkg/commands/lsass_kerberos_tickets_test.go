@@ -160,6 +160,79 @@ func TestFindKerbSessionTable_SkipsFalsePositive(t *testing.T) {
 	}
 }
 
+func TestFindKerbSessionTable_Server2019Cmp(t *testing.T) {
+	// Server 2019 generates: lea rax, [rip+disp32] / cmp rcx, rax / jz
+	// Pattern: 48 3B C8 74 (cmp rcx, rax / jz short)
+	imgSize := 0x10000
+	img := make([]byte, imgSize)
+
+	targetOffset := 0xC000
+
+	// Place some false positives for the original rbx pattern (with bad preceding bytes)
+	falsePos := 0x1000
+	copy(img[falsePos:], []byte{0x48, 0x8B, 0x18, 0x48, 0x85, 0xDB, 0x74})
+	img[falsePos-7] = 0x90 // NOP, not REX.W
+
+	// Place the Server 2019 cmp pattern at 0x2000
+	cmpOffset := 0x2000
+	copy(img[cmpOffset:], []byte{0x48, 0x3B, 0xC8, 0x74, 0x1E})
+
+	// LEA rax, [rip+disp32] immediately before the cmp
+	leaStart := cmpOffset - 7
+	img[leaStart] = 0x48
+	img[leaStart+1] = 0x8D
+	img[leaStart+2] = 0x05
+	disp := int32(targetOffset - cmpOffset)
+	binary.LittleEndian.PutUint32(img[leaStart+3:leaStart+7], uint32(disp))
+
+	base := uintptr(0x7FF800000000)
+	addr, variant, err := findKerbSessionTable(img, base)
+	if err != nil {
+		t.Fatalf("findKerbSessionTable failed: %v", err)
+	}
+
+	expectedAddr := base + uintptr(targetOffset)
+	if addr != expectedAddr {
+		t.Errorf("got addr 0x%X, want 0x%X", addr, expectedAddr)
+	}
+	if variant != "Server2019_cmp" {
+		t.Errorf("got variant %q, want Server2019_cmp", variant)
+	}
+}
+
+func TestFindKerbSessionTable_Server2019CmpLong(t *testing.T) {
+	// Same as above but with long jz (0F 84 xx xx xx xx)
+	imgSize := 0x10000
+	img := make([]byte, imgSize)
+
+	targetOffset := 0xC000
+
+	// Place the Server 2019 long-jz cmp pattern
+	cmpOffset := 0x2000
+	copy(img[cmpOffset:], []byte{0x48, 0x3B, 0xC8, 0x0F, 0x84, 0x00, 0x02, 0x00, 0x00})
+
+	leaStart := cmpOffset - 7
+	img[leaStart] = 0x48
+	img[leaStart+1] = 0x8D
+	img[leaStart+2] = 0x05
+	disp := int32(targetOffset - cmpOffset)
+	binary.LittleEndian.PutUint32(img[leaStart+3:leaStart+7], uint32(disp))
+
+	base := uintptr(0x7FF800000000)
+	addr, variant, err := findKerbSessionTable(img, base)
+	if err != nil {
+		t.Fatalf("findKerbSessionTable failed: %v", err)
+	}
+
+	expectedAddr := base + uintptr(targetOffset)
+	if addr != expectedAddr {
+		t.Errorf("got addr 0x%X, want 0x%X", addr, expectedAddr)
+	}
+	if variant != "Server2019_cmp_long" {
+		t.Errorf("got variant %q, want Server2019_cmp_long", variant)
+	}
+}
+
 func TestFindKerbSessionTable_NoMatch(t *testing.T) {
 	img := make([]byte, 0x1000)
 	_, _, err := findKerbSessionTable(img, 0x10000)

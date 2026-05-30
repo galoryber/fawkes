@@ -59,6 +59,22 @@ var kerbTableVariants = []kerbTableVariant{
 		Signature:  "48 8B 18 48 85 DB 74",
 		DispOffset: -4,
 	},
+	{
+		// Server 2019 cmp variant: cmp rcx, rax / jz (short)
+		// On Server 2019 (build 17763), the compiler generates a circular
+		// linked list termination check (cmp cursor, &head) instead of a
+		// NULL check (test rbx, rbx). The lea rax, [rip+disp32] loads the
+		// table address immediately before the cmp.
+		Name:       "Server2019_cmp",
+		Signature:  "48 3B C8 74",
+		DispOffset: -4,
+	},
+	{
+		// Same as above but with long jz (0F 84 xx xx xx xx).
+		Name:       "Server2019_cmp_long",
+		Signature:  "48 3B C8 0F 84",
+		DispOffset: -4,
+	},
 }
 
 // findKerbSessionTable scans a kerberos.dll image for the KerbGlobalLogonSessionTable
