@@ -22,7 +22,7 @@ func launchAndReplace(binaryPath string) error {
 		return err
 	}
 
-	cmd.Process.Release()
+	_ = cmd.Process.Release()
 
 	go func() {
 		os.Exit(0)
