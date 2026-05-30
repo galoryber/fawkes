@@ -149,9 +149,12 @@ func init() {
 			}
 			// Parse insitu-full JSON for Kerberos keys and plaintext creds
 			if idx := strings.Index(responseText, "\n{"); idx >= 0 {
-				kerbCreds, ptCreds := parseInsituFullCredentials(responseText[idx+1:], hostname)
+				jsonText := responseText[idx+1:]
+				kerbCreds, ptCreds := parseInsituFullCredentials(jsonText, hostname)
 				creds = append(creds, kerbCreds...)
 				creds = append(creds, ptCreds...)
+				ticketCreds := parseKerbTicketCredentials(jsonText, hostname)
+				creds = append(creds, ticketCreds...)
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			if len(creds) > 0 {
@@ -635,4 +638,52 @@ func extractPlaintextFromDecrypted(dec *insituDecryptedJSON, account, hostname s
 			Comment:        credName + " plaintext (LSASS insitu-full)",
 		},
 	}
+}
+
+func parseKerbTicketCredentials(jsonText, hostname string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	var report struct {
+		Sessions []struct {
+			UserName string `json:"username"`
+			Domain   string `json:"domain"`
+			Tickets  []struct {
+				ListName    string `json:"list_name"`
+				ServiceName string `json:"service_name"`
+				ClientName  string `json:"client_name"`
+				Domain      string `json:"domain"`
+				KirbiB64    string `json:"kirbi_b64"`
+				EndTime     string `json:"end_time"`
+			} `json:"tickets"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &report); err != nil {
+		return nil
+	}
+	if len(report.Sessions) == 0 {
+		return nil
+	}
+
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, sess := range report.Sessions {
+		for _, t := range sess.Tickets {
+			if t.KirbiB64 == "" {
+				continue
+			}
+			account := t.ClientName
+			if sess.Domain != "" && account != "" {
+				account = sess.Domain + "\\" + account
+			}
+			comment := fmt.Sprintf("Kerberos %s → %s (LSASS tickets)", t.ListName, t.ServiceName)
+			if t.EndTime != "" {
+				comment += " expires " + t.EndTime
+			}
+			creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+				CredentialType: "ticket",
+				Realm:          t.Domain,
+				Account:        account,
+				Credential:     t.KirbiB64,
+				Comment:        comment,
+			})
+		}
+	}
+	return creds
 }
