@@ -695,7 +695,7 @@ func selectKerbLayouts(buildNumber uint32) (kerbSessionLayout, kerbTicketLayout)
 // This handles build-specific variations in the session struct that differ
 // across Windows cumulative updates.
 // Returns an adjusted layout if valid LSA_UNICODE_STRINGs are found.
-func probeKerbSessionLayout(r lsassReader, sessionBase uintptr, kerbDllBase uintptr, kerbDllSize uint32, base kerbSessionLayout) kerbSessionLayout {
+func probeKerbSessionLayout(r lsassReader, sessionBase uintptr, base kerbSessionLayout) kerbSessionLayout {
 	probeSize := uint32(0x200)
 	raw, err := r.Read(sessionBase, probeSize)
 	if err != nil || len(raw) < 0x100 {

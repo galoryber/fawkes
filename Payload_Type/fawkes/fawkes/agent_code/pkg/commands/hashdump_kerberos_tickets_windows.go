@@ -119,7 +119,7 @@ func executeKerbTicketsInner() structs.CommandResult {
 	head, headErr := readListEntry(reader, tableAddr)
 	if headErr == nil && head.Flink != 0 && head.Flink != tableAddr {
 		probeBase := head.Flink - uintptr(sessLayout.ListEntryOff)
-		sessLayout = probeKerbSessionLayout(reader, probeBase, kerbMod.Base, kerbMod.Size, sessLayout)
+		sessLayout = probeKerbSessionLayout(reader, probeBase, sessLayout)
 	}
 
 	sessions, err := walkKerbSessionList(reader, tableAddr, sessLayout)
