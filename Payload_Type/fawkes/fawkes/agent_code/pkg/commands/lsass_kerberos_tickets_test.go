@@ -54,8 +54,8 @@ func buildUnicodeString(addr uintptr, utf16Bytes []byte) []byte {
 	return hdr
 }
 
-// utf16Encode encodes a Go string as UTF-16LE bytes.
-func utf16Encode(s string) []byte {
+// testUTF16Encode encodes a Go string as UTF-16LE bytes.
+func testUTF16Encode(s string) []byte {
 	runes := []rune(s)
 	u16 := make([]byte, len(runes)*2)
 	for i, r := range runes {
@@ -270,12 +270,12 @@ func TestWalkKerbSessionList_TwoSessions(t *testing.T) {
 	// LUID
 	binary.LittleEndian.PutUint64(sess1[layout.LUIDOff:], 0x1234)
 	// UserName: point to mock string data
-	userName1 := utf16Encode("Administrator")
+	userName1 := testUTF16Encode("Administrator")
 	userNameAddr1 := uintptr(0x5000)
 	r.put(userNameAddr1, userName1)
 	copy(sess1[layout.UserNameOff:], buildUnicodeString(userNameAddr1, userName1))
 	// Domain
-	domain1 := utf16Encode("CONTOSO.COM")
+	domain1 := testUTF16Encode("CONTOSO.COM")
 	domainAddr1 := uintptr(0x5100)
 	r.put(domainAddr1, domain1)
 	copy(sess1[layout.DomainOff:], buildUnicodeString(domainAddr1, domain1))
@@ -296,11 +296,11 @@ func TestWalkKerbSessionList_TwoSessions(t *testing.T) {
 	binary.LittleEndian.PutUint64(sess2[layout.ListEntryOff:], uint64(sentinelAddr))
 	binary.LittleEndian.PutUint64(sess2[layout.ListEntryOff+8:], uint64(session1LEAddr))
 	binary.LittleEndian.PutUint64(sess2[layout.LUIDOff:], 0x5678)
-	userName2 := utf16Encode("jdoe")
+	userName2 := testUTF16Encode("jdoe")
 	userNameAddr2 := uintptr(0x6000)
 	r.put(userNameAddr2, userName2)
 	copy(sess2[layout.UserNameOff:], buildUnicodeString(userNameAddr2, userName2))
-	domain2 := utf16Encode("CORP.LOCAL")
+	domain2 := testUTF16Encode("CORP.LOCAL")
 	domainAddr2 := uintptr(0x6100)
 	r.put(domainAddr2, domain2)
 	copy(sess2[layout.DomainOff:], buildUnicodeString(domainAddr2, domain2))
@@ -386,7 +386,7 @@ func TestWalkKerbTicketList_OneTicket(t *testing.T) {
 
 	// Service name (KERB_EXTERNAL_NAME): krbtgt/CONTOSO.COM
 	svcNameAddr := uintptr(0x3000)
-	svcNameStr := utf16Encode("krbtgt/CONTOSO.COM")
+	svcNameStr := testUTF16Encode("krbtgt/CONTOSO.COM")
 	svcName := make([]byte, 8+16)
 	binary.LittleEndian.PutUint16(svcName[0:2], 2) // KRB_NT_SRV_INST
 	binary.LittleEndian.PutUint16(svcName[2:4], 1) // 1 name component
@@ -397,7 +397,7 @@ func TestWalkKerbTicketList_OneTicket(t *testing.T) {
 
 	// Client name
 	clientNameAddr := uintptr(0x4000)
-	clientNameStr := utf16Encode("administrator")
+	clientNameStr := testUTF16Encode("administrator")
 	clientName := make([]byte, 8+16)
 	binary.LittleEndian.PutUint16(clientName[0:2], 1) // KRB_NT_PRINCIPAL
 	binary.LittleEndian.PutUint16(clientName[2:4], 1)
@@ -407,7 +407,7 @@ func TestWalkKerbTicketList_OneTicket(t *testing.T) {
 	binary.LittleEndian.PutUint64(ticket[ticketLayout.ClientNameOff:], uint64(clientNameAddr))
 
 	// Domain name
-	domainStr := utf16Encode("CONTOSO.COM")
+	domainStr := testUTF16Encode("CONTOSO.COM")
 	domainAddr := uintptr(0x5000)
 	r.put(domainAddr, domainStr)
 	copy(ticket[ticketLayout.DomainNameOff:], buildUnicodeString(domainAddr, domainStr))
@@ -519,11 +519,11 @@ func TestReadKerbExternalName_TwoComponents(t *testing.T) {
 	r := newMockReader()
 	addr := uintptr(0x1000)
 
-	part1Str := utf16Encode("krbtgt")
+	part1Str := testUTF16Encode("krbtgt")
 	part1Addr := uintptr(0x2000)
 	r.put(part1Addr, part1Str)
 
-	part2Str := utf16Encode("CONTOSO.COM")
+	part2Str := testUTF16Encode("CONTOSO.COM")
 	part2Addr := uintptr(0x2100)
 	r.put(part2Addr, part2Str)
 
@@ -720,7 +720,7 @@ func TestExtractKerbTickets_WithTickets(t *testing.T) {
 	// Ticket flags
 	binary.LittleEndian.PutUint32(ticket[tickLayout.TicketFlagsOff:], 0x40800000) // forwardable + renewable
 	// Domain name
-	domStr := utf16Encode("TEST.LOCAL")
+	domStr := testUTF16Encode("TEST.LOCAL")
 	domAddr := uintptr(0x30000)
 	r.put(domAddr, domStr)
 	copy(ticket[tickLayout.DomainNameOff:], buildUnicodeString(domAddr, domStr))

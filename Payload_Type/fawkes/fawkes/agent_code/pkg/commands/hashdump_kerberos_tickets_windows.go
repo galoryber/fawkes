@@ -127,40 +127,6 @@ func executeKerbTicketsInner() structs.CommandResult {
 		return errorf("Kerberos tickets: walk session list: %v", err)
 	}
 
-	// Diagnostic: dump raw bytes of first session for offset analysis
-	var diagDump string
-	if len(sessions) > 0 {
-		rawSize := 0x200
-		diagRaw, dErr := reader.Read(sessions[0].Address, uint32(rawSize))
-		if dErr == nil && len(diagRaw) > 0 {
-			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("\n[DIAG] Session 0 at 0x%X (%d bytes):\n", sessions[0].Address, len(diagRaw)))
-			for row := 0; row < len(diagRaw); row += 16 {
-				sb.WriteString(fmt.Sprintf("  +%04X: ", row))
-				end := row + 16
-				if end > len(diagRaw) {
-					end = len(diagRaw)
-				}
-				for j := row; j < end; j++ {
-					sb.WriteString(fmt.Sprintf("%02X ", diagRaw[j]))
-				}
-				for j := end; j < row+16; j++ {
-					sb.WriteString("   ")
-				}
-				sb.WriteString(" ")
-				for j := row; j < end; j++ {
-					if diagRaw[j] >= 32 && diagRaw[j] < 127 {
-						sb.WriteByte(diagRaw[j])
-					} else {
-						sb.WriteByte('.')
-					}
-				}
-				sb.WriteString("\n")
-			}
-			diagDump = sb.String()
-		}
-	}
-
 	var totalTickets, tgts, serviceTickets, kirbiExported int
 	sessionReports := make([]kerbSessionReport, 0, len(sessions))
 	var outputLines []string
@@ -272,5 +238,5 @@ func executeKerbTicketsInner() structs.CommandResult {
 		header.WriteString(line + "\n")
 	}
 
-	return successResult(header.String() + diagDump + "\n" + string(jsonBytes))
+	return successResult(header.String() + "\n" + string(jsonBytes))
 }
