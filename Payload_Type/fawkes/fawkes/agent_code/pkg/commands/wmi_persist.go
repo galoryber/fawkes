@@ -165,26 +165,43 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 		}
 	}
 
-	// Step 2: Create CommandLineEventConsumer
-	consumerResult, err := oleutil.CallMethod(services, "Get", "CommandLineEventConsumer")
+	// Step 2: Create event consumer
+	consumerClass := args.consumerClassName()
+	consumerResult, err := oleutil.CallMethod(services, "Get", consumerClass)
 	if err != nil {
-		return errorf("Error getting CommandLineEventConsumer class: %v", err)
+		deleteWMIObject(services, "__EventFilter", filterName)
+		return errorf("Error getting %s class: %v", consumerClass, err)
 	}
 	defer consumerResult.Clear()
 
-	consumerClass := consumerResult.ToIDispatch()
-	consumerInst, err := oleutil.CallMethod(consumerClass, "SpawnInstance_")
+	consumerClassDisp := consumerResult.ToIDispatch()
+	consumerInst, err := oleutil.CallMethod(consumerClassDisp, "SpawnInstance_")
 	if err != nil {
+		deleteWMIObject(services, "__EventFilter", filterName)
 		return errorf("Error spawning consumer instance: %v", err)
 	}
 	defer consumerInst.Clear()
 
 	consumerDisp := consumerInst.ToIDispatch()
 	if _, err := oleutil.PutProperty(consumerDisp, "Name", consumerName); err != nil {
+		deleteWMIObject(services, "__EventFilter", filterName)
 		return errorf("Error setting consumer Name: %v", err)
 	}
-	if _, err := oleutil.PutProperty(consumerDisp, "CommandLineTemplate", args.Command); err != nil {
-		return errorf("Error setting consumer CommandLineTemplate: %v", err)
+
+	if args.isScriptConsumer() {
+		if _, err := oleutil.PutProperty(consumerDisp, "ScriptingEngine", args.resolvedScriptEngine()); err != nil {
+			deleteWMIObject(services, "__EventFilter", filterName)
+			return errorf("Error setting ScriptingEngine: %v", err)
+		}
+		if _, err := oleutil.PutProperty(consumerDisp, "ScriptText", args.Command); err != nil {
+			deleteWMIObject(services, "__EventFilter", filterName)
+			return errorf("Error setting ScriptText: %v", err)
+		}
+	} else {
+		if _, err := oleutil.PutProperty(consumerDisp, "CommandLineTemplate", args.Command); err != nil {
+			deleteWMIObject(services, "__EventFilter", filterName)
+			return errorf("Error setting CommandLineTemplate: %v", err)
+		}
 	}
 
 	_, err = oleutil.CallMethod(consumerDisp, "Put_")
@@ -214,22 +231,22 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	bindingDisp := bindingInst.ToIDispatch()
 
 	filterRef := fmt.Sprintf(`__EventFilter.Name="%s"`, filterName)
-	consumerRef := fmt.Sprintf(`CommandLineEventConsumer.Name="%s"`, consumerName)
+	consumerRef := fmt.Sprintf(`%s.Name="%s"`, consumerClass, consumerName)
 	if _, err := oleutil.PutProperty(bindingDisp, "Filter", filterRef); err != nil {
 		deleteWMIObject(services, "__EventFilter", filterName)
-		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
+		deleteWMIObject(services, consumerClass, consumerName)
 		return errorf("Error setting binding Filter: %v", err)
 	}
 	if _, err := oleutil.PutProperty(bindingDisp, "Consumer", consumerRef); err != nil {
 		deleteWMIObject(services, "__EventFilter", filterName)
-		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
+		deleteWMIObject(services, consumerClass, consumerName)
 		return errorf("Error setting binding Consumer: %v", err)
 	}
 
 	_, err = oleutil.CallMethod(bindingDisp, "Put_")
 	if err != nil {
 		deleteWMIObject(services, "__EventFilter", filterName)
-		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
+		deleteWMIObject(services, consumerClass, consumerName)
 		return errorf("Error creating binding: %v", err)
 	}
 
@@ -238,17 +255,27 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 		host = args.Target
 	}
 
+	consumerDetail := fmt.Sprintf("  Command:  %s\n", args.Command)
+	if args.isScriptConsumer() {
+		scriptPreview := args.Command
+		if len(scriptPreview) > 80 {
+			scriptPreview = scriptPreview[:80] + "..."
+		}
+		consumerDetail = fmt.Sprintf("  Engine:   %s\n  Script:   %s\n", args.resolvedScriptEngine(), scriptPreview)
+	}
+
 	return successf("WMI Event Subscription installed on %s:\n"+
 		"  Name:     %s\n"+
+		"  Type:     %s\n"+
 		"  Trigger:  %s\n"+
 		"  Query:    %s\n"+
-		"  Command:  %s\n"+
+		"%s"+
 		"  Filter:   %s\n"+
 		"  Consumer: %s\n"+
 		"  Binding:  %s → %s\n\n"+
 		"Subscription is persistent across reboots.",
-		host, args.Name, args.Trigger, wqlQuery, args.Command,
-		filterName, consumerName, filterRef, consumerRef)
+		host, args.Name, consumerClass, args.Trigger, wqlQuery,
+		consumerDetail, filterName, consumerName, filterRef, consumerRef)
 }
 
 func wmiPersistRemove(args wmiPersistArgs) structs.CommandResult {
@@ -268,21 +295,33 @@ func wmiPersistRemove(args wmiPersistArgs) structs.CommandResult {
 	var sb strings.Builder
 	errors := 0
 
-	bindingPath := fmt.Sprintf(`__FilterToConsumerBinding.Filter="__EventFilter.Name=\"%s\"",Consumer="CommandLineEventConsumer.Name=\"%s\""`, filterName, consumerName)
-	err = deleteWMIObjectByPath(services, bindingPath)
-	if err != nil {
-		sb.WriteString(fmt.Sprintf("Binding removal: %v\n", err))
+	// Try both consumer types for binding removal
+	bindingRemoved := false
+	for _, cls := range []string{"CommandLineEventConsumer", "ActiveScriptEventConsumer"} {
+		bindingPath := fmt.Sprintf(`__FilterToConsumerBinding.Filter="__EventFilter.Name=\"%s\"",Consumer="%s.Name=\"%s\""`, filterName, cls, consumerName)
+		if err := deleteWMIObjectByPath(services, bindingPath); err == nil {
+			sb.WriteString(fmt.Sprintf("Binding removed (%s)\n", cls))
+			bindingRemoved = true
+			break
+		}
+	}
+	if !bindingRemoved {
+		sb.WriteString("Binding removal: not found\n")
 		errors++
-	} else {
-		sb.WriteString("Binding removed\n")
 	}
 
-	err = deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
-	if err != nil {
-		sb.WriteString(fmt.Sprintf("Consumer removal: %v\n", err))
+	// Try both consumer types
+	consumerRemoved := false
+	for _, cls := range []string{"CommandLineEventConsumer", "ActiveScriptEventConsumer"} {
+		if err := deleteWMIObject(services, cls, consumerName); err == nil {
+			sb.WriteString(fmt.Sprintf("Consumer removed (%s)\n", cls))
+			consumerRemoved = true
+			break
+		}
+	}
+	if !consumerRemoved {
+		sb.WriteString("Consumer removal: not found\n")
 		errors++
-	} else {
-		sb.WriteString("Consumer removed\n")
 	}
 
 	err = deleteWMIObject(services, "__EventFilter", filterName)
@@ -339,6 +378,23 @@ func wmiPersistList(args wmiPersistArgs) structs.CommandResult {
 	} else {
 		for i, c := range consumers {
 			sb.WriteString(fmt.Sprintf("[%d] %s\n    Command: %s\n", i+1, c["Name"], c["CommandLineTemplate"]))
+		}
+	}
+
+	sb.WriteString("\nActive Script Event Consumers\n")
+	sb.WriteString(strings.Repeat("=", 60) + "\n")
+	scriptConsumers, err := wmiQuerySubscription(services, "SELECT Name, ScriptingEngine, ScriptText FROM ActiveScriptEventConsumer")
+	if err != nil {
+		sb.WriteString("  (none or not available)\n")
+	} else if len(scriptConsumers) == 0 {
+		sb.WriteString("  (none)\n")
+	} else {
+		for i, c := range scriptConsumers {
+			script := c["ScriptText"]
+			if len(script) > 80 {
+				script = script[:80] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("[%d] %s\n    Engine: %s\n    Script: %s\n", i+1, c["Name"], c["ScriptingEngine"], script))
 		}
 	}
 

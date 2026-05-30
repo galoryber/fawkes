@@ -176,3 +176,100 @@ func TestParseWmiPersistArgs_AllFields(t *testing.T) {
 		t.Errorf("unexpected args: %+v", args)
 	}
 }
+
+// --- isScriptConsumer ---
+
+func TestIsScriptConsumer_Script(t *testing.T) {
+	args := wmiPersistArgs{ConsumerType: "script"}
+	if !args.isScriptConsumer() {
+		t.Error("expected isScriptConsumer=true for consumer_type=script")
+	}
+}
+
+func TestIsScriptConsumer_ScriptCaseInsensitive(t *testing.T) {
+	args := wmiPersistArgs{ConsumerType: "Script"}
+	if !args.isScriptConsumer() {
+		t.Error("expected isScriptConsumer=true for consumer_type=Script")
+	}
+}
+
+func TestIsScriptConsumer_Command(t *testing.T) {
+	args := wmiPersistArgs{ConsumerType: "command"}
+	if args.isScriptConsumer() {
+		t.Error("expected isScriptConsumer=false for consumer_type=command")
+	}
+}
+
+func TestIsScriptConsumer_Empty(t *testing.T) {
+	args := wmiPersistArgs{}
+	if args.isScriptConsumer() {
+		t.Error("expected isScriptConsumer=false for empty consumer_type")
+	}
+}
+
+// --- resolvedScriptEngine ---
+
+func TestResolvedScriptEngine_Default(t *testing.T) {
+	args := wmiPersistArgs{}
+	if args.resolvedScriptEngine() != "VBScript" {
+		t.Errorf("expected VBScript default, got %s", args.resolvedScriptEngine())
+	}
+}
+
+func TestResolvedScriptEngine_JScript(t *testing.T) {
+	args := wmiPersistArgs{ScriptEngine: "jscript"}
+	if args.resolvedScriptEngine() != "JScript" {
+		t.Errorf("expected JScript, got %s", args.resolvedScriptEngine())
+	}
+}
+
+func TestResolvedScriptEngine_VBScript(t *testing.T) {
+	args := wmiPersistArgs{ScriptEngine: "VBScript"}
+	if args.resolvedScriptEngine() != "VBScript" {
+		t.Errorf("expected VBScript, got %s", args.resolvedScriptEngine())
+	}
+}
+
+// --- consumerClassName ---
+
+func TestConsumerClassName_Default(t *testing.T) {
+	args := wmiPersistArgs{}
+	if args.consumerClassName() != "CommandLineEventConsumer" {
+		t.Errorf("expected CommandLineEventConsumer, got %s", args.consumerClassName())
+	}
+}
+
+func TestConsumerClassName_Script(t *testing.T) {
+	args := wmiPersistArgs{ConsumerType: "script"}
+	if args.consumerClassName() != "ActiveScriptEventConsumer" {
+		t.Errorf("expected ActiveScriptEventConsumer, got %s", args.consumerClassName())
+	}
+}
+
+func TestConsumerClassName_Command(t *testing.T) {
+	args := wmiPersistArgs{ConsumerType: "command"}
+	if args.consumerClassName() != "CommandLineEventConsumer" {
+		t.Errorf("expected CommandLineEventConsumer, got %s", args.consumerClassName())
+	}
+}
+
+// --- parseWmiPersistArgs with new fields ---
+
+func TestParseWmiPersistArgs_ScriptConsumer(t *testing.T) {
+	task := structs.Task{
+		Params: `{"action":"install","name":"scriptback","command":"Set ws = CreateObject(\"Wscript.Shell\")\nws.Run \"payload.exe\"","trigger":"logon","consumer_type":"script","script_engine":"VBScript"}`,
+	}
+	args, errResult := parseWmiPersistArgs(task)
+	if errResult != nil {
+		t.Fatalf("unexpected error: %s", errResult.Output)
+	}
+	if !args.isScriptConsumer() {
+		t.Error("expected script consumer")
+	}
+	if args.resolvedScriptEngine() != "VBScript" {
+		t.Errorf("expected VBScript, got %s", args.resolvedScriptEngine())
+	}
+	if args.consumerClassName() != "ActiveScriptEventConsumer" {
+		t.Errorf("expected ActiveScriptEventConsumer, got %s", args.consumerClassName())
+	}
+}
