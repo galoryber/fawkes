@@ -72,17 +72,6 @@ func buildKerbBuffer(length uint32, valueAddr uintptr) []byte {
 	return buf
 }
 
-// buildKerbExternalName creates a KERB_EXTERNAL_NAME structure with one name.
-func buildKerbExternalName(nameType int16, name string) []byte {
-	u16 := utf16Encode(name)
-	nameHdr := buildUnicodeString(0, u16) // addr will be patched
-	result := make([]byte, 8+16)
-	binary.LittleEndian.PutUint16(result[0:2], uint16(nameType))
-	binary.LittleEndian.PutUint16(result[2:4], 1) // NameCount=1
-	copy(result[8:], nameHdr)
-	return result
-}
-
 // kerbTimeToFiletime converts a Go time to Windows FILETIME.
 func kerbTimeToFiletime(t time.Time) uint64 {
 	if t.IsZero() {
