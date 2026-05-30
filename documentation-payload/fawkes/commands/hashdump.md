@@ -86,6 +86,67 @@ The `LogonSessionList` signature, `KIWI_MSV1_0_LIST_63` field offsets, `KIWI_MSV
 - Administrator privileges (SYSTEM may be required when LSA Protection or Credential Guard is enabled)
 - Windows 10 21H2 — Windows 11 23H2 (signature/layout drift on other builds)
 
+### Windows — Kerberos Ticket Extraction (`-action tickets`)
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Extracts Kerberos TGTs and service tickets directly from LSASS memory by walking `kerberos.dll`'s internal `KerbGlobalLogonSessionTable`. Equivalent to mimikatz `sekurlsa::tickets /export`.
+
+**How It Works:**
+
+1. Opens `lsass.exe` with `PROCESS_VM_READ`.
+2. Locates `kerberos.dll` in the LSASS module list.
+3. Pattern-scans the `kerberos.dll` image for the `KerbGlobalLogonSessionTable` reference.
+4. Walks the Kerberos logon session list (distinct from `lsasrv.dll`'s `LogonSessionList`).
+5. For each session, walks three ticket lists: TGTs (`Tickets_1`), service tickets (`Tickets_2`, `Tickets_3`).
+6. Extracts ticket metadata: service name, client name, domain, flags, encryption type, validity times.
+7. Reads raw ticket bytes and session key material via `ReadProcessMemory`.
+8. Serializes each ticket as a `.kirbi` file (KRB-CRED ASN.1 format, base64-encoded in output).
+
+**Output (JSON):**
+```json
+{
+  "sessions": [
+    {
+      "luid": "0x0000000000012345",
+      "username": "administrator",
+      "domain": "CONTOSO.COM",
+      "tickets": [
+        {
+          "list_name": "TGT",
+          "service_name": "krbtgt/CONTOSO.COM",
+          "client_name": "administrator",
+          "domain": "CONTOSO.COM",
+          "flags": "0x40E10000 (forwardable, renewable, initial, pre-authent)",
+          "key_type": 18,
+          "enc_type": 18,
+          "start_time": "2026-05-30T12:00:00Z",
+          "end_time": "2026-05-30T22:00:00Z",
+          "ticket_size": 1234,
+          "kirbi_b64": "doIFqj..."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "sessions_found": 3,
+    "total_tickets": 8,
+    "tgts": 3,
+    "service_tickets": 5,
+    "kirbi_exported": 8
+  }
+}
+```
+
+The `kirbi_b64` field contains the complete `.kirbi` file (KRB-CRED structure) encoded as base64. This can be used directly with Rubeus (`ptt /ticket:<base64>`), mimikatz (`kerberos::ptt`), or Impacket (`ticketConverter.py`).
+
+**OPSEC profile:**
+Same LSASS handle + ReadProcessMemory signal as `insitu-full`. The agent reads `kerberos.dll` instead of `lsasrv.dll` but the EDR detection vector is identical.
+
+**Requirements:**
+- Administrator privileges
+- Windows 10 1507+ through Windows 11 24H2
+
 **LSA protection pre-flight:**
 Before opening LSASS the agent reads `HKLM\SYSTEM\CurrentControlSet\Control\Lsa\RunAsPPL` and `…\LsaCfgFlags` and emits the result in the `lsass_protection` JSON block (and as a `[+] LSASS protection: …` line in the human-readable header). On Win11 22H2+ the default is `RunAsPPL=2` (PPL with UEFI variable lock) which causes `OpenProcess(lsass.exe, PROCESS_VM_READ)` to return `Access is denied` even from SYSTEM with `SeDebugPrivilege` — the kernel rejects the read on the protected-process check. When the OpenProcess call fails, the error message includes the detected protection state plus a tactical hint distinguishing PPL block / Credential Guard isolation / insufficient privileges so PPL blocks are not mistaken for layout drift. PPL bypass requires a kernel-level component (e.g. a signed driver that clears the `EPROCESS.Protection` flag); the agent does not ship one.
 
@@ -127,7 +188,7 @@ Reports extracted credentials to the Mythic credential vault automatically.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | dump | `dump`: extract local NTLM hashes from SAM (Windows SYSTEM required). `insitu`: enumerate active logon sessions via in-process LSA APIs (Windows admin required). `insitu-full`: open lsass.exe with PROCESS_VM_READ, sigscan lsasrv.dll for LogonSessionList, walk the linked list, parse each node's KIWI_MSV1_0_LIST_63 fields, walk the per-AuthPackage credential chain at credentials_ptr to capture each KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope, sigscan LsaInitializeProtectedMemory_Internal to recover the IV / h3DesKey / hAesKey BCrypt key globals + raw 16-byte IV / 24-byte 3DES / 32-byte AES key bytes, AES-256-CFB / 3DES-CBC decrypt every captured ciphertext blob (selected per-blob by `len % 8`), and overlay the KIWI_MSV1_0_PRIMARY_CREDENTIAL_10_NEW layout to extract NT/LM/SHA hashes — emitted in `username:rid:lm:nt:::` format compatible with the dump-action ProcessResponse credential-vault hook (Phase 2B + 2C-i + 2C-ii-a + 2C-ii-b + 2C-ii-c, Windows admin required). `auto-spray`: dump hashes then spray them via cred-check against target hosts. |
+| action | No | dump | `dump`: extract local NTLM hashes from SAM (Windows SYSTEM required). `insitu`: enumerate active logon sessions via in-process LSA APIs (Windows admin required). `insitu-full`: LSASS memory walk for NT/LM/SHA hashes via sigscan + credential chain decryption (Windows admin required). `tickets`: extract Kerberos TGTs and service tickets from kerberos.dll's session table, export as .kirbi (Windows admin required). `auto-spray`: dump hashes then spray them via cred-check against target hosts. |
 | targets | No | (auto) | Target hosts for auto-spray (IPs, comma-separated, or CIDR). If empty, uses active callback hosts. |
 | format | No | text | Output format: `text` or `json` (Linux/macOS only) |
 
@@ -138,6 +199,7 @@ hashdump
 hashdump -format json
 hashdump -action insitu
 hashdump -action insitu-full
+hashdump -action tickets
 hashdump -action auto-spray
 hashdump -action auto-spray -targets 192.168.1.0/24,10.0.0.5
 ```
