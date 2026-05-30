@@ -114,6 +114,14 @@ func executeKerbTicketsInner() structs.CommandResult {
 	reader := lsassRemoteReader{h: h}
 	sessLayout, tickLayout := selectKerbLayouts(0) // default to modern layout
 
+	// Probe the first session entry to auto-detect the correct struct layout.
+	// Windows cumulative updates can shift field offsets.
+	head, headErr := readListEntry(reader, tableAddr)
+	if headErr == nil && head.Flink != 0 && head.Flink != tableAddr {
+		probeBase := head.Flink - uintptr(sessLayout.ListEntryOff)
+		sessLayout = probeKerbSessionLayout(reader, probeBase, kerbMod.Base, kerbMod.Size, sessLayout)
+	}
+
 	sessions, err := walkKerbSessionList(reader, tableAddr, sessLayout)
 	if err != nil && len(sessions) == 0 {
 		return errorf("Kerberos tickets: walk session list: %v", err)
