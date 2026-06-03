@@ -183,15 +183,37 @@ func enumerateKeychain(keychainPath string, showSecrets bool) ([]darwinCredEntry
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "security", cmdArgs...).CombinedOutput()
+	outStr := string(out)
+
 	if err != nil {
-		outStr := string(out)
 		if strings.Contains(outStr, "could not be found") || strings.Contains(outStr, "No such file") {
 			return nil, fmt.Sprintf("Keychain not found: %s", keychainPath)
+		}
+		if showSecrets && strings.Contains(outStr, "User interaction is not allowed") {
+			entries := parseKeychainDump(outStr, false)
+			if len(entries) > 0 {
+				return entries, "Password retrieval requires interactive session (keychain locked or authorization needed)"
+			}
+			cmdArgs = []string{"dump-keychain"}
+			if keychainPath != "" {
+				cmdArgs = append(cmdArgs, keychainPath)
+			}
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel2()
+			out2, err2 := exec.CommandContext(ctx2, "security", cmdArgs...).CombinedOutput()
+			if err2 != nil {
+				return nil, fmt.Sprintf("Error: %v", err2)
+			}
+			entries = parseKeychainDump(string(out2), false)
+			return entries, "Password retrieval requires interactive session (keychain locked or authorization needed)"
+		}
+		if strings.Contains(outStr, "keychain:") {
+			return parseKeychainDump(outStr, showSecrets), ""
 		}
 		return nil, fmt.Sprintf("Error: %v — %s", err, strings.TrimSpace(outStr))
 	}
 
-	return parseKeychainDump(string(out), showSecrets), ""
+	return parseKeychainDump(outStr, showSecrets), ""
 }
 
 func parseKeychainDump(output string, includeSecrets bool) []darwinCredEntry {
