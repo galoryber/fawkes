@@ -7,13 +7,13 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service). All methods support install, remove, and list/check actions.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart, motd, rc-local, apt-hook), macOS (launchagent, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service). All methods support install, remove, and list/check actions.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, `active-setup`, `time-provider`, `port-monitor`, `wmi-event`, `netsh-helper`, `xdg-autostart`, or `list` |
+| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, `active-setup`, `time-provider`, `port-monitor`, `wmi-event`, `netsh-helper`, `xdg-autostart`, `motd`, `rc-local`, `apt-hook`, or `list` |
 | action | choose_one | No | install | `install` to add persistence, `remove` to delete it |
 | name | string | No* | - | Registry value name or startup folder filename (*required for registry, defaults to exe name for startup) |
 | path | string | No | Current agent | Path to executable. Defaults to the running agent binary. |
@@ -270,6 +270,54 @@ persist -method xdg-autostart -action remove -name "my-service"
 ```
 
 {{% notice tip %}}Default name is "system-update-notifier" — a benign-looking name. The .desktop file is created with NoDisplay=true and Hidden=false for stealth.{{% /notice %}}
+
+### MOTD Script (Linux, root)
+
+Place a script in `/etc/update-motd.d/` that executes as root on each SSH or console login (T1546).
+
+Install:
+```
+persist -method motd -action install -path "/tmp/agent" -name "99-update-check"
+```
+
+Remove:
+```
+persist -method motd -action remove -name "99-update-check"
+```
+
+{{% notice warning %}}Requires root. Scripts in update-motd.d run as root for all users on login.{{% /notice %}}
+
+### rc.local (Linux, root)
+
+Append a command to `/etc/rc.local` that runs as root at system boot (T1037.004).
+
+Install:
+```
+persist -method rc-local -action install -path "/tmp/agent" -name "svc-monitor"
+```
+
+Remove:
+```
+persist -method rc-local -action remove -name "svc-monitor"
+```
+
+{{% notice info %}}Uses BEGIN/END markers for clean removal. Inserts before `exit 0` if present.{{% /notice %}}
+
+### APT Hook (Linux, root)
+
+Create a hook in `/etc/apt/apt.conf.d/` that runs whenever apt update/install/upgrade executes (T1546).
+
+Install:
+```
+persist -method apt-hook -action install -path "/tmp/agent" -name "99security-update"
+```
+
+Remove:
+```
+persist -method apt-hook -action remove -name "99security-update"
+```
+
+{{% notice tip %}}Executes on both `apt update` (Post-Invoke-Success) and `apt install/upgrade` (DPkg::Post-Invoke). Very stealthy — operators rarely inspect apt.conf.d.{{% /notice %}}
 
 ### List Existing Persistence
 

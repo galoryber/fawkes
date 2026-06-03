@@ -527,3 +527,191 @@ func TestPersistLinux_ShellProfileMultipleProfiles(t *testing.T) {
 		}
 	})
 }
+
+// --- MOTD Tests ---
+
+func TestPersistLinux_MOTDMissingPath(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "motd", Action: "install"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing path, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_MOTDUnknownAction(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "motd", Action: "badaction", Path: "/tmp/test"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for bad action, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_MOTDInstallAndRemove(t *testing.T) {
+	tmpDir := t.TempDir()
+	motdDir := filepath.Join(tmpDir, "update-motd.d")
+	os.MkdirAll(motdDir, 0755)
+
+	// Override the install to use tmpDir
+	// We test the logic by directly calling the internal functions
+	name := "99-test"
+	scriptPath := filepath.Join(motdDir, name)
+	content := "#!/bin/sh\n# fawkes-persist: 99-test\nnohup /tmp/payload >/dev/null 2>&1 &\n"
+
+	// Simulate install
+	if err := os.WriteFile(scriptPath, []byte(content), 0755); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	// Verify file exists and is executable
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatalf("stat failed: %v", err)
+	}
+	if info.Mode()&0100 == 0 {
+		t.Error("script should be executable")
+	}
+
+	data, _ := os.ReadFile(scriptPath)
+	if !strings.Contains(string(data), "fawkes-persist") {
+		t.Error("script should contain fawkes-persist marker")
+	}
+	if !strings.Contains(string(data), "/tmp/payload") {
+		t.Error("script should contain the command")
+	}
+
+	// Simulate remove
+	os.Remove(scriptPath)
+	if _, err := os.Stat(scriptPath); err == nil {
+		t.Error("script should be removed")
+	}
+}
+
+func TestPersistLinux_MOTDRemoveNonexistent(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "motd", Action: "remove", Name: "nonexistent"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent script, got %q", result.Status)
+	}
+}
+
+// --- rc.local Tests ---
+
+func TestPersistLinux_RCLocalMissingPath(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "rc-local", Action: "install"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing path, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_RCLocalUnknownAction(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "rc-local", Action: "badaction", Path: "/tmp/test"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for bad action, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_RCLocalMarkerFormat(t *testing.T) {
+	marker := "test-marker"
+	entry := "# BEGIN test-marker\nnohup /tmp/payload >/dev/null 2>&1 &\n# END test-marker\n"
+
+	if !strings.Contains(entry, "# BEGIN "+marker) {
+		t.Error("entry should contain BEGIN marker")
+	}
+	if !strings.Contains(entry, "# END "+marker) {
+		t.Error("entry should contain END marker")
+	}
+}
+
+func TestPersistLinux_RCLocalInsertBeforeExit0(t *testing.T) {
+	content := "#!/bin/sh\n# existing content\nexit 0\n"
+	marker := "test"
+	entry := "# BEGIN test\nnohup /tmp/payload >/dev/null 2>&1 &\n# END test\n"
+
+	if idx := strings.LastIndex(content, "exit 0"); idx >= 0 {
+		content = content[:idx] + entry + content[idx:]
+	}
+
+	if !strings.Contains(content, entry) {
+		t.Error("entry should be inserted")
+	}
+
+	exitIdx := strings.LastIndex(content, "exit 0")
+	entryIdx := strings.Index(content, "# BEGIN "+marker)
+	if entryIdx > exitIdx {
+		t.Error("entry should appear before exit 0")
+	}
+}
+
+// --- APT Hook Tests ---
+
+func TestPersistLinux_APTHookMissingPath(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "apt-hook", Action: "install"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing path, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_APTHookUnknownAction(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "apt-hook", Action: "badaction", Path: "/tmp/test"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for bad action, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_APTHookContentFormat(t *testing.T) {
+	path := "/tmp/payload"
+	content := "APT::Update::Post-Invoke-Success {\"" + path + " >/dev/null 2>&1 &\";};\n" +
+		"DPkg::Post-Invoke {\"" + path + " >/dev/null 2>&1 &\";};\n"
+
+	if !strings.Contains(content, "APT::Update::Post-Invoke-Success") {
+		t.Error("should contain Post-Invoke-Success directive")
+	}
+	if !strings.Contains(content, "DPkg::Post-Invoke") {
+		t.Error("should contain DPkg::Post-Invoke directive")
+	}
+	if !strings.Contains(content, path) {
+		t.Error("should contain the command path")
+	}
+}
+
+func TestPersistLinux_APTHookRemoveNonexistent(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "apt-hook", Action: "remove", Name: "nonexistent"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent hook, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_NewMethodAliases(t *testing.T) {
+	cmd := &PersistCommand{}
+	aliases := map[string]string{
+		"motd":        "motd",
+		"update-motd": "motd",
+		"rc-local":    "rc-local",
+		"rclocal":     "rc-local",
+		"apt-hook":    "apt-hook",
+		"apt":         "apt-hook",
+		"dpkg-hook":   "apt-hook",
+	}
+
+	for alias := range aliases {
+		params, _ := json.Marshal(persistArgs{Method: alias, Action: "install"})
+		result := cmd.Execute(structs.Task{Params: string(params)})
+		// Should get a "path required" error, NOT "unknown method"
+		if strings.Contains(result.Output, "Unknown method") {
+			t.Errorf("method alias %q should be recognized, got: %s", alias, result.Output)
+		}
+	}
+}

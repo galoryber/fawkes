@@ -77,8 +77,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "wmi-event", "netsh-helper", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "periodic", "folder-action", "login-item", "auth-plugin", "dylib-hijack", "xpc-service", "list"},
-				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider, wmi-event (T1546.003), netsh-helper (T1546.007). Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent, periodic (root), folder-action, login-item, auth-plugin (root), dylib-hijack (T1574.004), xpc-service. All: list.",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "wmi-event", "netsh-helper", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "motd", "rc-local", "apt-hook", "launchagent", "periodic", "folder-action", "login-item", "auth-plugin", "dylib-hijack", "xpc-service", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider, wmi-event (T1546.003), netsh-helper (T1546.007). Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart, motd (root, T1546), rc-local (root, T1037.004), apt-hook (root, T1546). macOS: launchagent, periodic (root), folder-action, login-item, auth-plugin (root), dylib-hijack (T1574.004), xpc-service. All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

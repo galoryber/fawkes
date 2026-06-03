@@ -57,10 +57,16 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistSSHKey(args)
 	case "xdg-autostart", "xdg", "autostart":
 		return persistXDGAutostart(args)
+	case "motd", "update-motd":
+		return persistMOTD(args)
+	case "rc-local", "rclocal":
+		return persistRCLocal(args)
+	case "apt-hook", "apt", "dpkg-hook":
+		return persistAPTHook(args)
 	case "list":
 		return persistLinuxList()
 	default:
-		return errorf("Unknown method: %s. Use: crontab, systemd, shell-profile, ssh-key, xdg-autostart, or list", args.Method)
+		return errorf("Unknown method: %s. Use: crontab, systemd, shell-profile, ssh-key, xdg-autostart, motd, rc-local, apt-hook, or list", args.Method)
 	}
 }
 
