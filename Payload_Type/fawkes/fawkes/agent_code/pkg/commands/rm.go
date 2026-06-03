@@ -1,44 +1,41 @@
 package commands
 
 import (
-	"encoding/json"
+	"fmt"
 	"os"
 
 	"fawkes/pkg/structs"
 )
 
-// RmCommand implements the rm command
 type RmCommand struct{}
 
-// Name returns the command name
-func (c *RmCommand) Name() string {
-	return "rm"
-}
+func (c *RmCommand) Name() string { return "rm" }
 
-// Description returns the command description
 func (c *RmCommand) Description() string {
-	return "Remove a file or directory"
+	return "Remove a file or directory. Use -secure true to overwrite file contents before deletion (T1070.004)."
 }
 
-// Execute executes the rm command
+type rmArgs struct {
+	Path   string `json:"path"`
+	Secure bool   `json:"secure"`
+}
+
 func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
 		return errorResult("Error: No path provided")
 	}
 
-	// Try to parse as JSON first (Mythic API sends JSON parameters)
-	var args struct {
-		Path string `json:"path"`
-	}
-	path := task.Params
-	if err := json.Unmarshal([]byte(task.Params), &args); err == nil && args.Path != "" {
-		path = args.Path
+	args, parseErr := unmarshalParams[rmArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
-	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")
+	path := args.Path
+	if path == "" {
+		path = task.Params
+	}
 	path = stripPathQuotes(path)
 
-	// Check if path exists
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -50,13 +47,26 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: cannot access %s", path)
 	}
 
-	// Determine if it's a file or directory
 	itemType := "file"
 	if fileInfo.IsDir() {
 		itemType = "directory"
 	}
 
-	// Remove the file or directory (recursively if directory)
+	if args.Secure {
+		if fileInfo.IsDir() {
+			count, errs := secureDeleteDir(path, 3)
+			output := fmt.Sprintf("[+] Securely deleted directory: %s (%d files, 3 passes per file)", path, count)
+			if len(errs) > 0 {
+				output += fmt.Sprintf("\n[!] %d errors encountered", len(errs))
+			}
+			return successResult(output)
+		}
+		if err := secureDeleteFile(path, fileInfo.Size(), 3); err != nil {
+			return errorf("Error securely deleting file: %v", err)
+		}
+		return successf("[+] Securely deleted: %s (%s, 3 passes)", path, formatFileSize(fileInfo.Size()))
+	}
+
 	err = os.RemoveAll(path)
 	if err != nil {
 		if os.IsPermission(err) {

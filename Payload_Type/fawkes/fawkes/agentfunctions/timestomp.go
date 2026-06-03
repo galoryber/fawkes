@@ -28,8 +28,8 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:   "Action to perform: get (show timestamps), copy (from another file), set (specific time), match (blend with directory), random (random time in range)",
-				Choices:       []string{"get", "copy", "set", "match", "random"},
+				Description:   "Action to perform: get (show timestamps), copy (from another file), set (specific time), match (blend with directory), random (random time in range), clean-prefetch (Windows: delete prefetch files for exe)",
+				Choices:       []string{"get", "copy", "set", "match", "random", "clean-prefetch"},
 				DefaultValue:  "get",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

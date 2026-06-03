@@ -14,14 +14,35 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "rm",
-		Description:         "Remove a file or directory (recursively removes directories)",
-		HelpString:          "rm <path>",
-		Version:             2,
+		Description:         "Remove a file or directory (recursively removes directories). Use -secure true for overwrite-before-delete.",
+		HelpString:          "rm [-path <path>] [-secure true]",
+		Version:             3,
 		MitreAttackMappings: []string{"T1070.004"}, // Indicator Removal on Host: File Deletion
 		SupportedUIFeatures: []string{"file_browser:remove"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "path",
+				CLIName:       "path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "File or directory path to remove",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, UIModalPosition: 1, GroupName: "Default"},
+				},
+			},
+			{
+				Name:          "secure",
+				CLIName:       "secure",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				DefaultValue:  false,
+				Description:   "Overwrite file contents with random data before deletion (3 passes). Prevents forensic recovery.",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, UIModalPosition: 2, GroupName: "Default"},
+				},
+			},
 		},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "rm_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {

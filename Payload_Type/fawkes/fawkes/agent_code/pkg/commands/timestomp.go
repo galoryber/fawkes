@@ -58,6 +58,10 @@ func (c *TimestompCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	if params.Action == "clean-prefetch" {
+		return timestompCleanPrefetch(params.Target)
+	}
+
 	if params.Target == "" {
 		return errorResult("Error: target file path is required")
 	}
@@ -74,7 +78,7 @@ func (c *TimestompCommand) Execute(task structs.Task) structs.CommandResult {
 	case "random":
 		return timestompRandom(params.Target, params.Source, params.Timestamp)
 	default:
-		return errorf("Error: unknown action '%s'. Valid actions: get, copy, set, match, random", params.Action)
+		return errorf("Error: unknown action '%s'. Valid actions: get, copy, set, match, random, clean-prefetch", params.Action)
 	}
 }
 
