@@ -173,14 +173,11 @@ func credmanDarwinList(args credmanArgs, showSecrets bool) structs.CommandResult
 
 func enumerateKeychain(keychainPath string, showSecrets bool) ([]darwinCredEntry, string) {
 	cmdArgs := []string{"dump-keychain"}
-	if showSecrets {
-		cmdArgs = append(cmdArgs, "-d")
-	}
 	if keychainPath != "" {
 		cmdArgs = append(cmdArgs, keychainPath)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "security", cmdArgs...).CombinedOutput()
 	outStr := string(out)
@@ -189,31 +186,84 @@ func enumerateKeychain(keychainPath string, showSecrets bool) ([]darwinCredEntry
 		if strings.Contains(outStr, "could not be found") || strings.Contains(outStr, "No such file") {
 			return nil, fmt.Sprintf("Keychain not found: %s", keychainPath)
 		}
-		if showSecrets && strings.Contains(outStr, "User interaction is not allowed") {
-			entries := parseKeychainDump(outStr, false)
-			if len(entries) > 0 {
-				return entries, "Password retrieval requires interactive session (keychain locked or authorization needed)"
-			}
-			cmdArgs = []string{"dump-keychain"}
-			if keychainPath != "" {
-				cmdArgs = append(cmdArgs, keychainPath)
-			}
-			ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel2()
-			out2, err2 := exec.CommandContext(ctx2, "security", cmdArgs...).CombinedOutput()
-			if err2 != nil {
-				return nil, fmt.Sprintf("Error: %v", err2)
-			}
-			entries = parseKeychainDump(string(out2), false)
-			return entries, "Password retrieval requires interactive session (keychain locked or authorization needed)"
-		}
 		if strings.Contains(outStr, "keychain:") {
-			return parseKeychainDump(outStr, showSecrets), ""
+			return parseKeychainDump(outStr, false), ""
 		}
 		return nil, fmt.Sprintf("Error: %v — %s", err, strings.TrimSpace(outStr))
 	}
 
-	return parseKeychainDump(outStr, showSecrets), ""
+	entries := parseKeychainDump(outStr, false)
+
+	if showSecrets && len(entries) > 0 {
+		retrieveKeychainSecrets(entries, keychainPath)
+		hasSecrets := false
+		for _, e := range entries {
+			if e.Secret != "" {
+				hasSecrets = true
+				break
+			}
+		}
+		if !hasSecrets {
+			return entries, "Password retrieval requires interactive session (keychain locked or authorization needed)"
+		}
+	}
+
+	return entries, ""
+}
+
+func retrieveKeychainSecrets(entries []darwinCredEntry, keychainPath string) {
+	consecutiveFails := 0
+	for i, e := range entries {
+		if consecutiveFails >= 3 {
+			break
+		}
+		if e.Service == "" && e.Account == "" {
+			continue
+		}
+		var cmdArgs []string
+		if e.Class == "inet" {
+			cmdArgs = []string{"find-internet-password", "-g"}
+			if e.Service != "" {
+				cmdArgs = append(cmdArgs, "-s", e.Service)
+			}
+		} else {
+			cmdArgs = []string{"find-generic-password", "-g"}
+			if e.Service != "" {
+				cmdArgs = append(cmdArgs, "-s", e.Service)
+			}
+		}
+		if e.Account != "" {
+			cmdArgs = append(cmdArgs, "-a", e.Account)
+		}
+		if keychainPath != "" {
+			cmdArgs = append(cmdArgs, keychainPath)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		out, err := exec.CommandContext(ctx, "security", cmdArgs...).CombinedOutput()
+		cancel()
+		if err != nil {
+			consecutiveFails++
+			continue
+		}
+		found := false
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.HasPrefix(line, "password: ") {
+				val := strings.TrimPrefix(line, "password: ")
+				val = strings.Trim(val, "\"")
+				if val != "" && !strings.HasPrefix(val, "0x") && isPrintableSecret(val) {
+					entries[i].Secret = val
+					found = true
+				}
+				break
+			}
+		}
+		if found {
+			consecutiveFails = 0
+		} else {
+			consecutiveFails++
+		}
+	}
 }
 
 func parseKeychainDump(output string, includeSecrets bool) []darwinCredEntry {
