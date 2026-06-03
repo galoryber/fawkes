@@ -119,14 +119,11 @@ func machThreadGetState(thread uint32) (*ARM64ThreadState, error) {
 		return nil, fmt.Errorf("thread_get_state: %w", err)
 	}
 
-	// Parse reply: header(24) + NDR(8) + RetCode(4) + count(4) + state
-	retCode := int32(binary.LittleEndian.Uint32(buf[36:]))
+	// Parse reply: header(24) + NDR(8) + RetCode(4) + count(4) + state(272)
+	retCode := int32(binary.LittleEndian.Uint32(buf[32:]))
 	if retCode != 0 {
 		return nil, fmt.Errorf("thread_get_state kern_return=%d", retCode)
 	}
-
-	stateCnt := binary.LittleEndian.Uint32(buf[36:])
-	_ = stateCnt // count should be armThreadState64Count
 
 	var state ARM64ThreadState
 	stateBytes := buf[40 : 40+272]
@@ -178,16 +175,11 @@ func machThreadSetState(thread uint32, state *ARM64ThreadState) error {
 	binary.LittleEndian.PutUint64(buf[stateOff+256:], state.PC)
 	binary.LittleEndian.PutUint32(buf[stateOff+264:], state.CPSR)
 
-	repBuf := make([]byte, repSize)
-	copy(repBuf[:reqSize], buf[:])
-
-	// Can't reuse buf since reqSize > repSize for set. Need separate buffers.
-	// Actually mach_msg reuses the buffer: it sends reqSize bytes then receives into same buffer.
-	if err := machMsgSendRecv(buf[:reqSize], reqSize, repSize, replyPort); err != nil {
+	if err := machMsgSendRecv(buf, reqSize, repSize, replyPort); err != nil {
 		return fmt.Errorf("thread_set_state: %w", err)
 	}
 
-	retCode := int32(binary.LittleEndian.Uint32(buf[36:]))
+	retCode := int32(binary.LittleEndian.Uint32(buf[32:]))
 	if retCode != 0 {
 		return fmt.Errorf("thread_set_state kern_return=%d", retCode)
 	}
@@ -220,12 +212,71 @@ func machThreadResume(thread uint32) error {
 		return fmt.Errorf("thread_resume: %w", err)
 	}
 
-	retCode := int32(binary.LittleEndian.Uint32(buf[36:]))
+	retCode := int32(binary.LittleEndian.Uint32(buf[32:]))
 	if retCode != 0 {
 		return fmt.Errorf("thread_resume kern_return=%d", retCode)
 	}
 
 	return nil
+}
+
+// machTaskThreads retrieves the thread port list for a task via MIG.
+// task_threads returns an OOL ports descriptor (complex message).
+// Reply format (64-bit with MACH_MSG_PORT_DESCRIPTOR_PAD):
+//
+//	Header(24) + Body(4) + OOL_ports_desc(24) + NDR(8) + count(4) = 64 bytes
+//
+// The OOL ports descriptor contains a kernel-mapped pointer to the port array.
+func machTaskThreads(taskPort uint32) ([]uint32, error) {
+	replyPort := machReplyPort()
+	if replyPort == 0 {
+		return nil, fmt.Errorf("mach_reply_port returned 0")
+	}
+
+	const reqSize = 24
+	const repSize = 64
+
+	buf := make([]byte, repSize)
+
+	binary.LittleEndian.PutUint32(buf[0:], machMsgBits(machMsgTypeCopySend, machMsgTypeMakeSendOnce))
+	binary.LittleEndian.PutUint32(buf[4:], reqSize)
+	binary.LittleEndian.PutUint32(buf[8:], taskPort)
+	binary.LittleEndian.PutUint32(buf[12:], replyPort)
+	binary.LittleEndian.PutUint32(buf[16:], 0)
+	binary.LittleEndian.PutUint32(buf[20:], migTaskThreadsReqID)
+
+	if err := machMsgSendRecv(buf, reqSize, repSize, replyPort); err != nil {
+		return nil, fmt.Errorf("task_threads: %w", err)
+	}
+
+	// Check if reply is complex (success) or simple (error).
+	// MACH_MSGH_BITS_COMPLEX = bit 31 of msgh_bits.
+	bits := binary.LittleEndian.Uint32(buf[0:])
+	if bits&(1<<31) == 0 {
+		// Simple reply = error. RetCode at offset 32 (header(24) + NDR(8)).
+		retCode := int32(binary.LittleEndian.Uint32(buf[32:]))
+		return nil, fmt.Errorf("task_threads kern_return=%d", retCode)
+	}
+
+	// Complex reply: OOL ports descriptor at offset 28.
+	// Layout (64-bit, pack(4), MACH_MSG_PORT_DESCRIPTOR_PAD):
+	//   +0(28): pad1(4), +4(32): count(4), +8(36): pad2+type(4),
+	//   +12(40): address(8), +20(48): copy+disposition+pad3(4)
+	count := binary.LittleEndian.Uint32(buf[32:])
+	addrPtr := binary.LittleEndian.Uint64(buf[40:])
+
+	if count == 0 || addrPtr == 0 {
+		return nil, fmt.Errorf("task_threads: no threads returned (count=%d)", count)
+	}
+
+	threads := make([]uint32, count)
+	portArray := unsafe.Slice((*uint32)(unsafe.Pointer(uintptr(addrPtr))), count)
+	copy(threads, portArray)
+
+	// Deallocate the OOL buffer mapped by the kernel.
+	_ = machVmDeallocate(machTaskSelf(), addrPtr, uint64(count)*4)
+
+	return threads, nil
 }
 
 // machThreadSuspend suspends a Mach thread via MIG.
@@ -251,7 +302,7 @@ func machThreadSuspend(thread uint32) error {
 		return fmt.Errorf("thread_suspend: %w", err)
 	}
 
-	retCode := int32(binary.LittleEndian.Uint32(buf[36:]))
+	retCode := int32(binary.LittleEndian.Uint32(buf[32:]))
 	if retCode != 0 {
 		return fmt.Errorf("thread_suspend kern_return=%d", retCode)
 	}
