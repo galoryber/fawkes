@@ -694,6 +694,74 @@ func TestPersistLinux_APTHookRemoveNonexistent(t *testing.T) {
 	}
 }
 
+// --- Udev Rule Tests ---
+
+func TestPersistLinux_UdevMissingPath(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "udev-rule", Action: "install"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing path, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_UdevUnknownAction(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "udev-rule", Action: "badaction", Path: "/tmp/test"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for bad action, got %q", result.Status)
+	}
+}
+
+func TestPersistLinux_UdevRuleContent(t *testing.T) {
+	name := "99-test.rules"
+	path := "/tmp/payload"
+	content := "# fawkes-persist: " + name + "\n" +
+		`ACTION=="add", SUBSYSTEM=="usb", RUN+="` + path + "\"\n"
+
+	if !strings.Contains(content, "fawkes-persist") {
+		t.Error("should contain fawkes-persist marker")
+	}
+	if !strings.Contains(content, `ACTION=="add"`) {
+		t.Error("should contain ACTION trigger")
+	}
+	if !strings.Contains(content, `RUN+="`) {
+		t.Error("should contain RUN directive")
+	}
+	if !strings.Contains(content, path) {
+		t.Error("should contain command path")
+	}
+}
+
+func TestPersistLinux_UdevRuleNameSuffix(t *testing.T) {
+	tests := []struct {
+		input, expected string
+	}{
+		{"99-test", "99-test.rules"},
+		{"99-test.rules", "99-test.rules"},
+		{"custom", "custom.rules"},
+	}
+	for _, tt := range tests {
+		name := tt.input
+		if !strings.HasSuffix(name, ".rules") {
+			name += ".rules"
+		}
+		if name != tt.expected {
+			t.Errorf("input %q: expected %q, got %q", tt.input, tt.expected, name)
+		}
+	}
+}
+
+func TestPersistLinux_UdevRemoveNonexistent(t *testing.T) {
+	cmd := &PersistCommand{}
+	params, _ := json.Marshal(persistArgs{Method: "udev-rule", Action: "remove", Name: "nonexistent"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent rule, got %q", result.Status)
+	}
+}
+
 func TestPersistLinux_NewMethodAliases(t *testing.T) {
 	cmd := &PersistCommand{}
 	aliases := map[string]string{
@@ -704,6 +772,8 @@ func TestPersistLinux_NewMethodAliases(t *testing.T) {
 		"apt-hook":    "apt-hook",
 		"apt":         "apt-hook",
 		"dpkg-hook":   "apt-hook",
+		"udev-rule":   "udev-rule",
+		"udev":        "udev-rule",
 	}
 
 	for alias := range aliases {

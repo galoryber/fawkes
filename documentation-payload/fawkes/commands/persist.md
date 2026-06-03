@@ -7,13 +7,13 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart, motd, rc-local, apt-hook), macOS (launchagent, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service). All methods support install, remove, and list/check actions.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart, motd, rc-local, apt-hook, udev-rule), macOS (launchagent, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service). All methods support install, remove, and list/check actions.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, `active-setup`, `time-provider`, `port-monitor`, `wmi-event`, `netsh-helper`, `xdg-autostart`, `motd`, `rc-local`, `apt-hook`, or `list` |
+| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, `active-setup`, `time-provider`, `port-monitor`, `wmi-event`, `netsh-helper`, `xdg-autostart`, `motd`, `rc-local`, `apt-hook`, `udev-rule`, or `list` |
 | action | choose_one | No | install | `install` to add persistence, `remove` to delete it |
 | name | string | No* | - | Registry value name or startup folder filename (*required for registry, defaults to exe name for startup) |
 | path | string | No | Current agent | Path to executable. Defaults to the running agent binary. |
@@ -318,6 +318,22 @@ persist -method apt-hook -action remove -name "99security-update"
 ```
 
 {{% notice tip %}}Executes on both `apt update` (Post-Invoke-Success) and `apt install/upgrade` (DPkg::Post-Invoke). Very stealthy — operators rarely inspect apt.conf.d.{{% /notice %}}
+
+### Udev Rule (Linux, root)
+
+Create a udev rule in `/etc/udev/rules.d/` that triggers when USB devices are connected (T1546).
+
+Install:
+```
+persist -method udev-rule -action install -path "/tmp/agent" -name "99-usb-monitor"
+```
+
+Remove:
+```
+persist -method udev-rule -action remove -name "99-usb-monitor"
+```
+
+{{% notice info %}}Triggers on USB device insertion. Run `udevadm control --reload-rules` to activate without reboot. The `.rules` suffix is added automatically if not provided.{{% /notice %}}
 
 ### List Existing Persistence
 
