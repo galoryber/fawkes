@@ -13,6 +13,8 @@ Process hollowing — create a suspended process and redirect execution to shell
 
 **Linux:** Spawns a process with PTRACE_TRACEME (stopped at exec), finds a syscall gadget, allocates memory via remote mmap, writes shellcode through /proc/PID/mem, redirects RIP, and detaches. Default target: `/usr/bin/sleep`.
 
+**macOS (ARM64):** Spawns a process with PT_TRACE_ME (stopped at exec), obtains the child's Mach task port via `task_for_pid`, allocates RW memory via `mach_vm_allocate`, writes shellcode via `mach_vm_write`, changes protection to RX via `mach_vm_protect`, and redirects the instruction pointer using `ptrace(PT_DETACH, pid, shellcode_addr, 0)`. Requires root. Default target: `/bin/sleep`.
+
 ## Arguments
 
 | Argument | Required | Description |
@@ -20,7 +22,7 @@ Process hollowing — create a suspended process and redirect execution to shell
 | filename | Yes (Default group) | Select shellcode from files registered in Mythic |
 | file | Yes (New File group) | Upload a new shellcode file |
 | shellcode_b64 | Yes (CLI group) | Base64-encoded raw shellcode bytes |
-| target | No | Process to create and hollow. Windows default: `svchost.exe`. Linux default: `/usr/bin/sleep` |
+| target | No | Process to create and hollow. Windows default: `svchost.exe`. Linux default: `/usr/bin/sleep`. macOS default: `/bin/sleep` |
 | ppid | No | Parent PID to spoof (Windows only, 0 = no spoofing) |
 | block_dlls | No | Block non-Microsoft DLLs (Windows only, default: false) |
 | stack_spoof | No | Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`. |
@@ -39,6 +41,12 @@ hollow -shellcode_b64 "kJBQ..." -target /usr/bin/cat
 
 # Linux: default target (sleep 86400)
 hollow -shellcode_b64 "kJBQ..."
+
+# macOS (requires root): default target
+hollow -shellcode_b64 "HyAD1cADX9Y="
+
+# macOS: custom target
+hollow -shellcode_b64 "HyAD1cADX9Y=" -target "/usr/bin/yes"
 ```
 
 ## OPSEC Considerations
@@ -53,6 +61,13 @@ hollow -shellcode_b64 "kJBQ..."
 - Requires ptrace capability (Yama ptrace_scope 0 or CAP_SYS_PTRACE)
 - /proc/PID/mem write avoids PTRACE_POKETEXT monitoring
 - Process creation + ptrace attach sequence may trigger audit rules
+
+### macOS
+- Requires root (task_for_pid needs root or com.apple.security.cs.debugger entitlement)
+- Uses Mach VM APIs: task_for_pid, mach_vm_allocate, mach_vm_write, mach_vm_protect
+- Detectable by Endpoint Security framework (ES_EVENT_TYPE_NOTIFY_MACH_TRAP, ES_EVENT_TYPE_NOTIFY_SIGNAL)
+- ptrace-based process control visible to process monitors
+- SIP-protected binaries cannot be targeted
 
 ## MITRE ATT&CK Mapping
 

