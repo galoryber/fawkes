@@ -19,6 +19,8 @@ import (
 //go:cgo_import_dynamic libc_mach_vm_write mach_vm_write "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc_mach_port_deallocate mach_port_deallocate "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc_ptrace ptrace "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc_mach_msg mach_msg "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc_mach_reply_port mach_reply_port "/usr/lib/libSystem.B.dylib"
 
 // Trampoline addresses — filled at link time from the assembly GLOBL/DATA directives.
 var libc_mach_task_self_trampoline_addr uintptr
@@ -29,6 +31,8 @@ var libc_mach_vm_protect_trampoline_addr uintptr
 var libc_mach_vm_write_trampoline_addr uintptr
 var libc_mach_port_deallocate_trampoline_addr uintptr
 var libc_ptrace_trampoline_addr uintptr
+var libc_mach_msg_trampoline_addr uintptr
+var libc_mach_reply_port_trampoline_addr uintptr
 
 // Mach VM constants
 const (
@@ -156,6 +160,12 @@ func rawPtrace(request int, pid int, addr uintptr, data int) error {
 		return errno
 	}
 	return nil
+}
+
+// machReplyPort creates a temporary reply port for MIG messages.
+func machReplyPort() uint32 {
+	r1, _, _ := syscall.RawSyscall(libc_mach_reply_port_trampoline_addr, 0, 0, 0)
+	return uint32(r1)
 }
 
 // machPortDeallocate releases a Mach port right.

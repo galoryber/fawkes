@@ -49,8 +49,19 @@ GLOBL	·libc_mach_port_deallocate_trampoline_addr(SB), RODATA, $8
 DATA	·libc_mach_port_deallocate_trampoline_addr+0(SB)/8, $libc_mach_port_deallocate_trampoline<>(SB)
 
 // --- ptrace ---
-// Raw ptrace(request, pid, addr, data) for operations not exposed by Go's syscall package.
 TEXT libc_ptrace_trampoline<>(SB),NOSPLIT,$0-0
 	JMP	libc_ptrace(SB)
 GLOBL	·libc_ptrace_trampoline_addr(SB), RODATA, $8
 DATA	·libc_ptrace_trampoline_addr+0(SB)/8, $libc_ptrace_trampoline<>(SB)
+
+// --- mach_msg ---
+TEXT libc_mach_msg_trampoline<>(SB),NOSPLIT,$0-0
+	JMP	libc_mach_msg(SB)
+GLOBL	·libc_mach_msg_trampoline_addr(SB), RODATA, $8
+DATA	·libc_mach_msg_trampoline_addr+0(SB)/8, $libc_mach_msg_trampoline<>(SB)
+
+// --- mach_reply_port ---
+TEXT libc_mach_reply_port_trampoline<>(SB),NOSPLIT,$0-0
+	JMP	libc_mach_reply_port(SB)
+GLOBL	·libc_mach_reply_port_trampoline_addr(SB), RODATA, $8
+DATA	·libc_mach_reply_port_trampoline_addr+0(SB)/8, $libc_mach_reply_port_trampoline<>(SB)
