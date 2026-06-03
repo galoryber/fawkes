@@ -34,9 +34,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"list", "query", "clear", "info", "enable", "disable"},
+				Choices:       []string{"list", "query", "clear", "info", "enable", "disable", "phantom", "delete-events"},
 				DefaultValue:  "list",
-				Description:   "Action to perform: list, query, clear, info, enable, or disable channels",
+				Description:   "Action to perform: list, query, clear, info, enable, disable, phantom (kill EventLog threads), delete-events (selective deletion)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -124,6 +124,10 @@ func init() {
 				msg += "Clearing event logs generates Event ID 1102 (audit log cleared) and is a top-tier forensic indicator (T1070.001)."
 			case "disable":
 				msg += "Disabling event log channels stops telemetry collection — monitored by SIEM and EDR (T1562.002)."
+			case "phantom":
+				msg += "CRITICAL: Kills EventLog service worker threads via NtQueryInformationThread + TerminateThread. Service appears running but drops all events. Detectable by thread count monitoring and service health checks (T1562.002)."
+			case "delete-events":
+				msg += "Exports events to keep, clears the log, leaving only target events removed. Generates Event ID 1102. Backup of kept events saved to C:\\Windows\\Temp (T1070.001)."
 			default:
 				msg += "Event log enumeration is lower risk but may be logged by audit policies."
 			}
@@ -142,6 +146,10 @@ func init() {
 				msg += fmt.Sprintf(". Channel '%s' cleared — Event ID 1102 generated. This is a top forensic indicator (T1070.001).", channel)
 			case "disable":
 				msg += fmt.Sprintf(". Channel '%s' disabled — telemetry gap created (T1562.002).", channel)
+			case "phantom":
+				msg += ". EventLog service threads killed — service appears running but logging is stopped (T1562.002)."
+			case "delete-events":
+				msg += fmt.Sprintf(". Selective deletion from '%s' — Event ID 1102 generated (T1070.001).", channel)
 			default:
 				msg += ". Enumeration complete — low risk."
 			}
@@ -207,6 +215,12 @@ func init() {
 						createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtSetChannelConfigProperty(%s, Enabled=false)", channel))
 					}
 				}
+			case "phantom":
+				createArtifact(taskData.Task.ID, "API Call", "OpenService(EventLog) → NtQueryInformationThread → TerminateThread (wevtsvc.dll threads)")
+			case "delete-events":
+				if channel != "" {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtExportLog + EvtClearLog(%s) — selective event deletion", channel))
+				}
 			}
 			return response
 		},
@@ -251,6 +265,16 @@ func init() {
 				if eventCount > 0 {
 					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
 						fmt.Sprintf("[EventLog] Queried %s: %d events returned", channel, eventCount))
+				}
+			case "phantom":
+				if strings.Contains(responseText, "killed") {
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DEFENSE EVASION] Phant0m: killed EventLog service threads on %s", processResponse.TaskData.Callback.Host), true)
+				}
+			case "delete-events":
+				if strings.Contains(responseText, "Deleted") {
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DEFENSE EVASION] Selective event deletion from '%s' on %s", channel, processResponse.TaskData.Callback.Host), true)
 				}
 			}
 			return response

