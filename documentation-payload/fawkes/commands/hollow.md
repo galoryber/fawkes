@@ -11,7 +11,7 @@ Process hollowing — create a suspended process and redirect execution to shell
 
 **Windows:** Creates a new process with CREATE_SUSPENDED, allocates memory, writes shellcode, updates thread context (RCX), resumes. Supports PPID spoofing and non-Microsoft DLL blocking.
 
-**Linux:** Spawns a process with PTRACE_TRACEME (stopped at exec), finds a syscall gadget, allocates memory via remote mmap, writes shellcode through /proc/PID/mem, redirects RIP, and detaches. Default target: `/usr/bin/sleep`.
+**Linux (amd64/arm64):** Spawns a process with PTRACE_TRACEME (stopped at exec), finds a syscall gadget (0x0F 0x05 on amd64, SVC #0 on arm64), allocates memory via remote mmap, writes shellcode through /proc/PID/mem, redirects execution (RIP on amd64, PC on arm64), and detaches. Default target: `/usr/bin/sleep`.
 
 **macOS (ARM64):** Spawns a process with PT_TRACE_ME (stopped at exec), obtains the child's Mach task port via `task_for_pid`, allocates RW memory via `mach_vm_allocate`, writes shellcode via `mach_vm_write`, changes protection to RX via `mach_vm_protect`, and redirects the instruction pointer using `ptrace(PT_DETACH, pid, shellcode_addr, 0)`. Requires root. Default target: `/bin/sleep`.
 

@@ -11,7 +11,7 @@ Inject shellcode into a remote process or **migrate the agent** into another pro
 
 **Windows:** Uses VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread (or indirect syscalls via ntdll). Supports auto-target selection scoring processes for EDR avoidance.
 
-**Linux:** Uses ptrace attach + /proc/PID/mem direct write. Avoids PTRACE_POKETEXT which is monitored by some EDR products. Allocates memory via remote mmap syscall, writes shellcode through the /proc/mem pseudo-file, then redirects RIP.
+**Linux (amd64/arm64):** Uses ptrace attach + /proc/PID/mem direct write. Avoids PTRACE_POKETEXT which is monitored by some EDR products. Allocates memory via remote mmap syscall, writes shellcode through the /proc/mem pseudo-file, then redirects execution (RIP on amd64, PC on arm64). Yama ptrace_scope is checked before attach with actionable guidance.
 
 ### Actions
 

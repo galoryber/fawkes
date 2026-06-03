@@ -9,7 +9,7 @@ hidden = false
 
 Linux process injection via the ptrace syscall. Attaches to a target process, writes shellcode into an executable memory region, redirects execution, and optionally restores the original code and registers after completion. Includes a configuration check mode that reports ptrace scope, capabilities, and candidate processes.
 
-{{% notice info %}}Linux Only (x86_64){{% /notice %}}
+{{% notice info %}}Linux Only (amd64 / arm64){{% /notice %}}
 
 ## Arguments
 
@@ -80,7 +80,10 @@ The `check` action reports:
 - If `restore=true`, the target process resumes normal execution after injection — minimal forensic footprint
 - If `restore=false`, the process is permanently modified — original code at the injection point is lost
 - On failure at any step, cleanup is attempted (restore code + registers + detach)
-- x86_64 architecture only (uses `PTRACE_GETREGS`/`PTRACE_SETREGS` with `PtraceRegs`)
+- Supports both amd64 (x86_64) and arm64 (aarch64) architectures
+- **amd64:** Uses syscall gadget (0x0F 0x05), INT3 (0xCC) for restore breakpoint
+- **arm64:** Uses SVC #0 gadget, BRK #0 for restore breakpoint. Syscall numbers differ (mmap=222, mprotect=226, munmap=215)
+- Yama ptrace_scope is checked before attach with actionable error messages
 
 ## LD_PRELOAD Hijacking
 

