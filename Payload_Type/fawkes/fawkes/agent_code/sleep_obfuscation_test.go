@@ -423,6 +423,30 @@ func TestVaultKeyZeroedAfterRestore(t *testing.T) {
 	}
 }
 
+func TestObfuscateZerosDefaultUserAgent(t *testing.T) {
+	agent := makeTestAgent()
+	c2 := profiles.Profile(makeTestHTTPProfile())
+
+	origUA := commands.DefaultUserAgent
+	commands.DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+	defer func() { commands.DefaultUserAgent = origUA }()
+
+	vault := obfuscateSleep(agent, c2)
+	if vault == nil {
+		t.Fatal("obfuscateSleep returned nil")
+	}
+
+	if commands.DefaultUserAgent != "" {
+		t.Error("DefaultUserAgent not zeroed during sleep")
+	}
+
+	deobfuscateSleep(vault, agent, c2)
+
+	if commands.DefaultUserAgent != "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" {
+		t.Errorf("DefaultUserAgent not restored: got %q", commands.DefaultUserAgent)
+	}
+}
+
 func TestMultipleObfuscateCycles(t *testing.T) {
 	agent := makeTestAgent()
 	origUUID := agent.PayloadUUID
