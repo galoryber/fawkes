@@ -80,7 +80,10 @@ func guardSleepPages(vault *sleepVault) *guardedPages {
 	vault.profileBlob = nil
 	vault.tcpBlob = nil
 
-	unix.Mprotect(g.data, unix.PROT_NONE)
+	if err := unix.Mprotect(g.data, unix.PROT_NONE); err != nil {
+		_ = unix.Munmap(data)
+		return nil
+	}
 
 	return g
 }
@@ -115,6 +118,6 @@ func unguardSleepPages(guard *guardedPages, vault *sleepVault) {
 	for i := range guard.data {
 		guard.data[i] = 0
 	}
-	unix.Munmap(guard.data)
+	_ = unix.Munmap(guard.data)
 	guard.data = nil
 }
