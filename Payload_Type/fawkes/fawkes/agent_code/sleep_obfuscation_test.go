@@ -126,17 +126,21 @@ func TestSleepEncryptUniqueCiphertexts(t *testing.T) {
 
 func makeTestAgent() *structs.Agent {
 	return &structs.Agent{
-		PayloadUUID:   "550e8400-e29b-41d4-a716-446655440000",
-		Domain:        "CONTOSO.LOCAL",
-		Host:          "WORKSTATION-01",
-		User:          "admin",
-		InternalIP:    "10.0.0.50",
-		ExternalIP:    "203.0.113.10",
-		ProcessName:   "svchost.exe",
-		Description:   "550e8400",
-		SleepInterval: 30,
-		Jitter:        20,
-		PID:           1234,
+		PayloadUUID:       "550e8400-e29b-41d4-a716-446655440000",
+		Domain:            "CONTOSO.LOCAL",
+		Host:              "WORKSTATION-01",
+		User:              "admin",
+		InternalIP:        "10.0.0.50",
+		ExternalIP:        "203.0.113.10",
+		ProcessName:       "svchost.exe",
+		Description:       "550e8400",
+		SleepInterval:     30,
+		Jitter:            20,
+		JitterProfile:     "normal",
+		PID:               1234,
+		WorkingHoursStart: 540,
+		WorkingHoursEnd:   1020,
+		WorkingDays:       []int{1, 2, 3, 4, 5},
 	}
 }
 
@@ -189,6 +193,20 @@ func TestObfuscateSleepZerosAgentFields(t *testing.T) {
 		t.Error("Description not zeroed")
 	}
 
+	// Operational fields should be zeroed
+	if agent.JitterProfile != "" {
+		t.Error("JitterProfile not zeroed")
+	}
+	if agent.WorkingHoursStart != 0 {
+		t.Error("WorkingHoursStart not zeroed")
+	}
+	if agent.WorkingHoursEnd != 0 {
+		t.Error("WorkingHoursEnd not zeroed")
+	}
+	if agent.WorkingDays != nil {
+		t.Error("WorkingDays not zeroed")
+	}
+
 	// Non-sensitive fields should be untouched
 	if agent.SleepInterval != 30 {
 		t.Errorf("SleepInterval changed: got %d", agent.SleepInterval)
@@ -219,6 +237,11 @@ func TestObfuscateDeobfuscateRestoresAgentFields(t *testing.T) {
 	origExternalIP := agent.ExternalIP
 	origProcessName := agent.ProcessName
 	origDesc := agent.Description
+	origJitterProfile := agent.JitterProfile
+	origWorkingStart := agent.WorkingHoursStart
+	origWorkingEnd := agent.WorkingHoursEnd
+	origWorkingDays := make([]int, len(agent.WorkingDays))
+	copy(origWorkingDays, agent.WorkingDays)
 
 	c2 := profiles.Profile(makeTestHTTPProfile())
 
@@ -252,6 +275,24 @@ func TestObfuscateDeobfuscateRestoresAgentFields(t *testing.T) {
 	}
 	if agent.Description != origDesc {
 		t.Errorf("Description: got %q, want %q", agent.Description, origDesc)
+	}
+	if agent.JitterProfile != origJitterProfile {
+		t.Errorf("JitterProfile: got %q, want %q", agent.JitterProfile, origJitterProfile)
+	}
+	if agent.WorkingHoursStart != origWorkingStart {
+		t.Errorf("WorkingHoursStart: got %d, want %d", agent.WorkingHoursStart, origWorkingStart)
+	}
+	if agent.WorkingHoursEnd != origWorkingEnd {
+		t.Errorf("WorkingHoursEnd: got %d, want %d", agent.WorkingHoursEnd, origWorkingEnd)
+	}
+	if len(agent.WorkingDays) != len(origWorkingDays) {
+		t.Errorf("WorkingDays length: got %d, want %d", len(agent.WorkingDays), len(origWorkingDays))
+	} else {
+		for i, d := range agent.WorkingDays {
+			if d != origWorkingDays[i] {
+				t.Errorf("WorkingDays[%d]: got %d, want %d", i, d, origWorkingDays[i])
+			}
+		}
 	}
 }
 
