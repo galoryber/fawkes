@@ -11,9 +11,9 @@ Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and F
 
 ### Platform Support
 
-| Action | Windows (Chromium) | Windows (Firefox) | macOS (Chromium) | macOS (Firefox) | Linux (Chromium) | Linux (Firefox) |
-|--------|-------------------|-------------------|-----------------|----------------|-----------------|----------------|
-| passwords | Yes (DPAPI) | No | Yes (Keychain) | No | Yes (GNOME Keyring/KWallet) | No |
+| Action | Windows (Chromium) | Windows (Firefox) | macOS (Chromium) | macOS (Firefox) | macOS (Safari) | Linux (Chromium) | Linux (Firefox) |
+|--------|-------------------|-------------------|-----------------|----------------|----------------|-----------------|----------------|
+| passwords | Yes (DPAPI) | Yes (key4.db) | Yes (Keychain) | Yes (key4.db) | Yes (Keychain) | Yes (GNOME Keyring/KWallet) | Yes (key4.db) |
 | cookies | Yes (DPAPI) | Yes (plaintext) | Yes (Keychain) | Yes (plaintext) | Yes (GNOME Keyring/KWallet) | Yes (plaintext) |
 | history | Yes | Yes | Yes | Yes | Yes | Yes |
 | autofill | Yes | Yes | Yes | Yes | Yes | Yes |
@@ -64,9 +64,9 @@ Extract recent download history (file paths, URLs, sizes, states):
 browser -action downloads
 ```
 
-### Harvest Credentials (All Platforms, Chromium Only)
+### Harvest Credentials (All Platforms)
 
-Extract saved passwords from all installed Chromium-based browsers:
+Extract saved passwords from Chromium browsers, Firefox (key4.db decryption), and Safari (macOS Keychain):
 ```
 browser -action passwords
 ```
@@ -126,7 +126,26 @@ browser -action cookies -browser chrome
    - Autofill: `moz_formhistory` in `formhistory.sqlite`
    - Cookies: `moz_cookies` in `cookies.sqlite` (plaintext values)
    - Downloads: `downloads.json` (plaintext JSON with source URLs, file paths, sizes)
+   - Passwords: `logins.json` entries decrypted via `key4.db` master key
 5. Firefox timestamps (PRTime) are microseconds since Unix epoch
+
+### Firefox Password Decryption
+
+1. Opens `key4.db` (NSS key store) from the Firefox profile
+2. Reads the global salt from the `metadata` table
+3. Verifies the master password (default: empty) against the `password-check` entry
+4. Extracts the encrypted master key from the `nssPrivate` table
+5. Decrypts the master key using PBES2 (PBKDF2-HMAC-SHA256 + AES-256-CBC) or legacy PBE-SHA1-3DES
+6. Uses the 24-byte master key to decrypt individual login entries from `logins.json` via 3DES-CBC
+7. Decrypted credentials are registered in the Mythic credential vault
+
+### Safari (macOS only)
+
+1. Enumerates internet passwords from the macOS login Keychain via `security dump-keychain`
+2. Filters for `inet` class items (internet passwords stored by Safari)
+3. Extracts server, account, protocol, and port from each Keychain entry
+4. Attempts to retrieve actual passwords via `security find-internet-password -g`
+5. Password retrieval may require an unlocked Keychain or trigger a user prompt
 
 ### Chromium Decryption (passwords, cookies — all platforms)
 
@@ -144,7 +163,8 @@ browser -action cookies -browser chrome
 - Supported browsers: Chrome, Edge, Chromium, Firefox
 - History/autofill returns up to 500 most recent entries per profile
 - Chrome timestamps use a custom epoch (microseconds since 1601-01-01 UTC); auto-detected
-- Firefox passwords use NSS encryption and are not currently supported for decryption
+- Firefox passwords are decrypted via NSS key4.db (no master password required if none was set)
+- Safari passwords (macOS) are extracted from the login Keychain — password retrieval requires an unlocked Keychain
 
 ## MITRE ATT&CK Mapping
 
