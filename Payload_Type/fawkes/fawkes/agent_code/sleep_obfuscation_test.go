@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
+	"time"
 
 	"fawkes/pkg/commands"
 	fhttp "fawkes/pkg/http"
@@ -444,6 +445,60 @@ func TestObfuscateZerosDefaultUserAgent(t *testing.T) {
 
 	if commands.DefaultUserAgent != "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" {
 		t.Errorf("DefaultUserAgent not restored: got %q", commands.DefaultUserAgent)
+	}
+}
+
+func TestObfuscateDeobfuscatePerformance(t *testing.T) {
+	agent := makeTestAgent()
+	c2 := profiles.Profile(makeTestHTTPProfile())
+
+	var totalObfuscate, totalDeobfuscate, totalGuard, totalUnguard int64
+	iterations := 100
+
+	for i := 0; i < iterations; i++ {
+		// Measure obfuscate
+		start := time.Now()
+		vault := obfuscateSleep(agent, c2)
+		obfTime := time.Since(start)
+		totalObfuscate += obfTime.Nanoseconds()
+
+		if vault == nil {
+			t.Fatal("obfuscateSleep returned nil")
+		}
+
+		// Measure guard
+		start = time.Now()
+		guard := guardSleepPages(vault)
+		guardTime := time.Since(start)
+		totalGuard += guardTime.Nanoseconds()
+
+		// Measure unguard
+		start = time.Now()
+		unguardSleepPages(guard, vault)
+		unguardTime := time.Since(start)
+		totalUnguard += unguardTime.Nanoseconds()
+
+		// Measure deobfuscate
+		start = time.Now()
+		deobfuscateSleep(vault, agent, c2)
+		deobfTime := time.Since(start)
+		totalDeobfuscate += deobfTime.Nanoseconds()
+	}
+
+	avgObf := time.Duration(totalObfuscate / int64(iterations))
+	avgDeobf := time.Duration(totalDeobfuscate / int64(iterations))
+	avgGuard := time.Duration(totalGuard / int64(iterations))
+	avgUnguard := time.Duration(totalUnguard / int64(iterations))
+	totalCycle := avgObf + avgGuard + avgUnguard + avgDeobf
+
+	t.Logf("Avg obfuscate:   %v", avgObf)
+	t.Logf("Avg guard:       %v", avgGuard)
+	t.Logf("Avg unguard:     %v", avgUnguard)
+	t.Logf("Avg deobfuscate: %v", avgDeobf)
+	t.Logf("Total cycle:     %v", totalCycle)
+
+	if totalCycle > 50*time.Millisecond {
+		t.Errorf("sleep mask cycle too slow: %v (must be < 50ms)", totalCycle)
 	}
 }
 
