@@ -201,6 +201,156 @@ func TestSchtaskCommand_StopNoName(t *testing.T) {
 	}
 }
 
+func TestBuildTaskXML_DefaultTrigger(t *testing.T) {
+	xml := buildTaskXML(schtaskArgs{Program: "cmd.exe"})
+	if !strings.Contains(xml, "<LogonTrigger>") {
+		t.Error("expected ONLOGON trigger as default")
+	}
+	if !strings.Contains(xml, "<Command>cmd.exe</Command>") {
+		t.Error("expected Command element with program")
+	}
+	if strings.Contains(xml, "<Arguments>") {
+		t.Error("should not include Arguments when args is empty")
+	}
+}
+
+func TestBuildTaskXML_WithArgs(t *testing.T) {
+	xml := buildTaskXML(schtaskArgs{Program: "cmd.exe", Args: "/c echo test"})
+	if !strings.Contains(xml, "<Arguments>/c echo test</Arguments>") {
+		t.Errorf("expected Args element, got:\n%s", xml)
+	}
+}
+
+func TestBuildTaskXML_SystemUser(t *testing.T) {
+	xml := buildTaskXML(schtaskArgs{
+		Program: "cmd.exe",
+		User:    "SYSTEM",
+	})
+	if !strings.Contains(xml, "S-1-5-18") {
+		t.Error("SYSTEM user should use SID S-1-5-18")
+	}
+	if !strings.Contains(xml, "HighestAvailable") {
+		t.Error("SYSTEM user should have HighestAvailable RunLevel")
+	}
+}
+
+func TestBuildTaskXML_NTAuthoritySystem(t *testing.T) {
+	xml := buildTaskXML(schtaskArgs{
+		Program: "cmd.exe",
+		User:    "NT AUTHORITY\\SYSTEM",
+	})
+	if !strings.Contains(xml, "S-1-5-18") {
+		t.Error("NT AUTHORITY\\SYSTEM should use SID S-1-5-18")
+	}
+}
+
+func TestBuildTaskXML_RegularUser(t *testing.T) {
+	xml := buildTaskXML(schtaskArgs{
+		Program: "cmd.exe",
+		User:    "DOMAIN\\user",
+	})
+	if !strings.Contains(xml, "DOMAIN\\user") {
+		t.Error("expected user in UserId element")
+	}
+	if !strings.Contains(xml, "InteractiveToken") {
+		t.Error("regular user should have InteractiveToken LogonType")
+	}
+	if !strings.Contains(xml, "LeastPrivilege") {
+		t.Error("regular user should have LeastPrivilege RunLevel")
+	}
+}
+
+func TestBuildTaskXML_XMLEscaping(t *testing.T) {
+	xml := buildTaskXML(schtaskArgs{
+		Program: "cmd.exe",
+		Args:    "/c echo <test>&\"done\"",
+	})
+	if strings.Contains(xml, "<test>") {
+		t.Error("XML special chars should be escaped")
+	}
+	if !strings.Contains(xml, "&lt;test&gt;") {
+		t.Error("expected escaped angle brackets")
+	}
+	if !strings.Contains(xml, "&amp;") {
+		t.Error("expected escaped ampersand")
+	}
+}
+
+func TestBuildTaskXML_TriggerTypes(t *testing.T) {
+	tests := []struct {
+		trigger  string
+		contains string
+	}{
+		{"ONLOGON", "<LogonTrigger>"},
+		{"ONSTART", "<BootTrigger>"},
+		{"ONIDLE", "<IdleTrigger>"},
+		{"DAILY", "<CalendarTrigger>"},
+		{"WEEKLY", "<ScheduleByWeek>"},
+		{"ONCE", "<TimeTrigger>"},
+	}
+	for _, tt := range tests {
+		xml := buildTaskXML(schtaskArgs{Program: "cmd.exe", Trigger: tt.trigger})
+		if !strings.Contains(xml, tt.contains) {
+			t.Errorf("trigger %s: expected %s in output", tt.trigger, tt.contains)
+		}
+	}
+}
+
+func TestBuildTaskXML_XMLHeader(t *testing.T) {
+	xml := buildTaskXML(schtaskArgs{Program: "cmd.exe"})
+	if !strings.HasPrefix(xml, `<?xml version="1.0"`) {
+		t.Error("expected XML declaration")
+	}
+	if !strings.Contains(xml, "schemas.microsoft.com/windows/2004/02/mit/task") {
+		t.Error("expected Task Scheduler namespace")
+	}
+}
+
+func TestExtractXMLValue_Basic(t *testing.T) {
+	xml := "<Root><Name>test-task</Name><Status>Ready</Status></Root>"
+	if v := extractXMLValue(xml, "Name"); v != "test-task" {
+		t.Errorf("expected 'test-task', got %q", v)
+	}
+	if v := extractXMLValue(xml, "Status"); v != "Ready" {
+		t.Errorf("expected 'Ready', got %q", v)
+	}
+}
+
+func TestExtractXMLValue_NotFound(t *testing.T) {
+	xml := "<Root><Name>test</Name></Root>"
+	if v := extractXMLValue(xml, "Missing"); v != "" {
+		t.Errorf("expected empty for missing tag, got %q", v)
+	}
+}
+
+func TestExtractXMLValue_Empty(t *testing.T) {
+	xml := "<Root><Name></Name></Root>"
+	if v := extractXMLValue(xml, "Name"); v != "" {
+		t.Errorf("expected empty string, got %q", v)
+	}
+}
+
+func TestExtractXMLValue_Whitespace(t *testing.T) {
+	xml := "<Root><Name>  padded  </Name></Root>"
+	if v := extractXMLValue(xml, "Name"); v != "padded" {
+		t.Errorf("expected trimmed 'padded', got %q", v)
+	}
+}
+
+func TestExtractXMLValue_UnclosedTag(t *testing.T) {
+	xml := "<Root><Name>value"
+	if v := extractXMLValue(xml, "Name"); v != "" {
+		t.Errorf("expected empty for unclosed tag, got %q", v)
+	}
+}
+
+func TestExtractXMLValue_Nested(t *testing.T) {
+	xml := "<Task><Settings><Enabled>true</Enabled></Settings></Task>"
+	if v := extractXMLValue(xml, "Enabled"); v != "true" {
+		t.Errorf("expected 'true', got %q", v)
+	}
+}
+
 // Integration test: create → query → disable → enable → run → stop → delete lifecycle
 func TestSchtaskCommand_Lifecycle(t *testing.T) {
 	cmd := &SchtaskCommand{}
