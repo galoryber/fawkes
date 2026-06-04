@@ -468,6 +468,7 @@ Prevent the agent from executing on unauthorized systems. Configured at build ti
 | `env_key_domain` | Regex | Domain must match (e.g., `CONTOSO` or `.*\.local`) |
 | `env_key_username` | Regex | Username must match (e.g., `admin.*` or `svc_.*`) |
 | `env_key_process` | String | Process name that must be running (e.g., `outlook.exe`) |
+| `env_key_cpuid` | Regex | CPU brand string must match (e.g., `.*Intel.*i7-12700.*` or `.*AMD.*5950X.*`). Prevents execution in sandboxes with different CPU models. |
 | `env_key_derive` | Choice | Encrypt C2 config with key derived from target host properties. Options: `hostname`, `domain`, `username`, `hostname+domain`, `hostname+domain+username`. Wrong host = AES decrypt fails = silent exit. Stronger than regex match — config values never appear in binary. |
 
 All patterns are case-insensitive and anchored to match the full value. Multiple keys can be combined — all must pass. Invalid regex patterns fail closed (agent exits). Leave empty to skip a check.
@@ -509,7 +510,9 @@ Combined with self-delete, the agent appears as a legitimate kernel thread or se
 
 ### Sleep Memory Guard Pages
 
-Enable `sleep_guard_pages` (requires `sleep_mask=true`) to apply `VirtualProtect(PAGE_NOACCESS)` on encrypted vault memory during sleep cycles. After the sleep mask encrypts sensitive data (AES-256-GCM) and zeros originals, guard pages move the vault to dedicated `VirtualAlloc`'d memory and mark it NO_ACCESS. EDR memory scanners, `ReadProcessMemory`, WinDbg, and Process Hacker get `STATUS_ACCESS_VIOLATION` when trying to read the vault. Pages are restored to `PAGE_READWRITE` on wake before decryption. Windows only.
+Enable `sleep_guard_pages` (requires `sleep_mask=true`) to apply `VirtualProtect(PAGE_NOACCESS)` on encrypted vault memory during sleep cycles. After the sleep mask encrypts sensitive data (AES-256-GCM) and zeros originals, guard pages move the vault to dedicated `VirtualAlloc`'d memory and mark it NO_ACCESS. EDR memory scanners, `ReadProcessMemory`, WinDbg, and Process Hacker get `STATUS_ACCESS_VIOLATION` when trying to read the vault. Pages are restored to `PAGE_READWRITE` on wake before decryption. On Linux/macOS, guard pages use `mmap(MAP_ANON)` + `mprotect(PROT_NONE)` — probing triggers `SIGSEGV`.
+
+The sleep vault key is hardware-bound via HKDF-SHA256: a random seed is mixed with a SHA-256 hash of the machine's CPU brand string and UUID. If someone extracts the vault blob from a memory dump and attempts decryption on different hardware, the key derivation produces a different key.
 
 ### Call Stack Spoofing
 
