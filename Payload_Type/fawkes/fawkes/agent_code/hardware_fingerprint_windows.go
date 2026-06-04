@@ -21,6 +21,8 @@ func collectHardwareAttributes() []byte {
 	return []byte("windows:" + strings.Join(parts, "|"))
 }
 
+func getCPUBrand() string { return cpuIdentFromRegistry() }
+
 func cpuIdentFromRegistry() string {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE,
 		`HARDWARE\DESCRIPTION\System\CentralProcessor\0`, registry.READ)

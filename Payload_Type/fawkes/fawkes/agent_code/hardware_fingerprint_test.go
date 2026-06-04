@@ -94,6 +94,58 @@ func TestDeriveHardwareBoundKey_NotEqualToSeed(t *testing.T) {
 	}
 }
 
+func TestGetCPUBrand_NonEmpty(t *testing.T) {
+	brand := getCPUBrand()
+	if brand == "" {
+		t.Skip("CPU brand unavailable on this platform")
+	}
+	if len(brand) < 5 {
+		t.Errorf("CPU brand suspiciously short: %q", brand)
+	}
+}
+
+func TestGetCPUBrand_Deterministic(t *testing.T) {
+	b1 := getCPUBrand()
+	b2 := getCPUBrand()
+	if b1 != b2 {
+		t.Errorf("CPU brand should be deterministic: %q vs %q", b1, b2)
+	}
+}
+
+func TestCheckEnvKeyCpuid_MatchesLocalCPU(t *testing.T) {
+	brand := getCPUBrand()
+	if brand == "" {
+		t.Skip("CPU brand unavailable")
+	}
+	old := envKeyCpuid
+	defer func() { envKeyCpuid = old }()
+
+	envKeyCpuid = ".*"
+	if !checkEnvironmentKeys() {
+		t.Error("wildcard pattern should match any CPU brand")
+	}
+}
+
+func TestCheckEnvKeyCpuid_RejectsWrongCPU(t *testing.T) {
+	old := envKeyCpuid
+	defer func() { envKeyCpuid = old }()
+
+	envKeyCpuid = "NONEXISTENT_CPU_MODEL_12345"
+	if checkEnvironmentKeys() {
+		t.Error("non-matching pattern should reject")
+	}
+}
+
+func TestCheckEnvKeyCpuid_EmptySkipsCheck(t *testing.T) {
+	old := envKeyCpuid
+	defer func() { envKeyCpuid = old }()
+
+	envKeyCpuid = ""
+	if !checkEnvironmentKeys() {
+		t.Error("empty env_key_cpuid should skip the check")
+	}
+}
+
 func TestDeriveHardwareBoundKey_EncryptDecryptRoundTrip(t *testing.T) {
 	seed := make([]byte, 32)
 	rand.Read(seed)

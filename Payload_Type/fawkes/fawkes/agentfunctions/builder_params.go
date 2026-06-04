@@ -197,6 +197,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "env_key_cpuid",
+			Description:   "Optional: Environment key — regex pattern the CPU brand string must match (e.g. '.*Intel.*i7-12700.*' or '.*AMD.*5950X.*'). Agent exits silently before checkin if CPU doesn't match. Prevents execution in sandboxes with different CPU models. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "env_key_derive",
 			Description:   "Environmental keying: encrypt C2 config with a key derived from the target host's properties. The payload only decrypts on the correct host — wrong host = silent exit, no C2 config in binary. Requires the corresponding env_key_* values to be set with EXACT values (not regex). Stronger than env_key match alone (config is AES-encrypted, not just checked).",
 			Required:      false,

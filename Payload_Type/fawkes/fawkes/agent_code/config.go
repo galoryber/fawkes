@@ -40,6 +40,7 @@ var (
 	envKeyDomain           string = "" // Environment key: domain must match this regex
 	envKeyUsername         string = "" // Environment key: username must match this regex
 	envKeyProcess          string = "" // Environment key: this process must be running
+	envKeyCpuid            string = "" // Environment key: CPU brand string must match this regex
 	envKeyDerive           string = "" // Environmental keying method: hostname, domain, username, hostname+domain, hostname+domain+username
 	envDerivedBlob         string = "" // Base64 AES-GCM encrypted config blob (keyed to host environment)
 	selfDelete             string = "" // Self-delete binary from disk after execution starts
@@ -128,6 +129,7 @@ func clearGlobals() {
 	envKeyDomain = ""
 	envKeyUsername = ""
 	envKeyProcess = ""
+	envKeyCpuid = ""
 	envKeyDerive = ""
 	envDerivedBlob = ""
 

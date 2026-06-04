@@ -20,6 +20,8 @@ func collectHardwareAttributes() []byte {
 	return []byte("darwin:" + strings.Join(parts, "|"))
 }
 
+func getCPUBrand() string { return cpuBrandSysctl() }
+
 func cpuBrandSysctl() string {
 	out, err := exec.Command("sysctl", "-n", "machdep.cpu.brand_string").Output()
 	if err != nil {

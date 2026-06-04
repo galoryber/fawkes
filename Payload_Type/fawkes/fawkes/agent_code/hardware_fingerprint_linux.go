@@ -20,6 +20,8 @@ func collectHardwareAttributes() []byte {
 	return []byte("linux:" + strings.Join(parts, "|"))
 }
 
+func getCPUBrand() string { return cpuModelFromProc() }
+
 func cpuModelFromProc() string {
 	data, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {

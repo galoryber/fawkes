@@ -212,6 +212,9 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if ekProcess, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_process"); err == nil && ekProcess != "" {
 		ldflags += fmt.Sprintf(" -X '%s.envKeyProcess=%s'", fawkesMainPackage, ekProcess)
 	}
+	if ekCpuid, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_cpuid"); err == nil && ekCpuid != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyCpuid=%s'", fawkesMainPackage, ekCpuid)
+	}
 	if selfDel, err := payloadBuildMsg.BuildParameters.GetBooleanArg("self_delete"); err == nil && selfDel {
 		ldflags += fmt.Sprintf(" -X '%s.selfDelete=true'", fawkesMainPackage)
 	}
