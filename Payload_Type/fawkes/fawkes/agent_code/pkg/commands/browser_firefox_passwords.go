@@ -132,12 +132,11 @@ func extractFirefoxProfile(profileDir, browserName, profileName string) ([]firef
 }
 
 var (
-	oidPBES2           = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 13}
-	oidPBKDF2          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 12}
-	oidAES256CBC       = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 42}
-	oidHMACSHA256      = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 9}
-	oidPBESHA1TriDES   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 12, 5, 1, 3}
-	oidHMACSHA1        = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 7}
+	oidPBES2         = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 13}
+	oidPBKDF2        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 5, 12}
+	oidAES256CBC     = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 1, 42}
+	oidPBESHA1TriDES = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 12, 5, 1, 3}
+	oidHMACSHA1      = asn1.ObjectIdentifier{1, 2, 840, 113549, 2, 7}
 )
 
 func extractFirefoxMasterKey(key4Path string) ([]byte, error) {
@@ -191,22 +190,6 @@ func verifyMasterPassword(db *sql.DB, globalSalt, masterPassword []byte) error {
 		return fmt.Errorf("wrong master password (or unsupported key4.db format)")
 	}
 	return nil
-}
-
-type pbes2Params struct {
-	KDF struct {
-		Algorithm asn1.ObjectIdentifier
-		Params    struct {
-			Salt       []byte
-			Iterations int
-			KeyLength  int                   `asn1:"optional"`
-			PRF        asn1.ObjectIdentifier `asn1:"optional"`
-		}
-	}
-	Encryption struct {
-		Algorithm asn1.ObjectIdentifier
-		IV        []byte
-	}
 }
 
 func decryptNSSEntry(derData, globalSalt, masterPassword []byte) ([]byte, error) {
