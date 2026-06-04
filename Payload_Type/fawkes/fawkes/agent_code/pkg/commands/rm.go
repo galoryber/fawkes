@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -25,9 +26,9 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: No path provided")
 	}
 
-	args, parseErr := unmarshalParams[rmArgs](task)
-	if parseErr != nil {
-		return *parseErr
+	var args rmArgs
+	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+		args.Path = task.Params
 	}
 
 	path := args.Path
