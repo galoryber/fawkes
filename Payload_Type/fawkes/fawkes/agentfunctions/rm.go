@@ -47,20 +47,14 @@ func init() {
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "rm_new.js"), Author: "@galoryber"},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			input = strings.TrimSpace(input)
-			// Try JSON first (e.g., {"path": "/tmp/test"} or {"full_path": "..."} from file browser)
 			var jsonArgs map[string]interface{}
 			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
 				if fullPath, ok := jsonArgs["full_path"].(string); ok && fullPath != "" {
 					args.SetManualArgs(fullPath)
 					return nil
 				}
-				if path, ok := jsonArgs["path"].(string); ok {
-					args.SetManualArgs(path)
-					return nil
-				}
+				return args.LoadArgsFromDictionary(jsonArgs)
 			}
-			// Strip surrounding quotes so paths like
-			// "C:\Program Data" resolve to C:\Program Data
 			if len(input) >= 2 {
 				if (input[0] == '"' && input[len(input)-1] == '"') ||
 					(input[0] == '\'' && input[len(input)-1] == '\'') {
