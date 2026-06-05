@@ -15,17 +15,16 @@ import (
 )
 
 //go:cgo_import_dynamic libc_pthread_create pthread_create "/usr/lib/libSystem.B.dylib"
-//go:cgo_import_dynamic libc___ulock_wait __ulock_wait "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc___ulock_wake __ulock_wake "/usr/lib/libSystem.B.dylib"
 
 var libc_pthread_create_trampoline_addr uintptr
-var libc___ulock_wait_trampoline_addr uintptr
 var libc___ulock_wake_trampoline_addr uintptr
 
-// darwinSyscall6 calls a libSystem function through its trampoline address.
-// On darwin arm64, syscall.Syscall6 (uppercase) uses raw SVC which treats the
-// first arg as a BSD syscall number. The lowercase syscall.syscall6 correctly
-// calls through the function pointer via libcCall. We access it via go:linkname.
+// darwinSyscall6 and darwinSyscall call libSystem functions through trampoline
+// addresses. On darwin arm64, syscall.Syscall6 (uppercase) uses raw SVC treating
+// the first arg as a BSD syscall number, not a function pointer. The lowercase
+// syscall.syscall6/syscall correctly calls through the function pointer via
+// libcCall.
 //
 //go:linkname darwinSyscall6 syscall.syscall6
 func darwinSyscall6(fn, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2 uintptr, err syscall.Errno)
@@ -172,17 +171,6 @@ func (s *stackSpoofState) sleep(d time.Duration) {
 	}
 
 	atomic.StoreUint32(statePtr, spoofStateIdle)
-}
-
-func ulockWait(addr uintptr, expectedValue uint64) {
-	darwinSyscall6(
-		libc___ulock_wait_trampoline_addr,
-		uintptr(ulCompareAndWait),
-		addr,
-		uintptr(expectedValue),
-		0,
-		0, 0,
-	)
 }
 
 func ulockWake(addr uintptr) {
