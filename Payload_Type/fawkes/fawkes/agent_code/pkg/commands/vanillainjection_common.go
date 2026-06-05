@@ -7,6 +7,7 @@ type VanillaInjectionParams struct {
 	PID          int    `json:"pid"`
 	Action       string `json:"action"`
 	Target       string `json:"target"`
+	SpawnTarget  string `json:"spawn_target"`
 	StackSpoof   bool   `json:"stack_spoof"`
 }
 

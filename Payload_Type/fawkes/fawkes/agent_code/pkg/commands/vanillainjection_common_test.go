@@ -28,16 +28,19 @@ func TestIsMigrateAction(t *testing.T) {
 
 func TestVanillaInjectionParams_JSON(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		wantSC string
-		wantP  int
-		wantA  string
-		wantT  string
+		name    string
+		input   string
+		wantSC  string
+		wantP   int
+		wantA   string
+		wantT   string
+		wantST  string
 	}{
-		{"full", `{"shellcode_b64":"AQID","pid":1234,"action":"inject","target":"auto"}`, "AQID", 1234, "inject", "auto"},
-		{"migrate", `{"shellcode_b64":"BAUG","pid":99,"action":"migrate"}`, "BAUG", 99, "migrate", ""},
-		{"minimal", `{"shellcode_b64":"AA==","pid":1}`, "AA==", 1, "", ""},
+		{"full", `{"shellcode_b64":"AQID","pid":1234,"action":"inject","target":"auto"}`, "AQID", 1234, "inject", "auto", ""},
+		{"migrate", `{"shellcode_b64":"BAUG","pid":99,"action":"migrate"}`, "BAUG", 99, "migrate", "", ""},
+		{"minimal", `{"shellcode_b64":"AA==","pid":1}`, "AA==", 1, "", "", ""},
+		{"ldpreload", `{"shellcode_b64":"kJCQkMM=","action":"ldpreload","spawn_target":"/usr/bin/id"}`, "kJCQkMM=", 0, "ldpreload", "", "/usr/bin/id"},
+		{"ldpreload_no_target", `{"shellcode_b64":"kJCQkMM=","action":"ldpreload"}`, "kJCQkMM=", 0, "ldpreload", "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,6 +59,9 @@ func TestVanillaInjectionParams_JSON(t *testing.T) {
 			}
 			if p.Target != tt.wantT {
 				t.Errorf("Target = %q, want %q", p.Target, tt.wantT)
+			}
+			if p.SpawnTarget != tt.wantST {
+				t.Errorf("SpawnTarget = %q, want %q", p.SpawnTarget, tt.wantST)
 			}
 		})
 	}
