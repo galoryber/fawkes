@@ -22,6 +22,17 @@ var libc_pthread_create_trampoline_addr uintptr
 var libc___ulock_wait_trampoline_addr uintptr
 var libc___ulock_wake_trampoline_addr uintptr
 
+// darwinSyscall6 calls a libSystem function through its trampoline address.
+// On darwin arm64, syscall.Syscall6 (uppercase) uses raw SVC which treats the
+// first arg as a BSD syscall number. The lowercase syscall.syscall6 correctly
+// calls through the function pointer via libcCall. We access it via go:linkname.
+//
+//go:linkname darwinSyscall6 syscall.syscall6
+func darwinSyscall6(fn, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2 uintptr, err syscall.Errno)
+
+//go:linkname darwinSyscall syscall.syscall
+func darwinSyscall(fn, a1, a2, a3 uintptr) (r1, r2 uintptr, err syscall.Errno)
+
 const (
 	darDataOffState  = 0
 	darDataOffTvSec  = 32
@@ -115,7 +126,7 @@ func (s *stackSpoofState) init() error {
 	stubAddr := uintptr(unsafe.Pointer(&stubSlice[0]))
 
 	var pthreadID uint64
-	r1, _, _ := syscall.Syscall6(
+	r1, _, errno := darwinSyscall6(
 		libc_pthread_create_trampoline_addr,
 		uintptr(unsafe.Pointer(&pthreadID)),
 		0,
@@ -123,10 +134,10 @@ func (s *stackSpoofState) init() error {
 		s.dataAddr,
 		0, 0,
 	)
-	if r1 != 0 {
+	if r1 != 0 || errno != 0 {
 		_ = unix.Munmap(stubSlice)
 		_ = unix.Munmap(dataSlice)
-		return fmt.Errorf("pthread_create failed: %d", r1)
+		return fmt.Errorf("pthread_create failed: ret=%d errno=%d", r1, errno)
 	}
 	s.pthreadID = pthreadID
 
@@ -168,7 +179,7 @@ func (s *stackSpoofState) sleep(d time.Duration) {
 }
 
 func ulockWait(addr uintptr, expectedValue uint64) {
-	syscall.Syscall6(
+	darwinSyscall6(
 		libc___ulock_wait_trampoline_addr,
 		uintptr(ulCompareAndWait),
 		addr,
@@ -179,7 +190,7 @@ func ulockWait(addr uintptr, expectedValue uint64) {
 }
 
 func ulockWake(addr uintptr) {
-	syscall.Syscall(
+	darwinSyscall(
 		libc___ulock_wake_trampoline_addr,
 		uintptr(ulCompareAndWait),
 		addr,
