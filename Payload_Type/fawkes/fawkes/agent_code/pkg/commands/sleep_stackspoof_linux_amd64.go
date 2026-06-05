@@ -200,12 +200,12 @@ func (s *stackSpoofState) cleanup() {
 	s.initialized = false
 
 	if s.childTID > 0 {
-		syscall.Kill(int(s.childTID), syscall.SIGKILL)
+		_ = syscall.Kill(int(s.childTID), syscall.SIGKILL)
 	}
 
-	unix.Munmap(s.stubSlice)
-	unix.Munmap(s.stackSlice)
-	unix.Munmap(s.dataSlice)
+	_ = unix.Munmap(s.stubSlice)
+	_ = unix.Munmap(s.stackSlice)
+	_ = unix.Munmap(s.dataSlice)
 }
 
 // generateLinuxSleepStub generates x86-64 machine code that:
