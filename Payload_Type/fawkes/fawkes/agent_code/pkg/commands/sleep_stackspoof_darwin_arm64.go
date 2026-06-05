@@ -167,12 +167,8 @@ func (s *stackSpoofState) sleep(d time.Duration) {
 	atomic.StoreUint32(statePtr, spoofStateSleep)
 	ulockWake(stateAddr)
 
-	for {
-		state := atomic.LoadUint32(statePtr)
-		if state == spoofStateDone {
-			break
-		}
-		ulockWait(stateAddr, uint64(spoofStateSleep))
+	for atomic.LoadUint32(statePtr) != spoofStateDone {
+		time.Sleep(time.Millisecond)
 	}
 
 	atomic.StoreUint32(statePtr, spoofStateIdle)
