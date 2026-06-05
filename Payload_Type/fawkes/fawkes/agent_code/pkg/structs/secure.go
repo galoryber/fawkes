@@ -13,7 +13,7 @@ import (
 func safeZero(b []byte) {
 	prev := debug.SetPanicOnFault(true)
 	defer debug.SetPanicOnFault(prev)
-	defer func() { recover() }()
+	defer func() { _ = recover() }()
 	clear(b)
 }
 
