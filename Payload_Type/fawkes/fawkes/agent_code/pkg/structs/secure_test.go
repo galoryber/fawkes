@@ -85,3 +85,85 @@ func TestZeroString_LongString(t *testing.T) {
 		t.Error("ZeroString did not clear long string variable")
 	}
 }
+
+func TestZeroString_StringLiteral(t *testing.T) {
+	// String literals live in read-only .rodata — must not crash.
+	// On ARM64 macOS, writing to .rodata triggers SIGBUS.
+	s := "this is a compile-time string literal"
+	ZeroString(&s)
+	if s != "" {
+		t.Errorf("ZeroString did not clear variable: got %q", s)
+	}
+}
+
+func TestZeroString_Constant(t *testing.T) {
+	const c = "constant-value"
+	s := c
+	ZeroString(&s)
+	if s != "" {
+		t.Errorf("ZeroString did not clear variable: got %q", s)
+	}
+}
+
+func TestSafeZero_NilSlice(t *testing.T) {
+	safeZero(nil) // must not panic
+}
+
+func TestSafeZero_EmptySlice(t *testing.T) {
+	safeZero([]byte{}) // must not panic
+}
+
+func TestSafeZero_HeapSlice(t *testing.T) {
+	b := []byte{1, 2, 3, 4, 5}
+	safeZero(b)
+	for i, v := range b {
+		if v != 0 {
+			t.Errorf("safeZero did not clear byte %d: got %d", i, v)
+		}
+	}
+}
+
+func TestResponseWipe_StringLiteralFields(t *testing.T) {
+	// Simulate a response where credential fields are string literals.
+	// This is the exact scenario that caused SIGBUS on ARM64 macOS.
+	creds := []MythicCredential{
+		{
+			CredentialType: "plaintext",
+			Realm:          "CONTOSO.LOCAL",
+			Account:        "admin",
+			Credential:     "P@ssw0rd",
+			Comment:        "hashdump",
+		},
+	}
+	r := Response{
+		UserOutput:  "Success",
+		Credentials: &creds,
+	}
+	r.Wipe() // must not crash
+	if r.UserOutput != "" {
+		t.Errorf("UserOutput not cleared: %q", r.UserOutput)
+	}
+	if r.Credentials != nil {
+		t.Error("Credentials not nilled")
+	}
+}
+
+func TestCommandResultWipe_StringLiteralOutput(t *testing.T) {
+	cr := CommandResult{
+		Output:    "Operation completed successfully",
+		Status:    "success",
+		Completed: true,
+	}
+	cr.Wipe() // must not crash
+	if cr.Output != "" {
+		t.Errorf("Output not cleared: %q", cr.Output)
+	}
+}
+
+func TestWipeParams_StringLiteral(t *testing.T) {
+	task := NewTask("id", "test", "literal-params")
+	task.WipeParams() // must not crash
+	if task.Params != "" {
+		t.Errorf("Params not cleared: %q", task.Params)
+	}
+}

@@ -2,7 +2,6 @@ package structs
 
 import (
 	"time"
-	"unsafe"
 )
 
 // ProcessEntry represents a process for Mythic's process browser
@@ -50,19 +49,18 @@ type CommandResult struct {
 	Credentials *[]MythicCredential // Optional: credentials to store in Mythic's credential vault
 }
 
-// Wipe zeros credential secrets in the Response after transmission.
-// Only zeros the Credential field (passwords/hashes) — other fields like
-// CredentialType, Account, Realm may be string literals in read-only memory
-// and zeroing them crashes with SIGBUS on ARM64 (not recoverable).
+// Wipe zeros sensitive data in the Response after transmission.
+// Uses safeZero internally, which recovers from SIGBUS/SIGSEGV if any
+// string happens to be backed by read-only memory (string literals in .rodata).
 func (r *Response) Wipe() {
-	r.UserOutput = ""
+	ZeroString(&r.UserOutput)
 	if r.Credentials != nil {
 		for i := range *r.Credentials {
-			zeroString(&(*r.Credentials)[i].Credential)
-			(*r.Credentials)[i].Account = ""
-			(*r.Credentials)[i].Realm = ""
-			(*r.Credentials)[i].Comment = ""
-			(*r.Credentials)[i].CredentialType = ""
+			ZeroString(&(*r.Credentials)[i].Credential)
+			ZeroString(&(*r.Credentials)[i].Account)
+			ZeroString(&(*r.Credentials)[i].Realm)
+			ZeroString(&(*r.Credentials)[i].Comment)
+			ZeroString(&(*r.Credentials)[i].CredentialType)
 		}
 		r.Credentials = nil
 	}
@@ -70,34 +68,22 @@ func (r *Response) Wipe() {
 	r.Processes = nil
 }
 
-// Wipe zeros credential secrets in the CommandResult after use.
+// Wipe zeros sensitive data in the CommandResult after use.
 func (cr *CommandResult) Wipe() {
-	cr.Output = ""
+	ZeroString(&cr.Output)
 	if cr.Credentials != nil {
 		for i := range *cr.Credentials {
-			zeroString(&(*cr.Credentials)[i].Credential)
-			(*cr.Credentials)[i].Account = ""
-			(*cr.Credentials)[i].Realm = ""
-			(*cr.Credentials)[i].Comment = ""
-			(*cr.Credentials)[i].CredentialType = ""
+			ZeroString(&(*cr.Credentials)[i].Credential)
+			ZeroString(&(*cr.Credentials)[i].Account)
+			ZeroString(&(*cr.Credentials)[i].Realm)
+			ZeroString(&(*cr.Credentials)[i].Comment)
+			ZeroString(&(*cr.Credentials)[i].CredentialType)
 		}
 		cr.Credentials = nil
 	}
 	cr.Processes = nil
 }
 
-// zeroString zeros the backing memory of a heap-allocated string.
-// ONLY call on strings known to be heap-allocated (JSON-unmarshaled values,
-// password strings from user input, fmt.Sprintf results with dynamic data).
-// NEVER call on string literals, constants, or fields that may hold compile-time
-// strings — these live in read-only .rodata and cause unrecoverable SIGBUS on ARM64.
-func zeroString(s *string) {
-	if len(*s) > 0 {
-		b := unsafe.Slice(unsafe.StringData(*s), len(*s))
-		clear(b)
-	}
-	*s = ""
-}
 
 // Command interface for all commands
 type Command interface {

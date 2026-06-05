@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 )
 
 // Task represents a task from Mythic
@@ -34,11 +33,7 @@ func NewTask(id, command, params string) Task {
 // WipeParams zeros out the task parameters in memory to reduce forensic exposure.
 // Credentials and sensitive arguments are cleared after command execution.
 func (t *Task) WipeParams() {
-	if len(t.Params) > 0 {
-		b := unsafe.Slice(unsafe.StringData(t.Params), len(t.Params))
-		clear(b)
-	}
-	t.Params = ""
+	ZeroString(&t.Params)
 }
 
 // DidStop checks if the task should stop (goroutine-safe)
