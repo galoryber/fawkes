@@ -92,7 +92,7 @@ func (s *stackSpoofState) init() error {
 		unix.PROT_READ|unix.PROT_WRITE,
 		unix.MAP_PRIVATE|unix.MAP_ANON)
 	if err != nil {
-		unix.Munmap(dataSlice)
+		_ = unix.Munmap(dataSlice)
 		return fmt.Errorf("mmap stack: %w", err)
 	}
 	s.stackSlice = stackSlice
@@ -111,17 +111,17 @@ func (s *stackSpoofState) init() error {
 		unix.PROT_READ|unix.PROT_WRITE,
 		unix.MAP_PRIVATE|unix.MAP_ANON)
 	if err != nil {
-		unix.Munmap(stackSlice)
-		unix.Munmap(dataSlice)
+		_ = unix.Munmap(stackSlice)
+		_ = unix.Munmap(dataSlice)
 		return fmt.Errorf("mmap stub: %w", err)
 	}
 	copy(stubSlice, stub)
 	s.stubSlice = stubSlice
 
 	if err := unix.Mprotect(stubSlice, unix.PROT_READ|unix.PROT_EXEC); err != nil {
-		unix.Munmap(stubSlice)
-		unix.Munmap(stackSlice)
-		unix.Munmap(dataSlice)
+		_ = unix.Munmap(stubSlice)
+		_ = unix.Munmap(stackSlice)
+		_ = unix.Munmap(dataSlice)
 		return fmt.Errorf("mprotect stub RX: %w", err)
 	}
 
@@ -132,9 +132,9 @@ func (s *stackSpoofState) init() error {
 
 	s.childTID = int32(binary.LittleEndian.Uint32(data[lnxDataOffChildTID:]))
 	if s.childTID <= 0 {
-		unix.Munmap(stubSlice)
-		unix.Munmap(stackSlice)
-		unix.Munmap(dataSlice)
+		_ = unix.Munmap(stubSlice)
+		_ = unix.Munmap(stackSlice)
+		_ = unix.Munmap(dataSlice)
 		return fmt.Errorf("clone failed: tid=%d", s.childTID)
 	}
 
@@ -183,11 +183,11 @@ func (s *stackSpoofState) sleep(d time.Duration) {
 }
 
 func futexWait(addr uintptr, val uint32) {
-	syscall.Syscall6(unix.SYS_FUTEX, addr, 0, uintptr(val), 0, 0, 0)
+	_, _, _ = syscall.Syscall6(unix.SYS_FUTEX, addr, 0, uintptr(val), 0, 0, 0)
 }
 
 func futexWake(addr uintptr, count int) {
-	syscall.Syscall6(unix.SYS_FUTEX, addr, 1, uintptr(count), 0, 0, 0)
+	_, _, _ = syscall.Syscall6(unix.SYS_FUTEX, addr, 1, uintptr(count), 0, 0, 0)
 }
 
 func (s *stackSpoofState) cleanup() {
