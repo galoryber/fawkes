@@ -1,4 +1,4 @@
-//go:build !windows && !(linux && amd64)
+//go:build !windows && !(linux && amd64) && !(darwin && arm64)
 
 package commands
 

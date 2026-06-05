@@ -520,6 +520,7 @@ Enable `stack_spoof` to spoof the sleeping thread's call stack, defeating EDR th
 
 - **Windows** (requires `indirect_syscalls=true`): A dedicated native thread performs `NtDelayExecution` with fake return addresses pointing to `kernel32!SleepEx`, `kernel32!BaseThreadInitThunk`, and `ntdll!RtlUserThreadStart` — the standard thread initialization chain that EDR expects.
 - **Linux amd64**: A child process is created via `clone(CLONE_VM)` with its own 291-byte machine code stub in anonymous mmap'd memory. The child calls `nanosleep` directly via raw syscall — no Go runtime or agent code addresses appear on the sleeping thread's stack. Signal handlers are reset to SIG_DFL in the child, and `PR_SET_PDEATHSIG` ensures the child dies when the parent exits.
+- **macOS arm64**: A native pthread is spawned with a 140-byte ARM64 machine code stub in anonymous mmap'd memory. The thread uses `__ulock_wait`/`__ulock_wake` for synchronization with the Go runtime and calls `nanosleep` via raw syscall — the sleeping thread's stack shows only the anonymous stub and kernel frames, no Go runtime or agent code.
 
 ### Custom HTTP Headers
 

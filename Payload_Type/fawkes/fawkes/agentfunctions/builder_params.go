@@ -301,7 +301,7 @@ var payloadDefinition = agentstructs.PayloadType{
 		},
 		{
 			Name:          "stack_spoof",
-			Description:   "Spoof the call stack of the sleeping thread. Windows: dedicated native thread with NtDelayExecution and fake return addresses from kernel32/ntdll, defeating EDR thread scanners (Hunt-Sleeping-Beacons, Moneta). Requires indirect_syscalls=true. Linux amd64: native child process via clone with anonymous mmap'd code — no Go runtime or agent frames on the sleeping thread's stack.",
+			Description:   "Spoof the call stack of the sleeping thread. Windows: dedicated native thread with NtDelayExecution and fake return addresses from kernel32/ntdll, defeating EDR thread scanners (Hunt-Sleeping-Beacons, Moneta). Requires indirect_syscalls=true. Linux amd64: native child process via clone with anonymous mmap'd code. macOS arm64: native pthread with ARM64 machine code stub using __ulock_wait/nanosleep. All platforms: no Go runtime or agent frames on the sleeping thread's stack.",
 			Required:      false,
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
