@@ -52,8 +52,8 @@ var (
 	xorKey                 string = "" // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 	sandboxGuard           string = "" // Detect sleep skipping (sandbox fast-forward) and exit silently
 	sleepMask              string = "" // Encrypt sensitive agent/C2 data in memory during sleep cycles
-	sleepGuardPages        string = "" // VirtualProtect PAGE_NOACCESS on vault pages during sleep (Windows only)
-	stackSpoof             string = "" // Spoof call stack during sleep to evade EDR thread scanners (Windows only)
+	sleepGuardPages        string = "" // PROT_NONE / PAGE_NOACCESS on vault pages during sleep
+	stackSpoof             string = "" // Spoof call stack during sleep to evade EDR thread scanners (Windows, Linux amd64)
 	jitterProfile          string = "" // Adaptive jitter profile: uniform, normal, exponential (empty = uniform)
 	discordBotToken        string = "" // Discord bot token for Discord C2 profile
 	discordChannelID       string = "" // Discord channel ID for Discord C2 profile

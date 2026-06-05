@@ -516,7 +516,10 @@ The sleep vault key is hardware-bound via HKDF-SHA256: a random seed is mixed wi
 
 ### Call Stack Spoofing
 
-Enable `stack_spoof` (requires `indirect_syscalls=true`) to spoof the sleeping thread's call stack. A dedicated native Windows thread performs `NtDelayExecution` with fake return addresses pointing to `kernel32!SleepEx`, `kernel32!BaseThreadInitThunk`, and `ntdll!RtlUserThreadStart` — the standard thread initialization chain that EDR expects. Defeats thread-scanning tools like Hunt-Sleeping-Beacons, Moneta, and CrowdStrike's sleeping beacon detection. Windows only.
+Enable `stack_spoof` to spoof the sleeping thread's call stack, defeating EDR thread-scanning tools (Hunt-Sleeping-Beacons, Moneta, CrowdStrike).
+
+- **Windows** (requires `indirect_syscalls=true`): A dedicated native thread performs `NtDelayExecution` with fake return addresses pointing to `kernel32!SleepEx`, `kernel32!BaseThreadInitThunk`, and `ntdll!RtlUserThreadStart` — the standard thread initialization chain that EDR expects.
+- **Linux amd64**: A child process is created via `clone(CLONE_VM)` with its own 291-byte machine code stub in anonymous mmap'd memory. The child calls `nanosleep` directly via raw syscall — no Go runtime or agent code addresses appear on the sleeping thread's stack. Signal handlers are reset to SIG_DFL in the child, and `PR_SET_PDEATHSIG` ensures the child dies when the parent exits.
 
 ### Custom HTTP Headers
 
