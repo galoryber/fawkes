@@ -180,9 +180,9 @@ func NewHTTPProfile(cfg ProfileConfig) *HTTPProfile {
 
 	transport := &http.Transport{
 		TLSClientConfig:     tlsConfig,
-		MaxIdleConns:        10,
-		MaxIdleConnsPerHost: 5,
-		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:        randPoolSize(10),
+		MaxIdleConnsPerHost: randPoolSize(5),
+		IdleConnTimeout:     time.Duration(randPoolSize(90)) * time.Second,
 	}
 
 	useNTLMProxy := cfg.ProxyURL != "" && cfg.ProxyUser != "" && cfg.ProxyDomain != ""
@@ -412,6 +412,19 @@ func (h *HTTPProfile) RotateVaultKey() error {
 	vaultZeroBytes(oldBlob)
 
 	return nil
+}
+
+// randPoolSize returns base ±20% using crypto/rand to vary HTTP connection
+// pool parameters per agent instance, preventing NTA correlation.
+func randPoolSize(base int) int {
+	var b [1]byte
+	_, _ = rand.Read(b[:])
+	delta := base * 20 / 100
+	if delta == 0 {
+		delta = 1
+	}
+	offset := int(b[0]) % (2*delta + 1) // [0, 2*delta]
+	return base - delta + offset
 }
 
 // buildTLSConfig creates a TLS configuration based on the verification mode.

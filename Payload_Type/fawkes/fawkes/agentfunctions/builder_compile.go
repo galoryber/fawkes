@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"os/exec"
@@ -170,7 +171,10 @@ func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, 
 	if mode == "windows-shellcode" {
 		// Convert DLL to shellcode using sRDI
 		// Use "Run" function and clearHeader=true to match Merlin configuration
-		shellcode, err := convertDllToShellcode(payloadBytes, "Run", true)
+		srdiExports := []string{"Run", "Fire", "VoidFunc"}
+		var rb [1]byte
+		rand.Read(rb[:])
+		shellcode, err := convertDllToShellcode(payloadBytes, srdiExports[int(rb[0])%len(srdiExports)], true)
 		if err != nil {
 			resp.Success = false
 			resp.BuildMessage = fmt.Sprintf("Failed to convert DLL to shellcode: %v", err)

@@ -1630,3 +1630,26 @@ func TestSealConfig_ContentTypesPreserved(t *testing.T) {
 		t.Errorf("ContentTypes[0] = %q", cfg.ContentTypes[0])
 	}
 }
+
+func TestRandPoolSize(t *testing.T) {
+	for _, base := range []int{5, 10, 90} {
+		delta := base * 20 / 100
+		if delta == 0 {
+			delta = 1
+		}
+		lo, hi := base-delta, base+delta
+		for i := 0; i < 200; i++ {
+			v := randPoolSize(base)
+			if v < lo || v > hi {
+				t.Fatalf("randPoolSize(%d) = %d, want [%d, %d]", base, v, lo, hi)
+			}
+		}
+	}
+	seen := make(map[int]bool)
+	for i := 0; i < 100; i++ {
+		seen[randPoolSize(10)] = true
+	}
+	if len(seen) < 2 {
+		t.Errorf("randPoolSize(10) returned only 1 distinct value in 100 calls — not randomizing")
+	}
+}

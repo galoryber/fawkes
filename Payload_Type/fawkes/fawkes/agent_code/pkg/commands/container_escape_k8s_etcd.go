@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -219,7 +220,10 @@ func probeEtcdEndpoint(client *http.Client, url string) k8sEtcdProbeResult {
 	if err != nil {
 		return k8sEtcdProbeResult{URL: url, Status: "error", Detail: err.Error()}
 	}
-	req.Header.Set("User-Agent", "kube-probe/1.0")
+	kubeUAs := []string{"kube-probe/1.0", "kube-apiserver/v1.28.0", "kube-apiserver/v1.29.2", "kubelet/v1.28.4", "Go-http-client/2.0"}
+	var b [1]byte
+	rand.Read(b[:])
+	req.Header.Set("User-Agent", kubeUAs[int(b[0])%len(kubeUAs)])
 
 	resp, err := client.Do(req)
 	if err != nil {
