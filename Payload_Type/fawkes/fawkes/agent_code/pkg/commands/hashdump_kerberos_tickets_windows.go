@@ -168,44 +168,24 @@ func executeKerbTicketsInner() structs.CommandResult {
 		}
 	}
 
-	// Diagnostic: dump the ticket list area (0xE0-0x148) from the first session
-	// that has a valid username, to verify ticket list offsets.
+	// Diagnostic: scan the entire session buffer for LIST_ENTRY patterns.
+	// Find self-referencing (empty list) or heap-pointer (populated list) entries.
 	for _, sess := range sessions {
 		if sess.UserName == "" {
 			continue
 		}
-		dumpStart := 0xE0
-		dumpEnd := 0x148
-		if dumpEnd > len(sess.Raw) {
-			dumpEnd = len(sess.Raw)
-		}
-		if dumpStart < dumpEnd {
-			diagOutput += fmt.Sprintf("\n[SESS TICKET AREA] LUID=0x%X user=%q (offsets 0x%02X-0x%02X)\n",
-				sess.LUID, sess.UserName, dumpStart, dumpEnd)
-			diagOutput += fmt.Sprintf("[SESS TICKET AREA] Expected: T1=0x%02X T2=0x%02X T3=0x%02X\n",
-				sessLayout.Tickets1Off, sessLayout.Tickets2Off, sessLayout.Tickets3Off)
-			for off := dumpStart; off < dumpEnd; off += 16 {
-				end := off + 16
-				if end > dumpEnd {
-					end = dumpEnd
-				}
-				hex := ""
-				for j := off; j < end; j++ {
-					hex += fmt.Sprintf("%02X ", sess.Raw[j])
-				}
-				// Check if this offset is a self-referencing LIST_ENTRY
-				marker := ""
-				if off+16 <= len(sess.Raw) {
-					flink := uintptr(binary.LittleEndian.Uint64(sess.Raw[off : off+8]))
-					blink := uintptr(binary.LittleEndian.Uint64(sess.Raw[off+8 : off+16]))
-					listAddr := sess.Address + uintptr(off)
-					if flink == listAddr && blink == listAddr {
-						marker = " ← self-ref LIST_ENTRY (empty)"
-					} else if flink > 0x7FF000000000 && flink < 0x800000000000 {
-						marker = fmt.Sprintf(" ← heap ptr? flink=0x%X", flink)
-					}
-				}
-				diagOutput += fmt.Sprintf("[SESS TICKET AREA] +%04X: %-48s%s\n", off, hex, marker)
+		diagOutput += fmt.Sprintf("\n[LIST_ENTRY SCAN] LUID=0x%X user=%q base=0x%X (%d bytes)\n",
+			sess.LUID, sess.UserName, sess.Address, len(sess.Raw))
+		for off := 0; off+16 <= len(sess.Raw); off += 8 {
+			flink := uintptr(binary.LittleEndian.Uint64(sess.Raw[off : off+8]))
+			blink := uintptr(binary.LittleEndian.Uint64(sess.Raw[off+8 : off+16]))
+			listAddr := sess.Address + uintptr(off)
+			if flink == listAddr && blink == listAddr {
+				diagOutput += fmt.Sprintf("[LIST_ENTRY SCAN] +0x%03X: EMPTY (self-ref)\n", off)
+			} else if flink > 0x100000000 && flink < 0x800000000000 &&
+				blink > 0x100000000 && blink < 0x800000000000 {
+				diagOutput += fmt.Sprintf("[LIST_ENTRY SCAN] +0x%03X: POPULATED flink=0x%X blink=0x%X\n",
+					off, flink, blink)
 			}
 		}
 		break
