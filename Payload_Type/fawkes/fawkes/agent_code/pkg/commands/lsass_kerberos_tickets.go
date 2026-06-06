@@ -406,9 +406,10 @@ func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessio
 
 			session := parseKerbSession(r, buf, sessionBase, sessLayout)
 
-			// Skip entries with garbage LUID (high 32 bits set = likely an address).
-			// Don't break — there may be valid entries after this one.
-			if session.LUID>>32 != 0 {
+			// Skip garbage entries: LUID with high 32 bits set, or LUID=0
+			// with empty username. LUID=0 entries are either uninitialized
+			// or freed session nodes still in the hash table chain.
+			if session.LUID>>32 != 0 || (session.LUID == 0 && session.UserName == "") {
 				leOff := sessLayout.ListEntryOff
 				flink := uintptr(binary.LittleEndian.Uint64(buf[leOff : leOff+8]))
 				cursor = flink
