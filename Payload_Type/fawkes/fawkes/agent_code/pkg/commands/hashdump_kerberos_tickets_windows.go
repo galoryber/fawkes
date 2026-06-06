@@ -9,7 +9,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -134,37 +133,7 @@ func executeKerbTicketsInner() structs.CommandResult {
 		return errorf("Kerberos tickets: walk session list: %v", err)
 	}
 
-	// Diagnostic: if first session has LUID=0 and empty username, dump raw bytes
-	// to help identify correct struct offsets for this Windows build.
 	var diagOutput string
-	if len(sessions) > 0 && sessions[0].LUID == 0 && sessions[0].UserName == "" {
-		raw := sessions[0].Raw
-		diagOutput += fmt.Sprintf("\n[DIAG] Session layout mismatch detected (LUID=0, empty username)\n")
-		diagOutput += fmt.Sprintf("[DIAG] Layout: %s (ListEntry=%#x, LUID=%#x, UserName=%#x, Tickets1=%#x)\n",
-			sessLayout.Name, sessLayout.ListEntryOff, sessLayout.LUIDOff, sessLayout.UserNameOff, sessLayout.Tickets1Off)
-		diagOutput += fmt.Sprintf("[DIAG] Session base: 0x%X, raw size: %d bytes\n", sessions[0].Address, len(raw))
-		maxDump := 512
-		if maxDump > len(raw) {
-			maxDump = len(raw)
-		}
-		for off := 0; off < maxDump; off += 16 {
-			end := off + 16
-			if end > maxDump {
-				end = maxDump
-			}
-			hex := ""
-			ascii := ""
-			for j := off; j < end; j++ {
-				hex += fmt.Sprintf("%02X ", raw[j])
-				if raw[j] >= 0x20 && raw[j] <= 0x7E {
-					ascii += string(raw[j])
-				} else {
-					ascii += "."
-				}
-			}
-			diagOutput += fmt.Sprintf("[DIAG] +%04X: %-48s %s\n", off, hex, ascii)
-		}
-	}
 
 	// Probe the ticket struct layout using the first ticket found.
 	var ticketProbeMsg string
@@ -201,19 +170,6 @@ func executeKerbTicketsInner() structs.CommandResult {
 	var totalTickets, tgts, serviceTickets, kirbiExported int
 	sessionReports := make([]kerbSessionReport, 0, len(sessions))
 	var outputLines []string
-
-	// Diagnostic: show all sessions and their ticket list status
-	for i := range sessions {
-		sess := &sessions[i]
-		t1flink := uintptr(0)
-		if sessLayout.Tickets1Off+16 <= len(sess.Raw) {
-			t1flink = uintptr(binary.LittleEndian.Uint64(sess.Raw[sessLayout.Tickets1Off : sessLayout.Tickets1Off+8]))
-		}
-		t1head := sess.Address + uintptr(sessLayout.Tickets1Off)
-		empty := t1flink == t1head || t1flink == 0
-		diagOutput += fmt.Sprintf("[SESS] #%d LUID=%#x user=%q base=%#x T1head=%#x T1flink=%#x empty=%v\n",
-			i, sess.LUID, sess.UserName, sess.Address, t1head, t1flink, empty)
-	}
 
 	for i := range sessions {
 		sess := &sessions[i]
@@ -326,5 +282,11 @@ func executeKerbTicketsInner() structs.CommandResult {
 		header.WriteString(line + "\n")
 	}
 
-	return successResult(header.String() + diagOutput + ticketDiagOutput + "\n" + string(jsonBytes))
+	// If tickets were found but have empty service names, include a hex dump
+	// of the first ticket for debugging struct offsets.
+	if totalTickets > 0 && kirbiExported == 0 && ticketDiagOutput != "" {
+		diagOutput += "\n" + ticketDiagOutput
+	}
+
+	return successResult(header.String() + diagOutput + "\n" + string(jsonBytes))
 }

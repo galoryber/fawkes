@@ -403,9 +403,11 @@ func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessio
 
 			session := parseKerbSession(r, buf, sessionBase, sessLayout)
 
-			// Validate: LUID should be a small number (< 16M), not an address
-			if session.LUID > 0x01000000 {
-				break // garbage data — stop walking this slot
+			// Validate: LUID HighPart should be 0 (LowPart can be large on
+			// long-running systems — e.g., 0x8C5C50B for a batch logon).
+			// An address-like value (e.g., 0x7FFC...) means garbage data.
+			if session.LUID>>32 != 0 {
+				break // high 32 bits non-zero — likely an address, not a LUID
 			}
 
 			session.Raw = buf
