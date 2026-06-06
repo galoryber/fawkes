@@ -161,19 +161,19 @@ type kerbSessionLayout struct {
 var kerbSessionLayouts = []kerbSessionLayout{
 	{
 		// Server 2019 (build 17763) / Win10 1809+ / Win11
-		// All fields shift by +0x18 vs base 1607 layout. Ticket lists are
-		// at 0xD8→0xF0, 0xF0→0x108, 0x108→0x120. Each ticket list is a
-		// LIST_ENTRY (16 bytes) followed by a FILETIME (8 bytes), giving
-		// 0x18 spacing between consecutive lists.
+		// Credential fields shift by +0x18 vs base 1607 layout. Ticket
+		// lists identified via LIST_ENTRY scan at +0x188/0x1C8/0x208
+		// (0x40 spacing, each LIST_ENTRY followed by ~48 bytes of fields).
+		// Verified as self-referencing (empty) on DC SYSTEM sessions.
 		Name:         "Win10_1809_Win11",
 		ListEntryOff: 0x08,
 		LUIDOff:      0x60,
 		UserNameOff:  0xA0,
 		DomainOff:    0xB0,
-		Tickets1Off:  0xF0,
-		Tickets2Off:  0x108,
-		Tickets3Off:  0x120,
-		NodeReadSize: 0x300,
+		Tickets1Off:  0x188,
+		Tickets2Off:  0x1C8,
+		Tickets3Off:  0x208,
+		NodeReadSize: 0x220,
 	},
 	{
 		// Win10 1607-1803 / Server 2016 (KIWI_KERBEROS_LOGON_SESSION_10_1607)
