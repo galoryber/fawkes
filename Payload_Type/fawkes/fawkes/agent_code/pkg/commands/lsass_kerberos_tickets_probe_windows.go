@@ -84,9 +84,9 @@ func adjustLayout(base kerbSessionLayout, userOff, domOff int) kerbSessionLayout
 	adjusted.LUIDOff = base.LUIDOff + shift
 	adjusted.UserNameOff = userOff
 	adjusted.DomainOff = domOff
-	// Ticket list offsets are NOT shifted — they sit at fixed positions near the
-	// end of the struct regardless of credential field shifts. Validated against
-	// GOAD DC01 (Server 2019): tickets found at 0xF8/0x108/0x118 regardless of
-	// UserName shift to 0xA0.
+	adjusted.Tickets1Off = base.Tickets1Off + shift
+	adjusted.Tickets2Off = base.Tickets2Off + shift
+	adjusted.Tickets3Off = base.Tickets3Off + shift
+	adjusted.NodeReadSize = base.NodeReadSize + shift
 	return adjusted
 }

