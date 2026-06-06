@@ -347,59 +347,60 @@ func joinStrings(ss []string, sep string) string {
 // Kerberos session list walker
 // ---------------------------------------------------------------------------
 
-// walkKerbSessionList walks the KerbGlobalLogonSessionTable linked list and
-// returns parsed session entries. The tableHead is the LSASS-virtual address
-// of the LIST_ENTRY head sentinel in kerberos.dll's .data section.
-func walkKerbSessionList(r lsassReader, tableHead uintptr, sessLayout kerbSessionLayout) ([]kerbSession, error) {
+// kerbHashTableSlots is the number of buckets in KerbGlobalLogonSessionTable.
+// On Win10+, the table is a hash table (array of LIST_ENTRY heads), typically
+// with 64 slots. Each slot is a separate linked list of sessions hashed by LUID.
+const kerbHashTableSlots = 64
+
+// walkKerbSessionTable walks all slots of the KerbGlobalLogonSessionTable hash
+// table and returns parsed session entries. tableBase is the LSASS-virtual
+// address of the first LIST_ENTRY in the hash table array.
+func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessionLayout) ([]kerbSession, error) {
 	if r == nil {
 		return nil, fmt.Errorf("nil lsassReader")
 	}
-	if tableHead == 0 {
-		return nil, fmt.Errorf("zero table head address")
+	if tableBase == 0 {
+		return nil, fmt.Errorf("zero table base address")
 	}
 
-	head, err := readListEntry(r, tableHead)
-	if err != nil {
-		return nil, fmt.Errorf("read KerbGlobalLogonSessionTable head at 0x%X: %w", tableHead, err)
-	}
-	if head.Flink == 0 || head.Flink == tableHead {
-		return nil, nil // empty list
-	}
+	sessions := make([]kerbSession, 0, 16)
+	visited := make(map[uintptr]bool, 64)
 
-	sessions := make([]kerbSession, 0, 8)
-	cursor := head.Flink
-	visited := make(map[uintptr]bool, 8)
-	maxNodes := 4096
+	for slot := 0; slot < kerbHashTableSlots; slot++ {
+		slotAddr := tableBase + uintptr(slot*16) // LIST_ENTRY is 16 bytes
 
-	for i := 0; i < maxNodes; i++ {
-		if cursor == tableHead {
-			break // walked back to head: clean termination
-		}
-		if cursor == 0 {
-			break
-		}
-		if visited[cursor] {
-			break
-		}
-		visited[cursor] = true
-
-		// cursor points to the LIST_ENTRY field within the session struct
-		// Session base = cursor - ListEntryOff
-		sessionBase := cursor - uintptr(sessLayout.ListEntryOff)
-
-		buf, err := r.Read(sessionBase, uint32(sessLayout.NodeReadSize))
+		head, err := readListEntry(r, slotAddr)
 		if err != nil {
-			return sessions, fmt.Errorf("read kerberos session %d at 0x%X: %w", i, sessionBase, err)
+			continue
+		}
+		if head.Flink == 0 || head.Flink == slotAddr {
+			continue // empty slot
 		}
 
-		session := parseKerbSession(r, buf, sessionBase, sessLayout)
-		session.Raw = buf
-		sessions = append(sessions, session)
+		cursor := head.Flink
+		for j := 0; j < 256; j++ {
+			if cursor == slotAddr || cursor == 0 {
+				break
+			}
+			if visited[cursor] {
+				break
+			}
+			visited[cursor] = true
 
-		// Follow Flink from the LIST_ENTRY within the session struct
-		leOff := sessLayout.ListEntryOff
-		flink := uintptr(binary.LittleEndian.Uint64(buf[leOff : leOff+8]))
-		cursor = flink
+			sessionBase := cursor - uintptr(sessLayout.ListEntryOff)
+			buf, err := r.Read(sessionBase, uint32(sessLayout.NodeReadSize))
+			if err != nil {
+				break
+			}
+
+			session := parseKerbSession(r, buf, sessionBase, sessLayout)
+			session.Raw = buf
+			sessions = append(sessions, session)
+
+			leOff := sessLayout.ListEntryOff
+			flink := uintptr(binary.LittleEndian.Uint64(buf[leOff : leOff+8]))
+			cursor = flink
+		}
 	}
 
 	return sessions, nil

