@@ -101,6 +101,8 @@ func init() {
 				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			createArtifact(processResponse.TaskData.Task.ID, "Credential Access",
+				fmt.Sprintf("Environment secret scan: %d credentials extracted (T1552.001)", len(creds)))
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {

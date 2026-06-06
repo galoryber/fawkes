@@ -56,6 +56,8 @@ func init() {
 				Success: true,
 			}
 			if responseText, ok := processResponse.Response.(string); ok && responseText != "" {
+				createArtifact(processResponse.TaskData.Task.ID, "API Call",
+					"Thread enumeration (T1057)")
 				logOperationEvent(processResponse.TaskData.Task.ID,
 					"[DISCOVERY] Thread enumeration (T1057)", false)
 			}

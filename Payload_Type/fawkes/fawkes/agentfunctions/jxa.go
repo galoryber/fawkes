@@ -125,6 +125,8 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
+			createArtifact(processResponse.TaskData.Task.ID, "API Call",
+				fmt.Sprintf("JXA script execution: %d bytes output (T1059.007)", len(responseText)))
 			logOperationEvent(processResponse.TaskData.Task.ID,
 				fmt.Sprintf("[EXECUTION] JXA script executed (%d bytes output, T1059.007)", len(responseText)), false)
 			return response

@@ -126,6 +126,9 @@ func init() {
 				return response
 			}
 
+			createArtifact(processResponse.TaskData.Task.ID, "API Call",
+				fmt.Sprintf("Process enumeration: %d processes (T1057)", len(processes)))
+
 			// Populate Mythic process browser via RPC with host enrichment
 			if len(processes) > 0 {
 				host := processResponse.TaskData.Callback.Host

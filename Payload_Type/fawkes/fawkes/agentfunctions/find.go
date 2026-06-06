@@ -325,6 +325,8 @@ func init() {
 					logging.LogError(err, "Failed to create file browser entry", "path", filePath)
 				}
 			}
+			createArtifact(processResponse.TaskData.Task.ID, "File Open",
+				"File discovery search (T1083)")
 			return response
 		},
 	})
