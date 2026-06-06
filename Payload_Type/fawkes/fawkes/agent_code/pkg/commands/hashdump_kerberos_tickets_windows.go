@@ -276,6 +276,13 @@ func executeKerbTicketsInner() structs.CommandResult {
 	if ticketProbeMsg != "" {
 		header.WriteString(fmt.Sprintf("Ticket probe: %s\n", ticketProbeMsg))
 	}
+	header.WriteString("\nAll sessions:\n")
+	for i := range sessions {
+		s := &sessions[i]
+		tktCount := len(s.Tickets)
+		header.WriteString(fmt.Sprintf("  [%d] LUID=0x%X user=%q domain=%q tickets=%d\n",
+			i, s.LUID, s.UserName, s.Domain, tktCount))
+	}
 	header.WriteString("\n")
 
 	for _, line := range outputLines {
