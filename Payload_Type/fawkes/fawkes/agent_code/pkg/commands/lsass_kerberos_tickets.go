@@ -352,9 +352,13 @@ func joinStrings(ss []string, sep string) string {
 // with 64 slots. Each slot is a separate linked list of sessions hashed by LUID.
 const kerbHashTableSlots = 64
 
-// walkKerbSessionTable walks all slots of the KerbGlobalLogonSessionTable hash
+// walkKerbSessionList walks all slots of the KerbGlobalLogonSessionTable hash
 // table and returns parsed session entries. tableBase is the LSASS-virtual
 // address of the first LIST_ENTRY in the hash table array.
+//
+// On some builds, the table may be a single LIST_ENTRY (not a hash table).
+// We auto-detect by checking if slots beyond 0 look like valid LIST_ENTRY
+// heads (self-referencing for empty, or pointing to valid heap addresses).
 func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessionLayout) ([]kerbSession, error) {
 	if r == nil {
 		return nil, fmt.Errorf("nil lsassReader")
@@ -363,11 +367,15 @@ func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessio
 		return nil, fmt.Errorf("zero table base address")
 	}
 
+	// First, determine how many slots to walk. Read a batch of LIST_ENTRY
+	// heads and check which ones look valid (self-referencing or heap pointers).
+	maxSlots := detectHashTableSize(r, tableBase)
+
 	sessions := make([]kerbSession, 0, 16)
 	visited := make(map[uintptr]bool, 64)
 
-	for slot := 0; slot < kerbHashTableSlots; slot++ {
-		slotAddr := tableBase + uintptr(slot*16) // LIST_ENTRY is 16 bytes
+	for slot := 0; slot < maxSlots; slot++ {
+		slotAddr := tableBase + uintptr(slot*16)
 
 		head, err := readListEntry(r, slotAddr)
 		if err != nil {
@@ -394,6 +402,12 @@ func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessio
 			}
 
 			session := parseKerbSession(r, buf, sessionBase, sessLayout)
+
+			// Validate: LUID should be a small number (< 16M), not an address
+			if session.LUID > 0x01000000 {
+				break // garbage data — stop walking this slot
+			}
+
 			session.Raw = buf
 			sessions = append(sessions, session)
 
@@ -404,6 +418,42 @@ func walkKerbSessionList(r lsassReader, tableBase uintptr, sessLayout kerbSessio
 	}
 
 	return sessions, nil
+}
+
+// detectHashTableSize determines how many slots to walk by checking if
+// the table entries look like valid LIST_ENTRY heads. A valid slot either
+// self-references (empty) or points to a heap address (non-module).
+func detectHashTableSize(r lsassReader, tableBase uintptr) int {
+	// Read enough for 64 LIST_ENTRY heads (64 * 16 = 1024 bytes)
+	raw, err := r.Read(tableBase, 1024)
+	if err != nil {
+		return 1 // fall back to single list
+	}
+
+	validSlots := 0
+	for i := 0; i < kerbHashTableSlots; i++ {
+		off := i * 16
+		if off+16 > len(raw) {
+			break
+		}
+		flink := uintptr(binary.LittleEndian.Uint64(raw[off : off+8]))
+		blink := uintptr(binary.LittleEndian.Uint64(raw[off+8 : off+16]))
+		slotAddr := tableBase + uintptr(off)
+
+		// Valid patterns:
+		// 1. Self-referencing (empty list): Flink == slotAddr && Blink == slotAddr
+		// 2. Non-empty: Flink != slotAddr, and Blink should also != 0
+		if flink == slotAddr && blink == slotAddr {
+			validSlots++ // empty slot — valid
+		} else if flink != 0 && blink != 0 && flink != slotAddr {
+			validSlots++ // non-empty slot — valid
+		}
+	}
+
+	if validSlots >= 32 {
+		return kerbHashTableSlots // looks like a real hash table
+	}
+	return 1 // likely a single linked list
 }
 
 // parseKerbSession extracts fields from a raw Kerberos session buffer.

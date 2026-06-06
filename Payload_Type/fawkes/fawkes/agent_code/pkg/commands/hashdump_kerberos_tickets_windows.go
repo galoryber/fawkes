@@ -116,7 +116,8 @@ func executeKerbTicketsInner() structs.CommandResult {
 
 	// Probe the first session found in any hash table slot to auto-detect
 	// the correct struct layout.
-	for slot := 0; slot < kerbHashTableSlots; slot++ {
+	probeSlots := detectHashTableSize(reader, tableAddr)
+	for slot := 0; slot < probeSlots; slot++ {
 		slotAddr := tableAddr + uintptr(slot*16)
 		head, headErr := readListEntry(reader, slotAddr)
 		if headErr != nil || head.Flink == 0 || head.Flink == slotAddr {
