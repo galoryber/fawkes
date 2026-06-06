@@ -9,6 +9,7 @@ package commands
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -200,6 +201,19 @@ func executeKerbTicketsInner() structs.CommandResult {
 	var totalTickets, tgts, serviceTickets, kirbiExported int
 	sessionReports := make([]kerbSessionReport, 0, len(sessions))
 	var outputLines []string
+
+	// Diagnostic: show all sessions and their ticket list status
+	for i := range sessions {
+		sess := &sessions[i]
+		t1flink := uintptr(0)
+		if sessLayout.Tickets1Off+16 <= len(sess.Raw) {
+			t1flink = uintptr(binary.LittleEndian.Uint64(sess.Raw[sessLayout.Tickets1Off : sessLayout.Tickets1Off+8]))
+		}
+		t1head := sess.Address + uintptr(sessLayout.Tickets1Off)
+		empty := t1flink == t1head || t1flink == 0
+		diagOutput += fmt.Sprintf("[SESS] #%d LUID=%#x user=%q base=%#x T1head=%#x T1flink=%#x empty=%v\n",
+			i, sess.LUID, sess.UserName, sess.Address, t1head, t1flink, empty)
+	}
 
 	for i := range sessions {
 		sess := &sessions[i]
