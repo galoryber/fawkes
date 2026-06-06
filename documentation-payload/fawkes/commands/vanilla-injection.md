@@ -21,7 +21,7 @@ Inject shellcode into a remote process or **migrate the agent** into another pro
 |--------|-------------|
 | `inject` | Inject shellcode into target process (default). The current agent continues running. |
 | `migrate` | Inject agent shellcode into target process and exit the current process. A new callback appears from the target process while the original callback goes offline. |
-| `ldpreload` | Linux-only. Spawn a new process with LD_PRELOAD set to a memfd-backed .so containing the shellcode. No ptrace needed. Use `-target` to specify the host process (default: `/usr/bin/id`). |
+| `ldpreload` | Linux-only. Spawn a new process with LD_PRELOAD set to a memfd-backed .so containing the shellcode. No ptrace needed. Use `-spawn_target` to specify the host process (default: `/usr/bin/id`). |
 
 ### Arguments
 
@@ -32,7 +32,10 @@ Choose `inject` (default) to inject shellcode, or `migrate` to perform process m
 Select a shellcode file already registered in Mythic, or upload a new shellcode file.
 
 #### Target PID
-The process ID to inject shellcode into. For migration, choose a stable, long-lived process.
+The process ID to inject shellcode into. For migration, choose a stable, long-lived process. Not needed for `ldpreload` action.
+
+#### Spawn Target (`spawn_target`)
+The process to spawn with LD_PRELOAD. Only used with the `ldpreload` action. Default: `/usr/bin/id`. Use any dynamically-linked executable (statically-linked binaries ignore LD_PRELOAD).
 
 #### Stack Spoof (`stack_spoof`)
 Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`.
