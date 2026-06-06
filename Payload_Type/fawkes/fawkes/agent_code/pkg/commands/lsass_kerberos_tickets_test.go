@@ -247,7 +247,7 @@ func TestFindKerbSessionTable_NoMatch(t *testing.T) {
 
 func TestWalkKerbSessionList_TwoSessions(t *testing.T) {
 	r := newMockReader()
-	layout := kerbSessionLayouts[0] // Win10_1607_Win11
+	layout := kerbSessionLayouts[1] // Win10_1607_Win11
 
 	// Create two sessions linked in a circular list through the sentinel.
 	sentinelAddr := uintptr(0x1000)
@@ -343,7 +343,7 @@ func TestWalkKerbSessionList_TwoSessions(t *testing.T) {
 
 func TestWalkKerbSessionList_Empty(t *testing.T) {
 	r := newMockReader()
-	layout := kerbSessionLayouts[0]
+	layout := kerbSessionLayouts[1]
 
 	sentinelAddr := uintptr(0x1000)
 	sentinel := make([]byte, 16)
@@ -659,8 +659,28 @@ func TestFormatTicketFlags(t *testing.T) {
 
 func TestSelectKerbLayouts_Modern(t *testing.T) {
 	sess, tick := selectKerbLayouts(22631) // Win11 23H2
-	if sess.Name != "Win10_1607_Win11" {
-		t.Errorf("session layout = %q, want Win10_1607_Win11", sess.Name)
+	if sess.Name != "Win10_1809_Win11" {
+		t.Errorf("session layout = %q, want Win10_1809_Win11", sess.Name)
+	}
+	if tick.Name != "Win10_1607_Win11" {
+		t.Errorf("ticket layout = %q, want Win10_1607_Win11", tick.Name)
+	}
+}
+
+func TestSelectKerbLayouts_Server2019(t *testing.T) {
+	sess, tick := selectKerbLayouts(17763) // Server 2019
+	if sess.Name != "Win10_1809_Win11" {
+		t.Errorf("session layout = %q, want Win10_1809_Win11", sess.Name)
+	}
+	if tick.Name != "Win10_1607_Win11" {
+		t.Errorf("ticket layout = %q, want Win10_1607_Win11", tick.Name)
+	}
+}
+
+func TestSelectKerbLayouts_Win10_1607(t *testing.T) {
+	sess, tick := selectKerbLayouts(14393) // Server 2016 / Win10 1607
+	if sess.Name != "Win10_1607" {
+		t.Errorf("session layout = %q, want Win10_1607", sess.Name)
 	}
 	if tick.Name != "Win10_1607_Win11" {
 		t.Errorf("ticket layout = %q, want Win10_1607_Win11", tick.Name)
@@ -683,7 +703,7 @@ func TestSelectKerbLayouts_Legacy(t *testing.T) {
 
 func TestExtractKerbTickets_WithTickets(t *testing.T) {
 	r := newMockReader()
-	sessLayout := kerbSessionLayouts[0]
+	sessLayout := kerbSessionLayouts[1]
 	tickLayout := kerbTicketLayouts[0]
 
 	sessionBase := uintptr(0x10000)
