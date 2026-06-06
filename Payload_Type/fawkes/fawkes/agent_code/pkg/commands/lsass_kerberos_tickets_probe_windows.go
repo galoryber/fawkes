@@ -45,6 +45,15 @@ func probeKerbSessionLayout(r lsassReader, sessionBase uintptr, base kerbSession
 		candidates = append(candidates, uniCandidate{off, length, bufPtr})
 	}
 
+	// Strategy 0: check if base layout UserNameOff already has a valid string.
+	// If so, no shift is needed — return the base layout as-is.
+	if base.UserNameOff+16 <= len(raw) {
+		str, sErr := readRemoteLSAUnicodeString(r, raw[base.UserNameOff:base.UserNameOff+16])
+		if sErr == nil && str != "" {
+			return base
+		}
+	}
+
 	// Strategy 1: consecutive UserName+DomainName pair (most reliable)
 	for i := 0; i+1 < len(candidates); i++ {
 		a, b := candidates[i], candidates[i+1]
