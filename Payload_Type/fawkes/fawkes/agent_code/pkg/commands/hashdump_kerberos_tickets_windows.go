@@ -185,9 +185,9 @@ func executeKerbTicketsInner() structs.CommandResult {
 			blink := uintptr(binary.LittleEndian.Uint64(sess.Raw[off+8 : off+16]))
 			listAddr := sess.Address + uintptr(off)
 			if flink == listAddr && blink == listAddr {
-				diagOutput += fmt.Sprintf("[LE] +0x%03X: EMPTY\n", off)
-			} else if flink > 0x7FF000000000 && flink < 0x800000000000 &&
-				blink > 0x7FF000000000 && blink < 0x800000000000 {
+				diagOutput += fmt.Sprintf("[LE] +0x%03X: EMPTY (self-ref)\n", off)
+			} else if flink > 0x100000000000 && flink < 0x800000000000 &&
+				blink > 0x100000000000 && blink < 0x800000000000 {
 				diagOutput += fmt.Sprintf("[LE] +0x%03X: PTR f=0x%X b=0x%X\n", off, flink, blink)
 			}
 		}

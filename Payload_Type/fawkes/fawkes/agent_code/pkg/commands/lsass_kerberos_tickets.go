@@ -173,7 +173,7 @@ var kerbSessionLayouts = []kerbSessionLayout{
 		Tickets1Off:  0xF0,
 		Tickets2Off:  0x108,
 		Tickets3Off:  0x120,
-		NodeReadSize: 0x140,
+		NodeReadSize: 0x300,
 	},
 	{
 		// Win10 1607-1803 / Server 2016 (KIWI_KERBEROS_LOGON_SESSION_10_1607)
