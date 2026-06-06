@@ -17,7 +17,7 @@ require (
 	github.com/jcmturner/gofork v1.7.6
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/masterzen/winrm v0.0.0-20260407182533-5570be7f80cf
-	github.com/oiweiwei/go-msrpc v1.4.2
+	github.com/oiweiwei/go-msrpc v1.4.3
 	github.com/oiweiwei/gokrb5.fork/v9 v9.0.6
 	github.com/refraction-networking/utls v1.8.2
 	github.com/shirou/gopsutil/v3 v3.24.5
@@ -69,6 +69,7 @@ require (
 	github.com/xyproto/randomstring v1.2.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.45.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
