@@ -167,6 +167,11 @@ func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 		sb.WriteString(winExtra)
 	}
 
+	// Unix-specific: SSH agent sockets, multi-user authorized_keys
+	if unixExtra := sshKeysEnumerateUnix(); unixExtra != "" {
+		sb.WriteString(unixExtra)
+	}
+
 	return successResult(sb.String())
 }
 
