@@ -161,18 +161,19 @@ type kerbSessionLayout struct {
 var kerbSessionLayouts = []kerbSessionLayout{
 	{
 		// Server 2019 (build 17763) / Win10 1809+ / Win11
-		// KIWI_KERBEROS_LOGON_SESSION_10_1607_X — has 0x18 extra bytes vs the
-		// base 1607 layout (additional fields before LUID). Validated against
-		// GOAD DC01 (Server 2019 build 17763) hex dump in S437.
+		// KIWI_KERBEROS_LOGON_SESSION_10_1607_X — has 0x18 extra bytes before
+		// the credential fields (LUID shifts 0x48→0x60, UserName 0x88→0xA0).
+		// But ticket list offsets remain at the SAME position as Win10_1607
+		// (0xF8/0x108/0x118). Validated against GOAD DC01 S437 hex dump.
 		Name:         "Win10_1809_Win11",
 		ListEntryOff: 0x08,
 		LUIDOff:      0x60,
 		UserNameOff:  0xA0,
 		DomainOff:    0xB0,
-		Tickets1Off:  0x110,
-		Tickets2Off:  0x120,
-		Tickets3Off:  0x130,
-		NodeReadSize: 0x148,
+		Tickets1Off:  0xF8,
+		Tickets2Off:  0x108,
+		Tickets3Off:  0x118,
+		NodeReadSize: 0x130,
 	},
 	{
 		// Win10 1607-1803 / Server 2016 (KIWI_KERBEROS_LOGON_SESSION_10_1607)
