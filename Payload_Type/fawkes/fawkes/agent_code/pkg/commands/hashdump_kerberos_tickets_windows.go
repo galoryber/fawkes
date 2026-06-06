@@ -168,25 +168,52 @@ func executeKerbTicketsInner() structs.CommandResult {
 		}
 	}
 
-	// Diagnostic: scan the entire session buffer for LIST_ENTRY patterns.
-	// Find self-referencing (empty list) or heap-pointer (populated list) entries.
+	// Diagnostic: scan all sessions for LIST_ENTRY patterns. Report all
+	// self-referencing (empty) and populated entries. For sessions with
+	// valid usernames, scan the full buffer.
 	for _, sess := range sessions {
+		if sess.UserName == "" && sess.LUID != 0 {
+			continue
+		}
 		if sess.UserName == "" {
 			continue
 		}
-		diagOutput += fmt.Sprintf("\n[LIST_ENTRY SCAN] LUID=0x%X user=%q base=0x%X (%d bytes)\n",
+		diagOutput += fmt.Sprintf("\n[LE] LUID=0x%X user=%q base=0x%X (%d bytes)\n",
 			sess.LUID, sess.UserName, sess.Address, len(sess.Raw))
 		for off := 0; off+16 <= len(sess.Raw); off += 8 {
 			flink := uintptr(binary.LittleEndian.Uint64(sess.Raw[off : off+8]))
 			blink := uintptr(binary.LittleEndian.Uint64(sess.Raw[off+8 : off+16]))
 			listAddr := sess.Address + uintptr(off)
 			if flink == listAddr && blink == listAddr {
-				diagOutput += fmt.Sprintf("[LIST_ENTRY SCAN] +0x%03X: EMPTY (self-ref)\n", off)
-			} else if flink > 0x100000000 && flink < 0x800000000000 &&
-				blink > 0x100000000 && blink < 0x800000000000 {
-				diagOutput += fmt.Sprintf("[LIST_ENTRY SCAN] +0x%03X: POPULATED flink=0x%X blink=0x%X\n",
-					off, flink, blink)
+				diagOutput += fmt.Sprintf("[LE] +0x%03X: EMPTY\n", off)
+			} else if flink > 0x7FF000000000 && flink < 0x800000000000 &&
+				blink > 0x7FF000000000 && blink < 0x800000000000 {
+				diagOutput += fmt.Sprintf("[LE] +0x%03X: PTR f=0x%X b=0x%X\n", off, flink, blink)
 			}
+		}
+		break
+	}
+
+	// For the first session with tickets, dump the first ticket entry
+	for _, sess := range sessions {
+		if len(sess.Tickets) == 0 {
+			continue
+		}
+		// Walk ticket lists and dump the first non-empty one
+		for _, tl := range []struct{ off, idx int }{
+			{sessLayout.Tickets1Off, 1}, {sessLayout.Tickets2Off, 2}, {sessLayout.Tickets3Off, 3},
+		} {
+			if tl.off+16 > len(sess.Raw) {
+				continue
+			}
+			flink := uintptr(binary.LittleEndian.Uint64(sess.Raw[tl.off : tl.off+8]))
+			headAddr := sess.Address + uintptr(tl.off)
+			if flink == 0 || flink == headAddr {
+				continue
+			}
+			diagOutput += fmt.Sprintf("\n[TKT] Session LUID=0x%X list=%d headAddr=0x%X flink=0x%X\n",
+				sess.LUID, tl.idx, headAddr, flink)
+			break
 		}
 		break
 	}
