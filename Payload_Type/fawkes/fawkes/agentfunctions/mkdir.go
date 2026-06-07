@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -88,6 +90,34 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
 				response.DisplayParams = &displayParams
 				createArtifact(task.Task.ID, "File Create", "mkdir "+displayParams)
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			responseText, ok := msg.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "Created") || strings.Contains(responseText, "created") {
+				dirPath := strings.TrimSpace(msg.TaskData.Task.Params)
+				host := msg.TaskData.Callback.Host
+				name := filepath.Base(dirPath)
+				parentPath := filepath.Dir(dirPath)
+				if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+					TaskID: msg.TaskData.Task.ID,
+					FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+						Host:       host,
+						IsFile:     false,
+						Name:       name,
+						ParentPath: parentPath,
+						Success:    true,
+					},
+				}); err != nil {
+					logging.LogError(err, "mkdir: failed to create file browser entry")
+				}
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[IMPACT] Directory created: %s on %s", dirPath, host), false)
 			}
 			return response
 		},

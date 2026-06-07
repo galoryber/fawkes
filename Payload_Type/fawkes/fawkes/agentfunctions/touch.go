@@ -3,8 +3,11 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -83,6 +86,34 @@ func init() {
 			display := fmt.Sprintf("%s", path)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Create/update file: %s", path))
+			return response
+		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			responseText, ok := msg.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "Created") || strings.Contains(responseText, "Updated") || strings.Contains(responseText, "created") || strings.Contains(responseText, "updated") {
+				filePath, _ := msg.TaskData.Args.GetStringArg("path")
+				host := msg.TaskData.Callback.Host
+				name := filepath.Base(filePath)
+				parentPath := filepath.Dir(filePath)
+				if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+					TaskID: msg.TaskData.Task.ID,
+					FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+						Host:       host,
+						IsFile:     true,
+						Name:       name,
+						ParentPath: parentPath,
+						Success:    true,
+					},
+				}); err != nil {
+					logging.LogError(err, "touch: failed to create file browser entry")
+				}
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[IMPACT] File created/updated: %s on %s", filePath, host), false)
+			}
 			return response
 		},
 	})
