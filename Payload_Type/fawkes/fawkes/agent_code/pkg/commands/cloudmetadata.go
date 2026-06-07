@@ -320,28 +320,28 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 }
 
 func cloudStorage(provider string, timeout time.Duration) structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString("=== Cloud Storage Enumeration ===\n\n")
-
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
 		return successResult("[-] No cloud metadata service detected")
 	}
 
+	var listings []cloudStorageListing
 	for _, p := range providers {
 		switch p {
 		case "aws":
-			sb.WriteString(awsListBuckets(timeout))
+			listings = append(listings, awsListBucketsStructured(timeout))
 		case "azure":
-			sb.WriteString(azureListStorageContainers(timeout))
+			listings = append(listings, azureListStorageStructured(timeout)...)
 		case "gcp":
-			sb.WriteString(gcpListBuckets(timeout))
-		case "digitalocean":
-			sb.WriteString("[-] DigitalOcean: Spaces API not accessible via metadata service\n")
+			listings = append(listings, gcpListBucketsStructured(timeout))
 		}
 	}
 
-	return successResult(sb.String())
+	data, err := json.Marshal(listings)
+	if err != nil {
+		return errorResult(fmt.Sprintf("JSON marshal failed: %v", err))
+	}
+	return successResult(string(data))
 }
 
 // --- Helper functions ---

@@ -210,40 +210,6 @@ func TestAzureBlobListXMLParsing(t *testing.T) {
 	}
 }
 
-func TestCloudStorageOutputFormatting(t *testing.T) {
-	t.Run("aws bucket output contains s3 prefix", func(t *testing.T) {
-		xml := `<ListAllMyBucketsResult><Buckets><Bucket><Name>test-bucket</Name><CreationDate>2025-01-01T00:00:00Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>`
-		names := cloudExtractXMLValues(xml, "Name")
-		dates := cloudExtractXMLValues(xml, "CreationDate")
-		if len(names) != 1 || names[0] != "test-bucket" {
-			t.Fatalf("expected test-bucket, got %v", names)
-		}
-		if len(dates) != 1 || dates[0] != "2025-01-01T00:00:00Z" {
-			t.Fatalf("expected creation date, got %v", dates)
-		}
-		output := "s3://" + names[0]
-		if !strings.HasPrefix(output, "s3://") {
-			t.Error("S3 bucket output should use s3:// prefix")
-		}
-	})
-
-	t.Run("gcs bucket output contains gs prefix", func(t *testing.T) {
-		type gcsBucket struct {
-			Name string `json:"name"`
-		}
-		type listResult struct {
-			Items []gcsBucket `json:"items"`
-		}
-		resp := `{"items":[{"name":"my-gcs-bucket"}]}`
-		var result listResult
-		json.Unmarshal([]byte(resp), &result)
-		output := "gs://" + result.Items[0].Name
-		if !strings.HasPrefix(output, "gs://") {
-			t.Error("GCS bucket output should use gs:// prefix")
-		}
-	})
-}
-
 func TestAzureStorageAccountNameGeneration(t *testing.T) {
 	rg := "my-resource-group"
 	clean := strings.ToLower(strings.ReplaceAll(rg, "-", ""))
@@ -258,5 +224,187 @@ func TestAzureStorageAccountNameGeneration(t *testing.T) {
 	}
 	if candidates[1] != "myresourcegroupstorage" {
 		t.Errorf("storage candidate = %q, want %q", candidates[1], "myresourcegroupstorage")
+	}
+}
+
+func TestCloudStorageListingJSONFormat(t *testing.T) {
+	t.Run("aws listing serializes correctly", func(t *testing.T) {
+		listing := cloudStorageListing{
+			Action:   "cloud-storage",
+			Provider: "aws",
+			Host:     "s3.us-east-1.amazonaws.com",
+			Role:     "my-role",
+			Region:   "us-east-1",
+			Buckets: []cloudBucketEntry{
+				{
+					Name:    "my-bucket",
+					URI:     "s3://my-bucket",
+					Created: "2025-01-01T00:00:00Z",
+					Objects: []cloudObjectEntry{
+						{Name: "file1.txt", Size: 1024},
+						{Name: "dir/file2.txt", Size: 2048},
+					},
+				},
+			},
+		}
+
+		data, err := json.Marshal(listing)
+		if err != nil {
+			t.Fatalf("marshal failed: %v", err)
+		}
+
+		var parsed cloudStorageListing
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			t.Fatalf("unmarshal failed: %v", err)
+		}
+		if parsed.Action != "cloud-storage" {
+			t.Errorf("action = %q, want %q", parsed.Action, "cloud-storage")
+		}
+		if parsed.Provider != "aws" {
+			t.Errorf("provider = %q, want %q", parsed.Provider, "aws")
+		}
+		if parsed.Host != "s3.us-east-1.amazonaws.com" {
+			t.Errorf("host = %q, want %q", parsed.Host, "s3.us-east-1.amazonaws.com")
+		}
+		if len(parsed.Buckets) != 1 {
+			t.Fatalf("buckets = %d, want 1", len(parsed.Buckets))
+		}
+		if parsed.Buckets[0].Name != "my-bucket" {
+			t.Errorf("bucket name = %q, want %q", parsed.Buckets[0].Name, "my-bucket")
+		}
+		if len(parsed.Buckets[0].Objects) != 2 {
+			t.Fatalf("objects = %d, want 2", len(parsed.Buckets[0].Objects))
+		}
+		if parsed.Buckets[0].Objects[0].Size != 1024 {
+			t.Errorf("object size = %d, want 1024", parsed.Buckets[0].Objects[0].Size)
+		}
+	})
+
+	t.Run("gcp listing includes location and storage class", func(t *testing.T) {
+		listing := cloudStorageListing{
+			Action:   "cloud-storage",
+			Provider: "gcp",
+			Host:     "storage.googleapis.com",
+			Project:  "my-project",
+			Buckets: []cloudBucketEntry{
+				{
+					Name:         "my-gcs-bucket",
+					URI:          "gs://my-gcs-bucket",
+					Location:     "US-EAST1",
+					StorageClass: "STANDARD",
+					Created:      "2025-01-15T10:30:00Z",
+				},
+			},
+		}
+
+		data, err := json.Marshal(listing)
+		if err != nil {
+			t.Fatalf("marshal failed: %v", err)
+		}
+
+		var parsed cloudStorageListing
+		json.Unmarshal(data, &parsed)
+		if parsed.Project != "my-project" {
+			t.Errorf("project = %q, want %q", parsed.Project, "my-project")
+		}
+		if parsed.Buckets[0].Location != "US-EAST1" {
+			t.Errorf("location = %q, want %q", parsed.Buckets[0].Location, "US-EAST1")
+		}
+		if parsed.Buckets[0].StorageClass != "STANDARD" {
+			t.Errorf("storage_class = %q, want %q", parsed.Buckets[0].StorageClass, "STANDARD")
+		}
+	})
+
+	t.Run("azure listing with multiple accounts", func(t *testing.T) {
+		listings := []cloudStorageListing{
+			{
+				Action:   "cloud-storage",
+				Provider: "azure",
+				Host:     "myaccount.blob.core.windows.net",
+				Account:  "myaccount",
+				Buckets: []cloudBucketEntry{
+					{Name: "container1", URI: "https://myaccount.blob.core.windows.net/container1"},
+					{Name: "container2", URI: "https://myaccount.blob.core.windows.net/container2"},
+				},
+			},
+		}
+
+		data, err := json.Marshal(listings)
+		if err != nil {
+			t.Fatalf("marshal failed: %v", err)
+		}
+
+		var parsed []cloudStorageListing
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			t.Fatalf("unmarshal array failed: %v", err)
+		}
+		if len(parsed) != 1 {
+			t.Fatalf("listings = %d, want 1", len(parsed))
+		}
+		if parsed[0].Account != "myaccount" {
+			t.Errorf("account = %q, want %q", parsed[0].Account, "myaccount")
+		}
+		if len(parsed[0].Buckets) != 2 {
+			t.Errorf("containers = %d, want 2", len(parsed[0].Buckets))
+		}
+	})
+
+	t.Run("error listing omits buckets", func(t *testing.T) {
+		listing := cloudStorageListing{
+			Action:   "cloud-storage",
+			Provider: "aws",
+			Error:    "No IAM role attached",
+		}
+
+		data, err := json.Marshal(listing)
+		if err != nil {
+			t.Fatalf("marshal failed: %v", err)
+		}
+		if !strings.Contains(string(data), `"error"`) {
+			t.Error("error field not present in JSON")
+		}
+		if strings.Contains(string(data), `"buckets":[`) {
+			t.Error("empty buckets should be null, not an array")
+		}
+	})
+
+	t.Run("object size zero omitted", func(t *testing.T) {
+		obj := cloudObjectEntry{Name: "test.txt"}
+		data, _ := json.Marshal(obj)
+		if strings.Contains(string(data), `"size"`) {
+			t.Error("zero size should be omitted (omitempty)")
+		}
+	})
+}
+
+func TestCloudStorageObjectPathSplitting(t *testing.T) {
+	tests := []struct {
+		name       string
+		objectName string
+		bucket     string
+		wantParent string
+		wantName   string
+	}{
+		{"simple file", "file.txt", "my-bucket", "/my-bucket", "file.txt"},
+		{"nested file", "dir/subdir/file.txt", "my-bucket", "/my-bucket/dir/subdir", "file.txt"},
+		{"single dir prefix", "config/app.yaml", "data", "/data/config", "app.yaml"},
+		{"deep nesting", "a/b/c/d/e.txt", "bkt", "/bkt/a/b/c/d", "e.txt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objName := tt.objectName
+			objParent := "/" + tt.bucket
+			if idx := strings.LastIndex(tt.objectName, "/"); idx > 0 {
+				objParent = "/" + tt.bucket + "/" + tt.objectName[:idx]
+				objName = tt.objectName[idx+1:]
+			}
+			if objParent != tt.wantParent {
+				t.Errorf("parent = %q, want %q", objParent, tt.wantParent)
+			}
+			if objName != tt.wantName {
+				t.Errorf("name = %q, want %q", objName, tt.wantName)
+			}
+		})
 	}
 }

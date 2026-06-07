@@ -1,11 +1,13 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
@@ -282,15 +284,8 @@ func init() {
 				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
 					"GCP Secret Manager enumeration (T1602)")
 				tagTask(processResponse.TaskData.Task.ID, "CRED", "GCP secrets accessed")
-			case "storage", "aws-s3", "aws-storage":
-				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
-					"AWS S3 bucket enumeration (T1530)")
-			case "azure-blob", "azure-storage":
-				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
-					"Azure Blob Storage container enumeration (T1530)")
-			case "gcp-gcs", "gcp-storage":
-				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
-					"GCP Cloud Storage bucket enumeration (T1530)")
+			case "storage", "aws-s3", "aws-storage", "azure-blob", "azure-storage", "gcp-gcs", "gcp-storage":
+				registerCloudStorageBrowser(processResponse.TaskData.Task.ID, responseText, action)
 			}
 
 			return response
@@ -353,4 +348,116 @@ func init() {
 			return response
 		},
 	})
+}
+
+type cloudStorageListing struct {
+	Action   string             `json:"action"`
+	Provider string             `json:"provider"`
+	Host     string             `json:"host"`
+	Role     string             `json:"role,omitempty"`
+	Project  string             `json:"project,omitempty"`
+	Account  string             `json:"account,omitempty"`
+	Region   string             `json:"region,omitempty"`
+	Buckets  []cloudBucketEntry `json:"buckets"`
+	Error    string             `json:"error,omitempty"`
+}
+
+type cloudBucketEntry struct {
+	Name         string             `json:"name"`
+	URI          string             `json:"uri"`
+	Created      string             `json:"created,omitempty"`
+	Location     string             `json:"location,omitempty"`
+	StorageClass string             `json:"storage_class,omitempty"`
+	Objects      []cloudObjectEntry `json:"objects,omitempty"`
+}
+
+type cloudObjectEntry struct {
+	Name string `json:"name"`
+	Size int64  `json:"size,omitempty"`
+}
+
+func registerCloudStorageBrowser(taskID int, responseText string, action string) {
+	var listings []cloudStorageListing
+
+	var single cloudStorageListing
+	if err := json.Unmarshal([]byte(responseText), &single); err == nil && single.Action == "cloud-storage" {
+		listings = append(listings, single)
+	} else if err := json.Unmarshal([]byte(responseText), &listings); err != nil {
+		return
+	}
+
+	for _, listing := range listings {
+		if listing.Action != "cloud-storage" || listing.Error != "" || len(listing.Buckets) == 0 {
+			continue
+		}
+
+		host := listing.Host
+		if host == "" {
+			continue
+		}
+
+		artifactDesc := fmt.Sprintf("%s storage enumeration: %d bucket(s) on %s (T1530)",
+			strings.ToUpper(listing.Provider), len(listing.Buckets), host)
+		createArtifact(taskID, "Cloud Discovery", artifactDesc)
+
+		for _, bucket := range listing.Buckets {
+			perms := map[string]interface{}{
+				"provider": listing.Provider,
+			}
+			if bucket.StorageClass != "" {
+				perms["storage_class"] = bucket.StorageClass
+			}
+			if bucket.Location != "" {
+				perms["location"] = bucket.Location
+			}
+			if listing.Region != "" {
+				perms["region"] = listing.Region
+			}
+
+			if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+				TaskID: taskID,
+				FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+					Host:        host,
+					IsFile:      false,
+					Name:        bucket.Name,
+					ParentPath:  "/",
+					Success:     true,
+					Permissions: perms,
+				},
+			}); err != nil {
+				logging.LogError(err, "cloud-storage: failed to create bucket browser entry",
+					"host", host, "bucket", bucket.Name)
+			}
+
+			bucketPath := "/" + bucket.Name
+			for _, obj := range bucket.Objects {
+				objName := obj.Name
+				objParent := bucketPath
+
+				if idx := strings.LastIndex(obj.Name, "/"); idx > 0 {
+					objParent = bucketPath + "/" + obj.Name[:idx]
+					objName = obj.Name[idx+1:]
+				}
+
+				if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+					TaskID: taskID,
+					FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+						Host:       host,
+						IsFile:     true,
+						Name:       objName,
+						ParentPath: objParent,
+						Success:    true,
+						Size:       uint64(obj.Size),
+					},
+				}); err != nil {
+					logging.LogError(err, "cloud-storage: failed to create object browser entry",
+						"host", host, "object", obj.Name)
+				}
+			}
+		}
+
+		logOperationEvent(taskID,
+			fmt.Sprintf("[DISCOVERY] Cloud storage enumeration: %s %s — %d bucket(s) (T1530)",
+				listing.Provider, host, len(listing.Buckets)), false)
+	}
 }
