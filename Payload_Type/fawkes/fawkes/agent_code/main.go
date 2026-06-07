@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -18,7 +19,21 @@ import (
 	"fawkes/pkg/structs"
 )
 
+// sanitizeEnvironment removes env vars containing NUL bytes.
+// Go 1.19+ rejects exec.Command when any env var has \x00 (CVE-2022-41716).
+// macOS Tahoe can inject NUL-containing env vars at process startup.
+func sanitizeEnvironment() {
+	for _, e := range os.Environ() {
+		if strings.Contains(e, "\x00") {
+			if idx := strings.IndexByte(e, '='); idx > 0 {
+				os.Unsetenv(e[:idx])
+			}
+		}
+	}
+}
+
 func main() {
+	sanitizeEnvironment()
 	if len(os.Args) > 1 && os.Args[1] == "--rpc-helper" {
 		commands.RunRPCHelper(os.Args[2:])
 		return

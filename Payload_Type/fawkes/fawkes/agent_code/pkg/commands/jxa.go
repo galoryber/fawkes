@@ -5,7 +5,6 @@ package commands
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -66,7 +65,7 @@ func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "osascript", "-l", "JavaScript", "-e", script)
+	cmd := newCmdCtx(ctx, "osascript", "-l", "JavaScript", "-e", script)
 	out, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(out))
 
