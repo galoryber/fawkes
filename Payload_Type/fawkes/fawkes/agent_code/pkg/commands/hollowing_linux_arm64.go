@@ -76,7 +76,7 @@ func performHollowingLinuxArm64(shellcode []byte, params hollowParams) (string, 
 		args = []string{"86400"}
 	}
 
-	cmd := exec.Command(parts[0], args...)
+	cmd := safeCmd(parts[0], args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Ptrace: true,
 	}

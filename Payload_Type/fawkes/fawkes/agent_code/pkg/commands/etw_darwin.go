@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -68,7 +67,7 @@ func logCategories(subsystem string) structs.CommandResult {
 		cmdArgs = []string{"show", "--predicate", "category == 'security' OR subsystem CONTAINS 'security' OR subsystem CONTAINS 'opendirectory'", "--last", "5m", "--style", "compact"}
 	}
 
-	cmd := exec.CommandContext(ctx, "log", cmdArgs...)
+	cmd := safeCmdContext(ctx, "log", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := "[+] macOS Unified Logging\n"
@@ -144,7 +143,7 @@ func detectSecurityAgents() structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ps", "-axo", "pid,comm")
+	cmd := safeCmdContext(ctx, "ps", "-axo", "pid,comm")
 	output, err := cmd.CombinedOutput()
 	runningProcs := make(map[string]string) // comm -> pid
 	if err == nil {
@@ -215,7 +214,7 @@ func macAuditStatus() structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "audit", "-c")
+	cmd := safeCmdContext(ctx, "audit", "-c")
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		result.WriteString(fmt.Sprintf("OpenBSM: %s\n", strings.TrimSpace(string(output))))
@@ -237,7 +236,7 @@ func macAuditStatus() structs.CommandResult {
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel2()
 
-	cmd2 := exec.CommandContext(ctx2, "csrutil", "status")
+	cmd2 := safeCmdContext(ctx2, "csrutil", "status")
 	output2, err2 := cmd2.CombinedOutput()
 	if err2 == nil {
 		result.WriteString(fmt.Sprintf("\nSIP: %s", strings.TrimSpace(string(output2))))

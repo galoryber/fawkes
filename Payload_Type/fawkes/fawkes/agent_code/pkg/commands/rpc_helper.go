@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/oiweiwei/go-msrpc/ssp"
@@ -139,7 +138,7 @@ func rpcViaSubprocess(req rpcHelperRequest) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.Timeout+10)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, selfPath, "--rpc-helper", string(argsJSON))
+	cmd := safeCmdContext(ctx, selfPath, "--rpc-helper", string(argsJSON))
 	output, err := cmd.Output()
 	if err != nil {
 		if len(output) > 0 {

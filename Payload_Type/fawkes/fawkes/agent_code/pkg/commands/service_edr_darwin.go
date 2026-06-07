@@ -4,7 +4,6 @@ package commands
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -17,7 +16,7 @@ func serviceEdrEnumDarwin() structs.CommandResult {
 
 	for _, entry := range candidates {
 		// Check if launchd label is loaded
-		out, err := exec.Command("launchctl", "list", entry.ServiceName).CombinedOutput()
+		out, err := safeCmd("launchctl", "list", entry.ServiceName).CombinedOutput()
 		if err != nil {
 			continue // Not loaded
 		}
@@ -54,17 +53,17 @@ func serviceEdrKillDarwin(args serviceArgs) structs.CommandResult {
 
 	for _, entry := range candidates {
 		// Check if loaded
-		_, err := exec.Command("launchctl", "list", entry.ServiceName).CombinedOutput()
+		_, err := safeCmd("launchctl", "list", entry.ServiceName).CombinedOutput()
 		if err != nil {
 			continue
 		}
 
 		// Attempt to unload
-		unloadOut, unloadErr := exec.Command("launchctl", "bootout", "system", entry.ServiceName).CombinedOutput()
+		unloadOut, unloadErr := safeCmd("launchctl", "bootout", "system", entry.ServiceName).CombinedOutput()
 
 		if unloadErr != nil {
 			// Try legacy unload
-			unloadOut, unloadErr = exec.Command("launchctl", "unload", "-w", fmt.Sprintf("/Library/LaunchDaemons/%s.plist", entry.ServiceName)).CombinedOutput()
+			unloadOut, unloadErr = safeCmd("launchctl", "unload", "-w", fmt.Sprintf("/Library/LaunchDaemons/%s.plist", entry.ServiceName)).CombinedOutput()
 		}
 
 		if unloadErr != nil {

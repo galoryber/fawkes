@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -38,7 +37,7 @@ func persistLoginItemInstall(args persistArgs) structs.CommandResult {
 	make login item at end with properties {path:"%s", hidden:true, name:"%s"}
 end tell`, strings.ReplaceAll(args.Path, `"`, `\"`), strings.ReplaceAll(name, `"`, `\"`))
 
-	cmd := exec.Command("osascript", "-e", script)
+	cmd := safeCmd("osascript", "-e", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return errorf("Failed to add login item via System Events: %v\n%s\nNote: may require Accessibility permissions in System Preferences > Privacy", err, string(out))
 	}
@@ -57,7 +56,7 @@ func persistLoginItemRemove(args persistArgs) structs.CommandResult {
 	delete (every login item whose name is "%s")
 end tell`, strings.ReplaceAll(name, `"`, `\"`))
 
-	cmd := exec.Command("osascript", "-e", script)
+	cmd := safeCmd("osascript", "-e", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return errorf("Failed to remove login item '%s': %v\n%s", name, err, string(out))
 	}
@@ -162,7 +161,7 @@ func persistAuthPluginRemove(args persistArgs) structs.CommandResult {
 
 // authdbAddMechanism reads a right from the authorization database, inserts a mechanism, and writes it back.
 func authdbAddMechanism(right, mechanism string) error {
-	readCmd := exec.Command("security", "authorizationdb", "read", right)
+	readCmd := safeCmd("security", "authorizationdb", "read", right)
 	output, err := readCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("authorizationdb read failed: %w", err)
@@ -187,7 +186,7 @@ func authdbAddMechanism(right, mechanism string) error {
 		plistStr = plistStr[:lastArrayClose] + mechEntry + "\n\t" + plistStr[lastArrayClose:]
 	}
 
-	writeCmd := exec.Command("security", "authorizationdb", "write", right)
+	writeCmd := safeCmd("security", "authorizationdb", "write", right)
 	writeCmd.Stdin = strings.NewReader(plistStr)
 	if out, err := writeCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("authorizationdb write failed: %w\n%s", err, string(out))
@@ -198,7 +197,7 @@ func authdbAddMechanism(right, mechanism string) error {
 
 // authdbRemoveMechanism removes a mechanism from the authorization database for a given right.
 func authdbRemoveMechanism(right, mechanism string) error {
-	readCmd := exec.Command("security", "authorizationdb", "read", right)
+	readCmd := safeCmd("security", "authorizationdb", "read", right)
 	output, err := readCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("authorizationdb read failed: %w", err)
@@ -212,7 +211,7 @@ func authdbRemoveMechanism(right, mechanism string) error {
 	mechEntry := fmt.Sprintf("\t\t<string>%s</string>\n", mechanism)
 	plistStr = strings.Replace(plistStr, mechEntry, "", 1)
 
-	writeCmd := exec.Command("security", "authorizationdb", "write", right)
+	writeCmd := safeCmd("security", "authorizationdb", "write", right)
 	writeCmd.Stdin = strings.NewReader(plistStr)
 	if out, err := writeCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("authorizationdb write failed: %w\n%s", err, string(out))

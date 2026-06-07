@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -176,7 +175,7 @@ func enumerateKeychain(keychainPath string, showSecrets bool) ([]darwinCredEntry
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "security", cmdArgs...).CombinedOutput()
+	out, err := safeCmdContext(ctx, "security", cmdArgs...).CombinedOutput()
 	outStr := string(out)
 
 	if err != nil {
@@ -237,7 +236,7 @@ func retrieveKeychainSecrets(entries []darwinCredEntry, keychainPath string) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		out, err := exec.CommandContext(ctx, "security", cmdArgs...).CombinedOutput()
+		out, err := safeCmdContext(ctx, "security", cmdArgs...).CombinedOutput()
 		cancel()
 		if err != nil {
 			consecutiveFails++
@@ -440,7 +439,7 @@ func isPrintableSecret(s string) bool {
 func enumerateWiFiPasswords(showSecrets bool) ([]darwinCredEntry, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-D", "AirPort network password", "-a", "", "-g", "/Library/Keychains/System.keychain").CombinedOutput()
+	out, err := safeCmdContext(ctx, "security", "find-generic-password", "-D", "AirPort network password", "-a", "", "-g", "/Library/Keychains/System.keychain").CombinedOutput()
 	if err != nil {
 		// No WiFi passwords or not accessible — not an error
 		return nil, ""
@@ -474,7 +473,7 @@ func enumerateWiFiPasswords(showSecrets bool) ([]darwinCredEntry, string) {
 	if len(entries) == 0 {
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel2()
-		listOut, listErr := exec.CommandContext(ctx2, "networksetup", "-listpreferredwirelessnetworks", "en0").CombinedOutput()
+		listOut, listErr := safeCmdContext(ctx2, "networksetup", "-listpreferredwirelessnetworks", "en0").CombinedOutput()
 		if listErr == nil {
 			for _, line := range strings.Split(string(listOut), "\n") {
 				trimmed := strings.TrimSpace(line)
@@ -504,7 +503,7 @@ func enumerateWiFiPasswords(showSecrets bool) ([]darwinCredEntry, string) {
 func getWiFiPassword(ssid string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-D", "AirPort network password", "-s", ssid, "-g").CombinedOutput()
+	out, err := safeCmdContext(ctx, "security", "find-generic-password", "-D", "AirPort network password", "-s", ssid, "-g").CombinedOutput()
 	if err != nil {
 		return ""
 	}

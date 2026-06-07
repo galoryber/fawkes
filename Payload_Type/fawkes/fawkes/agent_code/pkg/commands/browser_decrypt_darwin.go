@@ -10,7 +10,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -43,7 +42,7 @@ func chromeSafeStorageKey(browserName string) ([]byte, error) {
 	}
 
 	// Retrieve password from Keychain
-	cmd := exec.Command("security", "find-generic-password", "-w", "-s", service, "-a", account)
+	cmd := safeCmd("security", "find-generic-password", "-w", "-s", service, "-a", account)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("keychain lookup failed for %s: %w", browserName, err)
@@ -374,7 +373,7 @@ func browserSafariPasswords() ([]safariPasswordEntry, []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "security", "dump-keychain").CombinedOutput()
+	out, err := safeCmdContext(ctx, "security", "dump-keychain").CombinedOutput()
 	if err != nil {
 		return nil, []string{fmt.Sprintf("Safari: keychain dump failed: %v", err)}
 	}
@@ -428,7 +427,7 @@ func browserSafariPasswords() ([]safariPasswordEntry, []string) {
 		}
 
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
-		pwOut, pwErr := exec.CommandContext(ctx2, "security", cmdArgs...).CombinedOutput()
+		pwOut, pwErr := safeCmdContext(ctx2, "security", cmdArgs...).CombinedOutput()
 		cancel2()
 		if pwErr != nil {
 			consecutiveFails++

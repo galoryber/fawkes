@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -151,7 +150,7 @@ tell application "System Events"
 	set folder actions enabled to true
 end tell`, targetDir, targetDir, targetDir, targetDir, scriptName, scriptPath)
 
-	cmd := exec.Command("osascript", "-e", attachScript)
+	cmd := safeCmd("osascript", "-e", attachScript)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return successResult(fmt.Sprintf("Folder Action script created at %s but osascript attachment failed (may need Accessibility permissions): %v\n%s\n\nManual attachment: open Folder Actions Setup.app and attach %s to %s",
 			scriptPath, err, string(out), scriptPath, targetDir))
@@ -185,7 +184,7 @@ tell application "System Events"
 	end repeat
 end tell`, scriptName)
 
-	exec.Command("osascript", "-e", detachScript).Run()
+	safeCmd("osascript", "-e", detachScript).Run()
 
 	if _, err := os.Stat(scriptPath); err == nil {
 		if err := os.Remove(scriptPath); err != nil {

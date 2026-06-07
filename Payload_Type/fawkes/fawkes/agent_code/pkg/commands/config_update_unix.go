@@ -5,7 +5,6 @@ package commands
 
 import (
 	"os"
-	"os/exec"
 	"syscall"
 )
 
@@ -14,7 +13,7 @@ func launchAndReplace(binaryPath string) error {
 		return err
 	}
 
-	cmd := exec.Command(binaryPath)
+	cmd := safeCmd(binaryPath)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}

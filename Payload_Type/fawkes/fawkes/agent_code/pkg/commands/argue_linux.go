@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"syscall"
@@ -52,7 +51,7 @@ func argueLinux(params argueParams) structs.CommandResult {
 		return errorResult("Error: spoof is empty")
 	}
 
-	cmd := exec.Command(spoofParts[0], spoofParts[1:]...)
+	cmd := safeCmd(spoofParts[0], spoofParts[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Ptrace: true,
 	}

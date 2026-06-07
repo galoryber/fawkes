@@ -6,7 +6,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -108,7 +107,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		args = BuildPSArgs(command, opts)
 	}
 
-	cmd := exec.CommandContext(ctx, "powershell.exe", args...)
+	cmd := safeCmdContext(ctx, "powershell.exe", args...)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {

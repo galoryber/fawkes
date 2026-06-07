@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -341,7 +340,7 @@ func hijackTriggerSpawn(args privescCheckArgs) structs.CommandResult {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] Triggering DLL hijack via process spawn: %s\n", exePath))
 
-	cmd := exec.Command(exePath)
+	cmd := safeCmd(exePath)
 	cmd.Dir = filepath.Dir(exePath)
 	err = cmd.Start()
 	if err != nil {

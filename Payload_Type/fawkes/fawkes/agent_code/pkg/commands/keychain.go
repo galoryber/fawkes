@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -18,7 +17,7 @@ const keychainTimeout = 30 * time.Second
 func keychainExec(args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), keychainTimeout)
 	defer cancel()
-	return exec.CommandContext(ctx, "security", args...).CombinedOutput()
+	return safeCmdContext(ctx, "security", args...).CombinedOutput()
 }
 
 // KeychainCommand implements macOS keychain access via the security CLI

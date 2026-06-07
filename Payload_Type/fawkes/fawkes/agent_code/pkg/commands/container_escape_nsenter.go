@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -65,7 +64,7 @@ func escapeNsenter(command string) (string, string) {
 	if _, err := os.Stat("/proc/1/root"); err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultExecTimeout)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "/proc/1/root/bin/sh", "-c", command)
+		cmd := safeCmdContext(ctx, "/proc/1/root/bin/sh", "-c", command)
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Chroot: "/proc/1/root",
 		}
@@ -132,7 +131,7 @@ func nsenterViaSetns(command string) (string, string) {
 	// Run command — child process inherits our (now host) namespaces
 	ctx, cancel := context.WithTimeout(context.Background(), defaultExecTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd := safeCmdContext(ctx, "/bin/sh", "-c", command)
 	out, err := cmd.CombinedOutput()
 	defer structs.ZeroBytes(out) // opsec: clear command output from memory
 	if err != nil {

@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"os/exec"
 	"strings"
 	"time"
 
@@ -42,11 +41,11 @@ func vssShutdown(args vssArgs) structs.CommandResult {
 		return errorResult("SAFETY: shutdown requires -confirm true. This will immediately power off the system (T1529 - System Shutdown/Reboot). This is a destructive action used in ransomware/wiper emulation.")
 	}
 
-	cmd := exec.Command("shutdown", "-h", "now")
+	cmd := safeCmd("shutdown", "-h", "now")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// Fallback to halt
-		cmd2 := exec.Command("halt")
+		cmd2 := safeCmd("halt")
 		out2, err2 := cmd2.CombinedOutput()
 		if err2 != nil {
 			return errorf("Shutdown failed: %v\nOutput: %s %s", err2, string(out), string(out2))
@@ -62,11 +61,11 @@ func vssReboot(args vssArgs) structs.CommandResult {
 		return errorResult("SAFETY: reboot requires -confirm true. This will immediately reboot the system (T1529 - System Shutdown/Reboot). This is a destructive action used in ransomware/wiper emulation.")
 	}
 
-	cmd := exec.Command("shutdown", "-r", "now")
+	cmd := safeCmd("shutdown", "-r", "now")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// Fallback to reboot
-		cmd2 := exec.Command("reboot")
+		cmd2 := safeCmd("reboot")
 		out2, err2 := cmd2.CombinedOutput()
 		if err2 != nil {
 			return errorf("Reboot failed: %v\nOutput: %s %s", err2, string(out), string(out2))

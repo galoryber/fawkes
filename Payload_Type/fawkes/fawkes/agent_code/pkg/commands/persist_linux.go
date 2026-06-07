@@ -101,7 +101,7 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 
 	// Get current crontab
 	var currentCrontab string
-	cmd := exec.Command("crontab", "-l")
+	cmd := safeCmd("crontab", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// No existing crontab is OK
@@ -123,7 +123,7 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 	newCrontab += cronLine + "\n"
 
 	// Install via pipe to crontab
-	installCmd := exec.Command("crontab", "-")
+	installCmd := safeCmd("crontab", "-")
 	installCmd.Stdin = strings.NewReader(newCrontab)
 	if out, err := installCmd.CombinedOutput(); err != nil {
 		return errorf("Failed to install crontab: %v\n%s", err, string(out))
@@ -139,7 +139,7 @@ func persistCrontabRemove(args persistArgs) structs.CommandResult {
 	}
 
 	// Get current crontab
-	cmd := exec.Command("crontab", "-l")
+	cmd := safeCmd("crontab", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return errorResult("No crontab entries found")
@@ -162,7 +162,7 @@ func persistCrontabRemove(args persistArgs) structs.CommandResult {
 	}
 
 	newCrontab := strings.Join(filtered, "\n")
-	installCmd := exec.Command("crontab", "-")
+	installCmd := safeCmd("crontab", "-")
 	installCmd.Stdin = strings.NewReader(newCrontab)
 	if out, err := installCmd.CombinedOutput(); err != nil {
 		return errorf("Failed to update crontab: %v\n%s", err, string(out))
@@ -232,9 +232,9 @@ WantedBy=%s
 	// Enable and start the service
 	var enableCmd *exec.Cmd
 	if isRoot {
-		enableCmd = exec.Command("systemctl", "daemon-reload")
+		enableCmd = safeCmd("systemctl", "daemon-reload")
 	} else {
-		enableCmd = exec.Command("systemctl", "--user", "daemon-reload")
+		enableCmd = safeCmd("systemctl", "--user", "daemon-reload")
 	}
 	_, _ = enableCmd.CombinedOutput()
 
@@ -244,7 +244,7 @@ WantedBy=%s
 	} else {
 		enableArgs = []string{"systemctl", "--user", "enable", "--now", serviceName}
 	}
-	startCmd := exec.Command(enableArgs[0], enableArgs[1:]...)
+	startCmd := safeCmd(enableArgs[0], enableArgs[1:]...)
 	if out, err := startCmd.CombinedOutput(); err != nil {
 		return errorf("Service created at %s but failed to enable: %v\n%s", servicePath, err, string(out))
 	}
@@ -271,7 +271,7 @@ func persistSystemdRemove(args persistArgs) structs.CommandResult {
 	} else {
 		stopArgs = []string{"systemctl", "--user", "disable", "--now", serviceName}
 	}
-	stopCmd := exec.Command(stopArgs[0], stopArgs[1:]...)
+	stopCmd := safeCmd(stopArgs[0], stopArgs[1:]...)
 	_, _ = stopCmd.CombinedOutput()
 
 	// Remove the service file
@@ -291,9 +291,9 @@ func persistSystemdRemove(args persistArgs) structs.CommandResult {
 	// Daemon reload
 	var reloadCmd *exec.Cmd
 	if isRoot {
-		reloadCmd = exec.Command("systemctl", "daemon-reload")
+		reloadCmd = safeCmd("systemctl", "daemon-reload")
 	} else {
-		reloadCmd = exec.Command("systemctl", "--user", "daemon-reload")
+		reloadCmd = safeCmd("systemctl", "--user", "daemon-reload")
 	}
 	_, _ = reloadCmd.CombinedOutput()
 

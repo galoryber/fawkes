@@ -68,7 +68,7 @@ func auditRules() structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "auditctl", "-l")
+	cmd := safeCmdContext(ctx, "auditctl", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) || strings.Contains(string(output), "permission denied") {
@@ -147,7 +147,7 @@ func auditDisableRule(ruleSpec string) structs.CommandResult {
 
 	// Build deletion command: auditctl -d [rule]
 	args := append([]string{"-d"}, strings.Fields(ruleSpec)...)
-	cmd := exec.CommandContext(ctx, "auditctl", args...)
+	cmd := safeCmdContext(ctx, "auditctl", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return errorf("Error disabling audit rule: %v\n%s", err, string(output))
@@ -165,7 +165,7 @@ func journalClear(duration string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "journalctl", "--rotate")
+	cmd := safeCmdContext(ctx, "journalctl", "--rotate")
 	output, err := cmd.CombinedOutput()
 	rotateResult := string(output)
 	if err != nil {
@@ -175,7 +175,7 @@ func journalClear(duration string) structs.CommandResult {
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel2()
 
-	cmd2 := exec.CommandContext(ctx2, "journalctl", "--vacuum-time="+duration)
+	cmd2 := safeCmdContext(ctx2, "journalctl", "--vacuum-time="+duration)
 	output2, err2 := cmd2.CombinedOutput()
 	if err2 != nil {
 		return errorf("Error vacuuming journal: %v\n%s", err2, string(output2))
@@ -190,7 +190,7 @@ func journalRotate() structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "journalctl", "--rotate")
+	cmd := safeCmdContext(ctx, "journalctl", "--rotate")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return errorf("Error rotating journal: %v\n%s", err, string(output))
@@ -379,7 +379,7 @@ func auditStatus() structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "auditctl", "-s")
+	cmd := safeCmdContext(ctx, "auditctl", "-s")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Try reading status from /proc

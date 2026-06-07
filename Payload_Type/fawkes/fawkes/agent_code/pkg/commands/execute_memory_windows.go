@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -145,7 +144,7 @@ func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, pre
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, tmpPath, cmdArgs...)
+	cmd := safeCmdContext(ctx, tmpPath, cmdArgs...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

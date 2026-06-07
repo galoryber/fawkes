@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -68,7 +67,7 @@ func findWeakDylibCandidates(searchPath string) []dylibCandidate {
 			return nil
 		}
 
-		out, err := exec.Command("otool", "-l", path).CombinedOutput()
+		out, err := safeCmd("otool", "-l", path).CombinedOutput()
 		if err != nil {
 			return nil
 		}
@@ -222,7 +221,7 @@ func persistXPCServiceInstall(args persistArgs) structs.CommandResult {
 		return errorf("Failed to write plist %s: %v", plistPath, err)
 	}
 
-	loadCmd := exec.Command("launchctl", "load", "-w", plistPath)
+	loadCmd := safeCmd("launchctl", "load", "-w", plistPath)
 	if out, err := loadCmd.CombinedOutput(); err != nil {
 		return successResult(fmt.Sprintf("XPC service plist created at %s but launchctl load failed: %v\n%s\n\nThe service will load on next login/reboot.",
 			plistPath, err, string(out)))
@@ -260,7 +259,7 @@ func persistXPCServiceRemove(args persistArgs) structs.CommandResult {
 			continue
 		}
 
-		exec.Command("launchctl", "unload", "-w", plistPath).Run()
+		safeCmd("launchctl", "unload", "-w", plistPath).Run()
 
 		if err := os.Remove(plistPath); err != nil {
 			return errorf("Failed to remove %s: %v", plistPath, err)

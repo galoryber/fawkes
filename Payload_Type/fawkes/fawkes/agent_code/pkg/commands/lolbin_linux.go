@@ -80,7 +80,7 @@ func runWithTimeout(binary string, cmdArgs []string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binary, cmdArgs...)
+	cmd := safeCmdContext(ctx, binary, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", binary, strings.Join(cmdArgs, " "))
@@ -203,7 +203,7 @@ func gtfobinGCC(code, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	compileCmd := exec.CommandContext(ctx, binary, compileArgs...)
+	compileCmd := safeCmdContext(ctx, binary, compileArgs...)
 	compileOut, err := compileCmd.CombinedOutput()
 	if err != nil {
 		result := fmt.Sprintf("[!] Compilation failed: %s %s\n%s\n%v",
@@ -217,7 +217,7 @@ func gtfobinGCC(code, extraArgs string) structs.CommandResult {
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel2()
 
-	runCmd := exec.CommandContext(ctx2, outPath)
+	runCmd := safeCmdContext(ctx2, outPath)
 	runOut, err := runCmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] Compiled with %s, executing\n", binary)

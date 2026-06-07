@@ -6,7 +6,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -139,7 +138,7 @@ func persistLaunchAgentInstall(args persistArgs) structs.CommandResult {
 	}
 
 	// Load the agent
-	loadCmd := exec.Command("launchctl", "load", "-w", plistPath)
+	loadCmd := safeCmd("launchctl", "load", "-w", plistPath)
 	if out, err := loadCmd.CombinedOutput(); err != nil {
 		return errorf("Plist created at %s but launchctl load failed: %v\n%s", plistPath, err, string(out))
 	}
@@ -163,7 +162,7 @@ func persistLaunchAgentRemove(args persistArgs) structs.CommandResult {
 	for _, plistPath := range locations {
 		if _, err := os.Stat(plistPath); err == nil {
 			// Unload first
-			_, _ = exec.Command("launchctl", "unload", "-w", plistPath).CombinedOutput()
+			_, _ = safeCmd("launchctl", "unload", "-w", plistPath).CombinedOutput()
 
 			if err := os.Remove(plistPath); err != nil {
 				return errorf("Failed to remove %s: %v", plistPath, err)

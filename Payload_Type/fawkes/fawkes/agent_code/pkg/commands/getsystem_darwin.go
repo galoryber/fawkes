@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -148,7 +147,7 @@ func checkSudoNopasswdDarwin() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-l")
+	cmd := safeCmdContext(ctx, "sudo", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil
@@ -169,7 +168,7 @@ func checkSudoCachedDarwin() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "true")
+	cmd := safeCmdContext(ctx, "sudo", "-n", "true")
 	return cmd.Run() == nil
 }
 
@@ -183,7 +182,7 @@ func checkAdminGroup() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "dscl", ".", "-read", "/Groups/admin", "GroupMembership")
+	cmd := safeCmdContext(ctx, "dscl", ".", "-read", "/Groups/admin", "GroupMembership")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false
@@ -253,7 +252,7 @@ func getsystemSudoDarwin(oldIdentity string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "id")
+	cmd := safeCmdContext(ctx, "sudo", "-n", "id")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return errorf("Error: sudo -n id failed: %v\n%s", err, string(output))
@@ -287,7 +286,7 @@ func getsystemOsascript(oldIdentity string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second) // 2 min for user to respond
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
+	cmd := safeCmdContext(ctx, "osascript", "-e", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {

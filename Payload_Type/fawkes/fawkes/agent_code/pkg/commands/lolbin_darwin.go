@@ -74,7 +74,7 @@ func runWithTimeout(binary string, cmdArgs []string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binary, cmdArgs...)
+	cmd := safeCmdContext(ctx, binary, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", binary, strings.Join(cmdArgs, " "))

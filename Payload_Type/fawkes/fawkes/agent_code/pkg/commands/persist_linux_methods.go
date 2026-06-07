@@ -6,7 +6,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -620,7 +619,7 @@ func persistLinuxList() structs.CommandResult {
 
 	// Check crontab
 	sb.WriteString("[Crontab]\n")
-	cmd := exec.Command("crontab", "-l")
+	cmd := safeCmd("crontab", "-l")
 	if output, err := cmd.CombinedOutput(); err == nil {
 		lines := strings.Split(string(output), "\n")
 		for _, line := range lines {

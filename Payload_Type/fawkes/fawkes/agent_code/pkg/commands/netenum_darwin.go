@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -59,7 +58,7 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 
 // neDarwinUsers lists users via dscl.
 func neDarwinUsers() structs.CommandResult {
-	out, err := exec.Command("dscl", ".", "-list", "/Users", "UniqueID").Output()
+	out, err := safeCmd("dscl", ".", "-list", "/Users", "UniqueID").Output()
 	if err != nil {
 		return errorf("dscl failed: %v", err)
 	}
@@ -97,7 +96,7 @@ func neDarwinUsers() structs.CommandResult {
 
 // neDarwinGroups lists groups via dscl.
 func neDarwinGroups() structs.CommandResult {
-	out, err := exec.Command("dscl", ".", "-list", "/Groups", "PrimaryGroupID").Output()
+	out, err := safeCmd("dscl", ".", "-list", "/Groups", "PrimaryGroupID").Output()
 	if err != nil {
 		return errorf("dscl failed: %v", err)
 	}
@@ -127,7 +126,7 @@ func neDarwinGroups() structs.CommandResult {
 
 // neDarwinGroupMembers returns members of a specific group.
 func neDarwinGroupMembers(group string) structs.CommandResult {
-	out, err := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
+	out, err := safeCmd("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
 	if err != nil {
 		return errorf("Failed to read group %s: %v", group, err)
 	}
@@ -168,7 +167,7 @@ func neDarwinAdmins() structs.CommandResult {
 	var entries []netEnumEntry
 
 	for _, group := range adminGroups {
-		out, err := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
+		out, err := safeCmd("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
 		if err != nil {
 			continue
 		}
@@ -204,7 +203,7 @@ func neDarwinAdmins() structs.CommandResult {
 
 // neDarwinSessions uses the who command for session enumeration.
 func neDarwinSessions() structs.CommandResult {
-	out, err := exec.Command("who").Output()
+	out, err := safeCmd("who").Output()
 	if err != nil {
 		return errorf("who failed: %v", err)
 	}
@@ -261,7 +260,7 @@ func neDarwinShares() structs.CommandResult {
 	}
 
 	// SMB shares via sharing command
-	if out, err := exec.Command("sharing", "-l").Output(); err == nil {
+	if out, err := safeCmd("sharing", "-l").Output(); err == nil {
 		scanner := bufio.NewScanner(strings.NewReader(string(out)))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())

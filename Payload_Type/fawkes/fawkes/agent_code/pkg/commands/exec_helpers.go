@@ -24,11 +24,23 @@ func sanitizedEnv() []string {
 	return clean
 }
 
-// newCmdCtx creates an exec.Cmd with sanitized environment and timeout context.
-func newCmdCtx(ctx context.Context, name string, args ...string) *exec.Cmd {
+// safeCmd wraps exec.Command with sanitized environment.
+func safeCmd(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.Env = sanitizedEnv()
+	return cmd
+}
+
+// safeCmdContext wraps exec.CommandContext with sanitized environment.
+func safeCmdContext(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = sanitizedEnv()
 	return cmd
+}
+
+// newCmdCtx creates an exec.Cmd with sanitized environment and timeout context.
+func newCmdCtx(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return safeCmdContext(ctx, name, args...)
 }
 
 // execCmdTimeout runs a command with a timeout and returns combined output.
