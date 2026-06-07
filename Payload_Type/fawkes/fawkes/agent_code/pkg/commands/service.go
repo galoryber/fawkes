@@ -170,7 +170,7 @@ func serviceList() structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to marshal service list to JSON: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

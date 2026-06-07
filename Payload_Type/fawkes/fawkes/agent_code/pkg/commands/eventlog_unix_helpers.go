@@ -120,7 +120,7 @@ func filterLinesByTime(lines []string, cutoff time.Time) []string {
 func eventlogFileInfo(path string) structs.CommandResult {
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat log file %q: %v", path, err)
 	}
 
 	var sb strings.Builder

@@ -346,7 +346,7 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 
 	info, err := os.Stat(args.File)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat log file %q: %v", args.File, err)
 	}
 
 	size := info.Size()

@@ -33,7 +33,7 @@ func (c *FileAttrCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Verify file exists
 	if _, err := os.Lstat(args.Path); err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat path %q: %v", args.Path, err)
 	}
 
 	if args.Attrs != "" {

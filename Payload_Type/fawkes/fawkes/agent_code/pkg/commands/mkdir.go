@@ -29,7 +29,7 @@ func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 
 	path, err := resolveMkdirPath(task.Params)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to resolve directory path: %v", err)
 	}
 
 	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")

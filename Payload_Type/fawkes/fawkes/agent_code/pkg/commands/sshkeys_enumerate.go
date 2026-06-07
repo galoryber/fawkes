@@ -13,7 +13,7 @@ import (
 func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to locate .ssh directory for reading private keys: %v", err)
 	}
 
 	// If a specific path is given, just read that file
@@ -60,7 +60,7 @@ func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to locate .ssh directory for SSH enumeration: %v", err)
 	}
 
 	var sb strings.Builder

@@ -32,7 +32,7 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 	// Single screenshot
 	imgData, err := captureScreenLinux()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to capture screenshot on Linux: %v", err)
 	}
 
 	// Send screenshot to Mythic

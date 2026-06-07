@@ -69,7 +69,7 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat path %s: %v", path, err)
 	}
 
 	// Resolve UID
@@ -93,7 +93,7 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 	if !args.Recursive || !info.IsDir() {
 		// Single file
 		if err := os.Chown(path, uid, gid); err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to change ownership of %s: %v", path, err)
 		}
 		return successResult(chownFormatResult(path, args.Owner, args.Group, uid, gid))
 	}

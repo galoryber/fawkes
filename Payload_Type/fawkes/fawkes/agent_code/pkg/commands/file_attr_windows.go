@@ -69,7 +69,7 @@ func getFileAttrs(path string) structs.CommandResult {
 func setFileAttrs(path string, attrsStr string) structs.CommandResult {
 	add, remove, err := parseAttrChanges(attrsStr)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to parse attribute changes %q: %v", attrsStr, err)
 	}
 
 	// Get current attributes

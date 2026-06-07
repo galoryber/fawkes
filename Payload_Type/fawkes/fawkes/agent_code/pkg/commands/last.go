@@ -62,7 +62,7 @@ func (c *LastCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to marshal login entries to JSON: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

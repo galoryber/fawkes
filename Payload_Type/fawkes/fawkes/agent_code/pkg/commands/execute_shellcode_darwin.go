@@ -62,7 +62,7 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 		addr, method, err = allocShellcodeX86(shellcode, allocSize)
 	}
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to allocate executable memory for shellcode (%s): %v", runtime.GOARCH, err)
 	}
 
 	funcAddr := addr

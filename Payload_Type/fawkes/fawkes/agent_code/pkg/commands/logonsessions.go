@@ -200,7 +200,7 @@ func utf16PtrToSlice(p *uint16) []uint16 {
 func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateWTSSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to enumerate WTS logon sessions: %v", err)
 	}
 
 	// Filter
@@ -239,7 +239,7 @@ type userEntry struct {
 func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateWTSSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to enumerate WTS logon sessions: %v", err)
 	}
 
 	type userInfo struct {

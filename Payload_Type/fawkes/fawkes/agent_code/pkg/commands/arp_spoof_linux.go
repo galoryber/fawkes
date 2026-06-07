@@ -22,7 +22,7 @@ import (
 func executeArpSpoof(task structs.Task) structs.CommandResult {
 	args, err := parseArpSpoofArgs(task.Params)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to parse ARP spoof arguments: %v", err)
 	}
 
 	// Resolve target and gateway MAC addresses

@@ -215,7 +215,7 @@ func linuxFirewallAdd(args firewallArgs) structs.CommandResult {
 func linuxIptablesAdd(args firewallArgs) structs.CommandResult {
 	cmdArgs, err := buildIptablesArgs(args, "-A")
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to build iptables add rule arguments: %v", err)
 	}
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)
@@ -265,7 +265,7 @@ func linuxFirewallDelete(args firewallArgs) structs.CommandResult {
 func linuxIptablesDelete(args firewallArgs) structs.CommandResult {
 	cmdArgs, err := buildIptablesArgs(args, "-D")
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to build iptables delete rule arguments: %v", err)
 	}
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)

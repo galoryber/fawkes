@@ -157,7 +157,7 @@ func tokenStoreRemove(name string) structs.CommandResult {
 	}
 
 	if err := RemoveTokenFromStore(name); err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to remove token %q from store: %v", name, err)
 	}
 
 	return successf("Removed token %q from store", name)

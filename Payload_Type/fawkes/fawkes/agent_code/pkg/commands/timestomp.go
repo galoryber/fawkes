@@ -86,7 +86,7 @@ func (c *TimestompCommand) Execute(task structs.Task) structs.CommandResult {
 func timestompGet(target string) structs.CommandResult {
 	info, err := os.Stat(target)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat file %s: %v", target, err)
 	}
 
 	output := fmt.Sprintf("Timestamps for: %s\n", target)
@@ -236,7 +236,7 @@ func timestompRandom(target, rangeStartStr, rangeEndStr string) structs.CommandR
 
 	chosen, err := randomTimeBetween(rangeStart, rangeEnd)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to generate random timestamp for range %s to %s: %v", rangeStartStr, rangeEndStr, err)
 	}
 
 	if err := os.Chtimes(target, chosen, chosen); err != nil {

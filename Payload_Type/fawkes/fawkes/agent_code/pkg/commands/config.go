@@ -180,7 +180,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		}
 		minutes, err := structs.ParseWorkingHoursTime(value)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to parse working hours start time '%s': %v", value, err)
 		}
 		old := structs.FormatWorkingHoursTime(agent.WorkingHoursStart)
 		agent.WorkingHoursStart = minutes
@@ -193,7 +193,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		}
 		minutes, err := structs.ParseWorkingHoursTime(value)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to parse working hours end time '%s': %v", value, err)
 		}
 		old := structs.FormatWorkingHoursTime(agent.WorkingHoursEnd)
 		agent.WorkingHoursEnd = minutes
@@ -206,7 +206,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		}
 		days, err := structs.ParseWorkingDays(value)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to parse working days '%s': %v", value, err)
 		}
 		agent.WorkingDays = days
 		dayNames := []string{"", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}

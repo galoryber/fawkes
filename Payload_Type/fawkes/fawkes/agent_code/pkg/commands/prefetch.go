@@ -155,7 +155,7 @@ func prefetchList(count int, filter string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to marshal prefetch results to JSON: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

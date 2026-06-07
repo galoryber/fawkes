@@ -36,7 +36,7 @@ var darwinAttrDefs = []darwinAttrDef{
 func getFileAttrs(path string) structs.CommandResult {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat %s for attribute read: %v", path, err)
 	}
 
 	sys, ok := info.Sys().(*syscall.Stat_t)
@@ -66,13 +66,13 @@ func getFileAttrs(path string) structs.CommandResult {
 func setFileAttrs(path string, attrsStr string) structs.CommandResult {
 	add, remove, err := parseAttrChanges(attrsStr)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to parse attribute changes '%s': %v", attrsStr, err)
 	}
 
 	// Get current flags
 	info, err := os.Lstat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat %s for attribute modification: %v", path, err)
 	}
 
 	sys, ok := info.Sys().(*syscall.Stat_t)

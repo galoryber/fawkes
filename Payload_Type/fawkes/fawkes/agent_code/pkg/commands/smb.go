@@ -186,7 +186,7 @@ func smbConnect(args smbArgs) (*smbConn, error) {
 func smbListShares(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -210,7 +210,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 func smbListDir(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s for directory listing: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -275,7 +275,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 func smbReadFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s for file read: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -328,7 +328,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 func smbWriteFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s for file upload: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -361,7 +361,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 func smbDeleteFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s for file deletion: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -386,7 +386,7 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 func smbMkdir(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s for mkdir: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -411,7 +411,7 @@ func smbMkdir(args smbArgs) structs.CommandResult {
 func smbRename(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s for rename: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -446,7 +446,7 @@ func smbPushFile(args smbArgs) structs.CommandResult {
 
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to open SMB session to %s for file push: %v", args.Host, err)
 	}
 	defer sc.close()
 

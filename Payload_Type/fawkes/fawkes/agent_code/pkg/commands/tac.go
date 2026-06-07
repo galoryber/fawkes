@@ -33,7 +33,7 @@ func (c *TacCommand) Execute(task structs.Task) structs.CommandResult {
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read file %q: %v", args.Path, err)
 	}
 
 	// Reverse lines

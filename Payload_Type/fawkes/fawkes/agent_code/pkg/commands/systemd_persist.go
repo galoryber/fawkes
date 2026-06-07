@@ -84,7 +84,7 @@ func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 
 	unitDir, err := systemdUnitDir(args.System)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to determine systemd unit directory: %v", err)
 	}
 
 	desc := args.Description
@@ -175,7 +175,7 @@ func systemdRemove(args systemdPersistArgs) structs.CommandResult {
 
 	unitDir, err := systemdUnitDir(args.System)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to determine systemd unit directory: %v", err)
 	}
 
 	var sb strings.Builder

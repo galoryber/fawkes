@@ -53,7 +53,7 @@ func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to access path %s: %v", args.Path, err)
 	}
 
 	if info.IsDir() {
@@ -62,7 +62,7 @@ func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 
 	result, err := wcFile(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to count file %s: %v", args.Path, err)
 	}
 
 	return successResult(formatWcResult(result))

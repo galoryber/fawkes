@@ -53,7 +53,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Lstat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat target path %s: %v", args.Path, err)
 	}
 
 	if info.IsDir() {
@@ -91,7 +91,7 @@ func secureWipe(args secureDeleteArgs) structs.CommandResult {
 
 	info, err := os.Lstat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat wipe target %s: %v", args.Path, err)
 	}
 
 	if info.IsDir() {

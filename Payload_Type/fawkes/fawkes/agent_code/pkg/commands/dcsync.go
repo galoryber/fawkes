@@ -116,7 +116,7 @@ func dcsyncExecuteNTLM(args dcsyncArgs, targets []string) structs.CommandResult 
 	results, err := dcsyncViaSubprocess(args, targets)
 	zeroCredentials(&args.Password, &args.Hash)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: DCSync replication via NTLM against %s failed: %v", args.Server, err)
 	}
 	return dcsyncFormatResults(args, targets, results, "NTLM")
 }

@@ -55,7 +55,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat path %q: %v", args.Path, err)
 	}
 
 	if !info.IsDir() {

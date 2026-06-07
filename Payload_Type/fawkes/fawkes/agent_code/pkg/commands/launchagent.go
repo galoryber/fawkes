@@ -86,7 +86,7 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 
 	plistDir, err := getPlistDir(args.Daemon)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to determine plist directory: %v", err)
 	}
 
 	// Ensure the directory exists
@@ -136,7 +136,7 @@ func launchAgentRemove(args launchAgentArgs) structs.CommandResult {
 
 	plistDir, err := getPlistDir(args.Daemon)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to determine plist directory: %v", err)
 	}
 
 	plistPath := filepath.Join(plistDir, args.Label+".plist")

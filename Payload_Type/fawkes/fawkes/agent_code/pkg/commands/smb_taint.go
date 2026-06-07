@@ -68,7 +68,7 @@ func smbTaintShares(args smbArgs) structs.CommandResult {
 	// Connect to target
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to connect to SMB target %s: %v", args.Host, err)
 	}
 	defer sc.close()
 

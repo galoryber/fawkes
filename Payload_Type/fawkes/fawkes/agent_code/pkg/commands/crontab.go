@@ -141,7 +141,7 @@ func crontabReadSpool(username string) (string, error) {
 func crontabAdd(args crontabArgs) structs.CommandResult {
 	entry, err := buildCrontabEntry(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to build crontab entry: %v", err)
 	}
 
 	// Get existing crontab

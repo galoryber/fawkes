@@ -195,7 +195,7 @@ func enumerateDarwinSessions() ([]sessionEntry, error) {
 func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateDarwinSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to enumerate macOS logon sessions from utmpx: %v", err)
 	}
 
 	var filtered []sessionEntry
@@ -224,7 +224,7 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateDarwinSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to enumerate macOS logon sessions from utmpx: %v", err)
 	}
 
 	type userInfo struct {

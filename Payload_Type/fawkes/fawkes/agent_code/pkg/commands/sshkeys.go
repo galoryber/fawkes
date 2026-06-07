@@ -95,7 +95,7 @@ func getSSHDir(targetUser string) (string, error) {
 func sshKeysList(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to locate .ssh directory for listing authorized keys: %v", err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")
@@ -135,7 +135,7 @@ func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to locate .ssh directory for key injection: %v", err)
 	}
 
 	// Create .ssh dir if it doesn't exist (0700 permissions)
@@ -180,7 +180,7 @@ func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to locate .ssh directory for key removal: %v", err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")

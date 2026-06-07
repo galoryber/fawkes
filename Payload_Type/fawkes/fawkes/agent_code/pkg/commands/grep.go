@@ -97,7 +97,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	// Check if path is a single file
 	info, err := os.Stat(startPath)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat search path %q: %v", startPath, err)
 	}
 
 	var matches []grepMatch

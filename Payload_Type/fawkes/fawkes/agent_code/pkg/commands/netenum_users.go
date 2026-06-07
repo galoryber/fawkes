@@ -73,7 +73,7 @@ func netEnumLocalUsers() structs.CommandResult {
 func netEnumLocalGroups(target string) structs.CommandResult {
 	serverPtr, err := neGetServerPtr(target)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to resolve server pointer for local group enumeration: %v", err)
 	}
 
 	var buf uintptr
@@ -153,12 +153,12 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 
 	serverPtr, err := neGetServerPtr(server)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to resolve server pointer for group member enumeration: %v", err)
 	}
 
 	groupPtr, err := windows.UTF16PtrFromString(group)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to convert group name %q to UTF-16: %v", group, err)
 	}
 
 	var buf uintptr
@@ -213,7 +213,7 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 func netEnumDomainUsers() structs.CommandResult {
 	dcName, err := getDomainControllerName()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to find domain controller for user enumeration: %v", err)
 	}
 
 	serverPtr, _ := syscall.UTF16PtrFromString("\\\\" + dcName)
@@ -274,7 +274,7 @@ func netEnumDomainUsers() structs.CommandResult {
 func netEnumDomainGroups() structs.CommandResult {
 	dcName, err := getDomainControllerName()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to find domain controller for group enumeration: %v", err)
 	}
 
 	serverPtr, _ := syscall.UTF16PtrFromString("\\\\" + dcName)

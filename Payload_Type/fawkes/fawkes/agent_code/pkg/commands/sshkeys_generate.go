@@ -28,7 +28,7 @@ func sshKeysGenerate(args sshKeysArgs) structs.CommandResult {
 		var err error
 		sshDir, err = getSSHDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to resolve SSH directory for user %q: %v", args.User, err)
 		}
 		privKeyPath = filepath.Join(sshDir, "id_ed25519")
 	}

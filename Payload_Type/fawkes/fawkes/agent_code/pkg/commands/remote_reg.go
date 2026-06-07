@@ -110,7 +110,7 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		Params:    params,
 	})
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: remote registry RPC call to %s failed: %v", args.Server, err)
 	}
 
 	var result winregResult

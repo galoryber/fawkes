@@ -200,7 +200,7 @@ func enumerateLinuxSessions() ([]sessionEntry, error) {
 func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateLinuxSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to enumerate Linux logon sessions from utmp: %v", err)
 	}
 
 	var filtered []sessionEntry
@@ -229,7 +229,7 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateLinuxSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to enumerate Linux logon sessions from utmp: %v", err)
 	}
 
 	type userInfo struct {

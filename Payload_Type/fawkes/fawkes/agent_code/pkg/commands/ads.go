@@ -150,7 +150,7 @@ func adsList(args adsArgs) structs.CommandResult {
 	// Check if file exists
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat path %q: %v", absPath, err)
 	}
 
 	// If directory, list ADS on all files in the directory

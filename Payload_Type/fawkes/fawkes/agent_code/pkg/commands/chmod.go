@@ -51,20 +51,20 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat %s: %v", path, err)
 	}
 
 	// Parse the mode
 	mode, err := chmodParseMode(args.Mode, info.Mode())
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to parse mode '%s': %v", args.Mode, err)
 	}
 
 	if !args.Recursive || !info.IsDir() {
 		// Single file or non-recursive
 		before := info.Mode()
 		if err := os.Chmod(path, mode); err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to chmod %s to %s: %v", path, args.Mode, err)
 		}
 		return successResult(chmodFormatResult(path, before, mode))
 	}

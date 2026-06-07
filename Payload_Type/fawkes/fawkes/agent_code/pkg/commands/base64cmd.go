@@ -183,7 +183,7 @@ func encodingXOR(args base64Args) structs.CommandResult {
 
 	keyBytes, err := parseXORKey(args.Key)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to parse XOR key: %v", err)
 	}
 	if len(keyBytes) == 0 {
 		return errorResult("Error: XOR key must not be empty")
@@ -191,7 +191,7 @@ func encodingXOR(args base64Args) structs.CommandResult {
 
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read XOR input data: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -221,7 +221,7 @@ func encodingXOR(args base64Args) structs.CommandResult {
 func encodingHex(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read input for hex encoding: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -233,7 +233,7 @@ func encodingHex(args base64Args) structs.CommandResult {
 func encodingHexDecode(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read input for hex decoding: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -258,7 +258,7 @@ func encodingHexDecode(args base64Args) structs.CommandResult {
 func encodingROT13(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read input for ROT13: %v", err)
 	}
 
 	result := make([]byte, len(data))
@@ -285,7 +285,7 @@ func rot13Byte(b byte) byte {
 func encodingURLEncode(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read input for URL encoding: %v", err)
 	}
 
 	encoded := url.QueryEscape(string(data))
@@ -296,7 +296,7 @@ func encodingURLEncode(args base64Args) structs.CommandResult {
 func encodingURLDecode(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read input for URL decoding: %v", err)
 	}
 
 	decoded, err := url.QueryUnescape(string(data))
@@ -321,7 +321,7 @@ func encodingCaesar(args base64Args) structs.CommandResult {
 
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to read input for Caesar cipher: %v", err)
 	}
 
 	result := make([]byte, len(data))

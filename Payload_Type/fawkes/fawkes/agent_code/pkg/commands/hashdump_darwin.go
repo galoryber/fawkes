@@ -34,7 +34,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := extractDarwinHashes()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to extract password hashes from Directory Services: %v", err)
 	}
 
 	if len(entries) == 0 {

@@ -61,7 +61,7 @@ var defaultSensitivePatterns = []string{
 func smbSharePerms(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to connect to SMB on %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -154,7 +154,7 @@ func classifyShare(name string, entries []os.FileInfo) string {
 func smbShareSpider(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to connect to SMB on %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -271,7 +271,7 @@ func spiderWalk(sc *smbConn, share interface{ ReadDir(string) ([]os.FileInfo, er
 func smbShareSearch(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to connect to SMB on %s: %v", args.Host, err)
 	}
 	defer sc.close()
 

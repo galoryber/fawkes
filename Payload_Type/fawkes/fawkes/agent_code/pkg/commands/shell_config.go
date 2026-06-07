@@ -118,7 +118,7 @@ func getHomeDir(targetUser string) (string, error) {
 func shellHistory(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to resolve home directory for shell history: %v", err)
 	}
 
 	maxLines := args.Lines
@@ -164,7 +164,7 @@ func shellHistory(args shellConfigArgs) structs.CommandResult {
 func shellList(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to resolve home directory for config listing: %v", err)
 	}
 
 	var sb strings.Builder
@@ -237,7 +237,7 @@ func shellRead(args shellConfigArgs) structs.CommandResult {
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to resolve home directory for reading %s: %v", args.File, err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
@@ -263,7 +263,7 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to resolve home directory for injecting into %s: %v", args.File, err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
@@ -313,7 +313,7 @@ func shellRemove(args shellConfigArgs) structs.CommandResult {
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("Error: failed to resolve home directory for removing line from %s: %v", args.File, err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
@@ -353,7 +353,7 @@ func shellRemove(args shellConfigArgs) structs.CommandResult {
 func shellClear(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to resolve home directory for clearing shell history: %v", err)
 	}
 
 	// Determine which files to clear

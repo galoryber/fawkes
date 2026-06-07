@@ -83,7 +83,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	// Read input file
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat file %q for encryption: %v", args.Path, err)
 	}
 	if info.Size() > encryptMaxFileSize {
 		return errorf("Error: file too large (%d bytes, max %d)", info.Size(), encryptMaxFileSize)

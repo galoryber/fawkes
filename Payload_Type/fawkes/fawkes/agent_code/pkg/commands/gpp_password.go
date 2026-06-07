@@ -78,7 +78,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, creds, err := searchGPPPasswords(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to search GPP passwords on %s: %v", args.Server, err)
 	}
 
 	result := structs.CommandResult{

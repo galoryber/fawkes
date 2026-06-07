@@ -106,7 +106,7 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat path %q: %v", args.Path, err)
 	}
 
 	var sb strings.Builder

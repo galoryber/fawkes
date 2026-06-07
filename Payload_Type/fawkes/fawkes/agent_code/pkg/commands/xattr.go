@@ -59,7 +59,7 @@ func (c *XattrCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Verify file exists
 	if _, err := os.Stat(args.Path); err != nil {
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to stat path %q: %v", args.Path, err)
 	}
 
 	switch strings.ToLower(args.Action) {

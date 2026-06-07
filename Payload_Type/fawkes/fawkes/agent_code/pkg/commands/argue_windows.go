@@ -54,7 +54,7 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 		if output != "" {
 			return errorf("%s\nError: %v", output, err)
 		}
-		return errorf("Error: %v", err)
+		return errorf("Error: failed to execute spoofed process for command %q: %v", params.Command, err)
 	}
 
 	trimmed := strings.TrimSpace(output)
