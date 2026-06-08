@@ -15,10 +15,10 @@ import (
 // --- extractChromeVersion Tests ---
 
 func TestExtractChromeVersion_Standard(t *testing.T) {
-	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
 	got := extractChromeVersion(ua)
-	if got != "134" {
-		t.Errorf("extractChromeVersion = %q, want %q", got, "134")
+	if got != "152" {
+		t.Errorf("extractChromeVersion = %q, want %q", got, "152")
 	}
 }
 
@@ -65,7 +65,7 @@ func TestExtractChromeVersion_ChromeAtEnd(t *testing.T) {
 // --- extractPlatform Tests ---
 
 func TestExtractPlatform_Windows(t *testing.T) {
-	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
 	got := extractPlatform(ua)
 	if got != "Windows" {
 		t.Errorf("extractPlatform = %q, want %q", got, "Windows")
@@ -108,12 +108,12 @@ func TestExtractPlatform_Unknown(t *testing.T) {
 // --- generateSecChUa Tests ---
 
 func TestGenerateSecChUa_Chrome134(t *testing.T) {
-	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
 	got := generateSecChUa(ua)
-	if !strings.Contains(got, `"Chromium";v="134"`) {
+	if !strings.Contains(got, `"Chromium";v="152"`) {
 		t.Errorf("sec-ch-ua should contain Chromium v134, got %q", got)
 	}
-	if !strings.Contains(got, `"Google Chrome";v="134"`) {
+	if !strings.Contains(got, `"Google Chrome";v="152"`) {
 		t.Errorf("sec-ch-ua should contain Google Chrome v134, got %q", got)
 	}
 	// Should contain GREASE brand
@@ -141,7 +141,7 @@ func TestGenerateSecChUa_NoChrome(t *testing.T) {
 // --- generateSecChUaMobile Tests ---
 
 func TestGenerateSecChUaMobile_Desktop(t *testing.T) {
-	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36"
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36"
 	got := generateSecChUaMobile(ua)
 	if got != "?0" {
 		t.Errorf("sec-ch-ua-mobile for desktop = %q, want %q", got, "?0")
@@ -159,7 +159,7 @@ func TestGenerateSecChUaMobile_Mobile(t *testing.T) {
 // --- generateSecChUaPlatform Tests ---
 
 func TestGenerateSecChUaPlatform_Windows(t *testing.T) {
-	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/134.0.0.0 Safari/537.36"
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36"
 	got := generateSecChUaPlatform(ua)
 	if got != `"Windows"` {
 		t.Errorf("sec-ch-ua-platform = %q, want %q", got, `"Windows"`)
@@ -185,7 +185,7 @@ func TestGenerateSecChUaPlatform_Linux(t *testing.T) {
 // --- greaseBrand Tests ---
 
 func TestGreaseBrand_ReturnsNonEmpty(t *testing.T) {
-	versions := []string{"100", "110", "120", "130", "134", "140"}
+	versions := []string{"100", "110", "120", "130", "152", "160"}
 	for _, v := range versions {
 		got := greaseBrand(v)
 		if got == "" {
@@ -238,7 +238,7 @@ func TestMakeRequest_IncludesSecChUa(t *testing.T) {
 	defer ts.Close()
 
 	profile := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -253,7 +253,7 @@ func TestMakeRequest_IncludesSecChUa(t *testing.T) {
 	if capturedHeaders.Get("Sec-Ch-Ua") == "" {
 		t.Error("Sec-Ch-Ua header missing")
 	}
-	if !strings.Contains(capturedHeaders.Get("Sec-Ch-Ua"), "134") {
+	if !strings.Contains(capturedHeaders.Get("Sec-Ch-Ua"), "152") {
 		t.Errorf("Sec-Ch-Ua should contain version 134, got %q", capturedHeaders.Get("Sec-Ch-Ua"))
 	}
 	if capturedHeaders.Get("Sec-Ch-Ua-Mobile") != "?0" {
@@ -273,7 +273,7 @@ func TestMakeRequest_IncludesUpgradeInsecureRequests(t *testing.T) {
 	defer ts.Close()
 
 	profile := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -298,7 +298,7 @@ func TestMakeRequest_AcceptEncodingIncludesBrotli(t *testing.T) {
 	defer ts.Close()
 
 	profile := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -324,7 +324,7 @@ func TestMakeRequest_AcceptHeaderModern(t *testing.T) {
 	defer ts.Close()
 
 	profile := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -376,7 +376,7 @@ func TestMakeRequest_CustomHeadersOverrideNewDefaults(t *testing.T) {
 	defer ts.Close()
 
 	profile := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -482,7 +482,7 @@ func TestReadResponseBody_BrotliViaServer(t *testing.T) {
 	defer ts.Close()
 
 	profile := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -512,7 +512,7 @@ func TestMakeRequest_AllChromeHeaders(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
 	profile := NewHTTPProfile(ProfileConfig{
 		BaseURL: ts.URL, UserAgent: ua,
 		MaxRetries: 1, SleepInterval: 5,
@@ -546,7 +546,7 @@ func TestMakeRequest_AllChromeHeaders(t *testing.T) {
 	if !strings.Contains(capturedHeaders.Get("Accept-Encoding"), "br") {
 		t.Error("Accept-Encoding should contain br")
 	}
-	if !strings.Contains(capturedHeaders.Get("Sec-Ch-Ua"), "134") {
+	if !strings.Contains(capturedHeaders.Get("Sec-Ch-Ua"), "152") {
 		t.Error("Sec-Ch-Ua should contain version 134")
 	}
 }

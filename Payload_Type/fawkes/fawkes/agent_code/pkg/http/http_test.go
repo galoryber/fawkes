@@ -1457,7 +1457,7 @@ func TestMakeRequest_ProxyAuthInTransport(t *testing.T) {
 
 	// Create profile pointing directly at test server (simulating proxy)
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -1485,7 +1485,7 @@ func TestMakeRequest_MultipleCustomHeaders(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -1522,7 +1522,7 @@ func TestMakeRequest_CustomHeadersEmptyMap(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -1549,7 +1549,7 @@ func TestMakeRequest_CustomHeadersFromSealed(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
