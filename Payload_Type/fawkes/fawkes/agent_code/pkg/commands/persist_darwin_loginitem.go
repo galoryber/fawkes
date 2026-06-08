@@ -28,7 +28,7 @@ func persistLoginItemInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (executable to add as login item) is required")
 	}
 
-	name := "FawkesHelper"
+	name := "CoreServicesHelper"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -47,7 +47,7 @@ end tell`, strings.ReplaceAll(args.Path, `"`, `\"`), strings.ReplaceAll(name, `"
 }
 
 func persistLoginItemRemove(args persistArgs) structs.CommandResult {
-	name := "FawkesHelper"
+	name := "CoreServicesHelper"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -84,7 +84,7 @@ func persistAuthPluginInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: authorization plugins require root")
 	}
 
-	name := "FawkesAuth"
+	name := "DirectoryServicesAuth"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -138,7 +138,7 @@ func persistAuthPluginRemove(args persistArgs) structs.CommandResult {
 		return errorResult("Error: authorization plugin removal requires root")
 	}
 
-	name := "FawkesAuth"
+	name := "DirectoryServicesAuth"
 	if args.Name != "" {
 		name = args.Name
 	}

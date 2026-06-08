@@ -174,7 +174,7 @@ func executeInIsolatedDomain(assemblyBytes []byte, args []string, log *strings.B
 	}
 
 	// Create isolated AppDomain
-	domainName := fmt.Sprintf("FawkesIsolated_%d", time.Now().UnixNano())
+	domainName := fmt.Sprintf("AppDomain_%d", time.Now().UnixNano())
 	namePtr, err := syscall.UTF16PtrFromString(domainName)
 	if err != nil {
 		assemblyMutex.Unlock()

