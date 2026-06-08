@@ -8,13 +8,14 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
-// updateCallbackIdentity updates the callback description to reflect the current
-// impersonation state after a token operation (stealtoken, maketoken, rev2self).
+// updateCallbackIdentity updates the callback User and Description to reflect
+// the current impersonation state after a token operation.
 func updateCallbackIdentity(taskID int, callbackID string, operation, user string) {
 	desc := formatIdentityDescription(operation, user)
 	if _, err := mythicrpc.SendMythicRPCCallbackUpdate(mythicrpc.MythicRPCCallbackUpdateMessage{
 		AgentCallbackID: &callbackID,
 		Description:     &desc,
+		User:            &user,
 	}); err != nil {
 		logging.LogError(err, "Failed to update callback identity", "operation", operation, "user", user)
 	}

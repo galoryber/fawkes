@@ -8,6 +8,7 @@ import (
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -109,10 +110,25 @@ func init() {
 			if err != nil || path == "" {
 				return response
 			}
+			host := processResponse.TaskData.Callback.Host
 			createArtifact(processResponse.TaskData.Task.ID, "File Download",
 				fmt.Sprintf("download %s", path))
 			logOperationEvent(processResponse.TaskData.Task.ID,
-				fmt.Sprintf("[COLLECTION] Downloaded file %s from %s", path, processResponse.TaskData.Callback.Host), false)
+				fmt.Sprintf("[COLLECTION] Downloaded file %s from %s", path, host), false)
+			name := filepath.Base(path)
+			parentPath := filepath.Dir(path)
+			if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+					Host:       host,
+					IsFile:     true,
+					Name:       name,
+					ParentPath: parentPath,
+					Success:    true,
+				},
+			}); err != nil {
+				logging.LogError(err, "download: failed to create file browser entry", "path", path)
+			}
 			return response
 		},
 	})
