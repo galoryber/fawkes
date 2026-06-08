@@ -130,7 +130,7 @@ func openRemoteHive(ctx context.Context, cli winreg.WinregClient, hive string) (
 			return nil, err
 		}
 		if resp.Return != 0 {
-			return nil, fmt.Errorf("error code 0x%08x", resp.Return)
+			return nil, fmt.Errorf("OpenLocalMachine failed: error code 0x%08x", resp.Return)
 		}
 		return resp.Key, nil
 	case "HKCU", "HKEY_CURRENT_USER":
@@ -139,7 +139,7 @@ func openRemoteHive(ctx context.Context, cli winreg.WinregClient, hive string) (
 			return nil, err
 		}
 		if resp.Return != 0 {
-			return nil, fmt.Errorf("error code 0x%08x", resp.Return)
+			return nil, fmt.Errorf("OpenCurrentUser failed: error code 0x%08x", resp.Return)
 		}
 		return resp.Key, nil
 	case "HKU", "HKEY_USERS":
@@ -148,7 +148,7 @@ func openRemoteHive(ctx context.Context, cli winreg.WinregClient, hive string) (
 			return nil, err
 		}
 		if resp.Return != 0 {
-			return nil, fmt.Errorf("error code 0x%08x", resp.Return)
+			return nil, fmt.Errorf("OpenUsers failed: error code 0x%08x", resp.Return)
 		}
 		return resp.Key, nil
 	case "HKCR", "HKEY_CLASSES_ROOT":
@@ -157,7 +157,7 @@ func openRemoteHive(ctx context.Context, cli winreg.WinregClient, hive string) (
 			return nil, err
 		}
 		if resp.Return != 0 {
-			return nil, fmt.Errorf("error code 0x%08x", resp.Return)
+			return nil, fmt.Errorf("OpenClassesRoot failed: error code 0x%08x", resp.Return)
 		}
 		return resp.Key, nil
 	default:

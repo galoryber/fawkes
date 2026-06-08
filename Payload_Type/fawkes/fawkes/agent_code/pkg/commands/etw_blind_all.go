@@ -166,7 +166,7 @@ func etwSessionsForProvider(guid *windows.GUID) ([]int, int, error) {
 		uintptr(unsafe.Pointer(&infoSize)),
 	)
 	if r1 != 0 {
-		return nil, 0, fmt.Errorf("error %d (%v)", uint32(r1), err)
+		return nil, 0, fmt.Errorf("EnumerateTraceGuidsEx failed: error %d (%v)", uint32(r1), err)
 	}
 
 	loggerIDs, instances := parseProviderLoggerIDs(buf)
@@ -248,7 +248,7 @@ func etwEnumerateSessionHandles() (map[uint16]etwSessionEntry, error) {
 		uintptr(unsafe.Pointer(&sessionCount)),
 	)
 	if r1 != 0 {
-		return nil, fmt.Errorf("error %d (%v)", uint32(r1), err)
+		return nil, fmt.Errorf("QueryAllTracesW failed: error %d (%v)", uint32(r1), err)
 	}
 
 	out := make(map[uint16]etwSessionEntry, sessionCount)
