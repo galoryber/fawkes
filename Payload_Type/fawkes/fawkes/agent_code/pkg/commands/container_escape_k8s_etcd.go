@@ -220,7 +220,14 @@ func probeEtcdEndpoint(client *http.Client, url string) k8sEtcdProbeResult {
 	if err != nil {
 		return k8sEtcdProbeResult{URL: url, Status: "error", Detail: err.Error()}
 	}
-	kubeUAs := []string{"kube-probe/1.0", "kube-apiserver/v1.28.0", "kube-apiserver/v1.29.2", "kubelet/v1.28.4", "Go-http-client/2.0"}
+	kubeUAs := []string{
+		"kube-probe/1.0", "kube-probe/1.1",
+		"kube-apiserver/v1.26.15", "kube-apiserver/v1.27.16", "kube-apiserver/v1.28.12",
+		"kube-apiserver/v1.29.7", "kube-apiserver/v1.30.3", "kube-apiserver/v1.31.1",
+		"kubelet/v1.27.16", "kubelet/v1.28.12", "kubelet/v1.29.7", "kubelet/v1.30.3",
+		"kubectl/v1.28.12", "kubectl/v1.29.7", "kubectl/v1.30.3",
+		"Go-http-client/2.0", "Go-http-client/1.1",
+	}
 	var b [1]byte
 	rand.Read(b[:])
 	req.Header.Set("User-Agent", kubeUAs[int(b[0])%len(kubeUAs)])
