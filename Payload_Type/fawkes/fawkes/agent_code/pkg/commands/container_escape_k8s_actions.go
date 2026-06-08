@@ -103,7 +103,9 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 				Phase string `json:"phase"`
 			} `json:"status"`
 		}
-		_ = json.Unmarshal(statusData, &podStatus)
+		if err := json.Unmarshal(statusData, &podStatus); err != nil {
+			sb.WriteString(fmt.Sprintf("[!] Failed to parse pod status: %v\n", err))
+		}
 		structs.ZeroBytes(statusData)
 
 		if podStatus.Status.Phase == "Succeeded" || podStatus.Status.Phase == "Failed" {
@@ -167,7 +169,9 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 			ServiceAccountName string `json:"serviceAccountName"`
 		} `json:"spec"`
 	}
-	_ = json.Unmarshal(podData, &targetSpec)
+	if err := json.Unmarshal(podData, &targetSpec); err != nil {
+		return fmt.Sprintf("Failed to parse pod spec for '%s': %v", targetPod, err), "error"
+	}
 	structs.ZeroBytes(podData)
 
 	image := "alpine"
@@ -223,7 +227,9 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 				Phase string `json:"phase"`
 			} `json:"status"`
 		}
-		_ = json.Unmarshal(statusData, &podStatus)
+		if err := json.Unmarshal(statusData, &podStatus); err != nil {
+			sb.WriteString(fmt.Sprintf("[!] Failed to parse pod status: %v\n", err))
+		}
 		structs.ZeroBytes(statusData)
 		if podStatus.Status.Phase == "Succeeded" || podStatus.Status.Phase == "Failed" {
 			sb.WriteString(fmt.Sprintf("[*] Pod phase: %s\n", podStatus.Status.Phase))
