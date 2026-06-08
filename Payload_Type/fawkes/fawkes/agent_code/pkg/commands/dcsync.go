@@ -127,7 +127,7 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 	cred, credErr = rpcKerberosCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
-		return errorf("Error: %v", credErr)
+		return errorf("Kerberos credential setup failed for %s@%s targeting %s: %v", args.Username, args.Domain, args.Server, credErr)
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Second

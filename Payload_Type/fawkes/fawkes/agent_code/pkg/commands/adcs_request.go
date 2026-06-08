@@ -92,7 +92,7 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
-		return errorf("Error: %v", credErr)
+		return errorf("NTLM credential setup failed for %s\\%s (CSR submission via DCOM to %s): %v", args.Domain, args.Username, args.Server, credErr)
 	}
 
 	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()),

@@ -152,7 +152,7 @@ func linuxFirewallList(args firewallArgs) structs.CommandResult {
 	if backend == "nft" {
 		out, err := execCmdTimeout("nft", "list", "ruleset")
 		if err != nil {
-			return errorf("nft list ruleset failed: %v (may require root)", err)
+			return errorf("nft list ruleset failed: %v — verify CAP_NET_ADMIN capability or run as root. Check that nf_tables kernel module is loaded", err)
 		}
 		output := strings.TrimSpace(string(out))
 		if output == "" {
@@ -220,7 +220,7 @@ func linuxIptablesAdd(args firewallArgs) structs.CommandResult {
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)
 	if execErr != nil {
-		return errorf("iptables add failed: %v\n%s", execErr, string(out))
+		return errorf("iptables add rule failed: %v\nOutput: %s\nVerify CAP_NET_ADMIN capability and rule syntax", execErr, string(out))
 	}
 
 	chain := cmdArgs[1]
@@ -270,7 +270,7 @@ func linuxIptablesDelete(args firewallArgs) structs.CommandResult {
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)
 	if execErr != nil {
-		return errorf("iptables delete failed: %v\n%s", execErr, string(out))
+		return errorf("iptables delete rule failed: %v\nOutput: %s\nVerify the rule exists and check CAP_NET_ADMIN capability", execErr, string(out))
 	}
 
 	chain := cmdArgs[1]
@@ -294,7 +294,7 @@ func linuxNftDelete(args firewallArgs) structs.CommandResult {
 		// Try ip table
 		out, err = execCmdTimeout("nft", "-a", "list", "chain", "ip", "filter", chain)
 		if err != nil {
-			return errorf("nft list chain failed: %v\n%s", err, string(out))
+			return errorf("nft list chain %s failed: %v\nOutput: %s\nVerify chain exists and check CAP_NET_ADMIN capability", chain, err, string(out))
 		}
 	}
 
@@ -307,7 +307,7 @@ func linuxNftDelete(args firewallArgs) structs.CommandResult {
 
 	out, err = execCmdTimeout("nft", "delete", "rule", family, "filter", chain, "handle", handle)
 	if err != nil {
-		return errorf("nft delete rule failed: %v\n%s", err, string(out))
+		return errorf("nft delete rule (handle %s) from %s chain failed: %v\nOutput: %s", handle, chain, err, string(out))
 	}
 
 	return successf("Deleted nftables rule (handle %s) from %s chain", handle, chain)

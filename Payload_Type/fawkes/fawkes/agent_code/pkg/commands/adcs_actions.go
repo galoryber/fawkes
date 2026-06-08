@@ -250,7 +250,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 		structs.ZeroString(&args.Password)
 		structs.ZeroString(&args.Hash)
 		if credErr != nil {
-			return errorf("Error: %v", credErr)
+			return errorf("NTLM credential setup failed for %s\\%s (ADCS enrollment via DCOM): %v", domain, username, credErr)
 		}
 
 		timeout := args.Timeout
