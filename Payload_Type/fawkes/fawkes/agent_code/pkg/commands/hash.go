@@ -216,7 +216,9 @@ func hashDirectory(task structs.Task, root string, args hashArgs) []hashResult {
 		return nil
 	}
 
-	_ = filepath.WalkDir(root, walkFn)
+	if walkErr := filepath.WalkDir(root, walkFn); walkErr != nil && len(results) == 0 {
+		return []hashResult{{Path: root, Err: fmt.Sprintf("walk error: %v", walkErr)}}
+	}
 
 	// Sort by path
 	sort.Slice(results, func(i, j int) bool {

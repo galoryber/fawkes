@@ -111,7 +111,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	} else {
 		// Walk directory
 		startDepth := strings.Count(startPath, string(os.PathSeparator))
-		_ = filepath.WalkDir(startPath, func(path string, d os.DirEntry, err error) error {
+		if walkErr := filepath.WalkDir(startPath, func(path string, d os.DirEntry, err error) error {
 			if task.DidStop() {
 				return fmt.Errorf("cancelled")
 			}
@@ -170,7 +170,9 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 				return fmt.Errorf("max results reached")
 			}
 			return nil
-		})
+		}); walkErr != nil && filesSearched == 0 {
+			return errorf("Failed to search %s: %v", startPath, walkErr)
+		}
 	}
 
 	if len(matches) == 0 {

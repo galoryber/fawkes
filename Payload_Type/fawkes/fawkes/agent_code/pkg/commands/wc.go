@@ -120,7 +120,7 @@ func wcDirectory(task structs.Task, dirPath, pattern string) structs.CommandResu
 	var total wcResult
 	total.path = "total"
 
-	_ = filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+	if walkErr := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
@@ -143,7 +143,9 @@ func wcDirectory(task structs.Task, dirPath, pattern string) structs.CommandResu
 		total.chars += r.chars
 		total.bytes += r.bytes
 		return nil
-	})
+	}); walkErr != nil && len(results) == 0 {
+		return errorf("Failed to scan %s: %v", dirPath, walkErr)
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] %s", dirPath))

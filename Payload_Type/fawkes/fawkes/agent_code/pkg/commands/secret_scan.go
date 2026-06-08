@@ -154,7 +154,7 @@ func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var findings []secretFinding
 	var creds []structs.MythicCredential
 
-	_ = filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
+	if walkErr := filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
@@ -233,7 +233,9 @@ func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 
 		return nil
-	})
+	}); walkErr != nil && len(findings) == 0 {
+		return errorf("Failed to scan %s: %v", args.Path, walkErr)
+	}
 
 	if len(findings) == 0 {
 		return successResult("No secrets found in scanned files")

@@ -70,7 +70,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	basePath := filepath.Clean(args.Path)
 	baseDepth := strings.Count(basePath, string(filepath.Separator))
 
-	_ = filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
+	if walkErr := filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
@@ -97,7 +97,9 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 		}
 		return nil
-	})
+	}); walkErr != nil && fileCount == 0 {
+		return errorf("Failed to scan %s: %v", basePath, walkErr)
+	}
 
 	// Collect entries to display based on max_depth
 	var entries []duEntry

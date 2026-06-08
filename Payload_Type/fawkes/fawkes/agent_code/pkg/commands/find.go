@@ -89,7 +89,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	var accessErrors []string
 	const maxResults = 500
 
-	_ = filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
+	if walkErr := filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
@@ -175,7 +175,9 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 
 		return nil
-	})
+	}); walkErr != nil && len(matches) == 0 {
+		accessErrors = append(accessErrors, fmt.Sprintf("walk error: %v", walkErr))
+	}
 
 	if len(matches) == 0 {
 		output := fmt.Sprintf("No files matching '%s' found in %s", params.Pattern, startPath)
