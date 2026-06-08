@@ -3,9 +3,13 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -80,11 +84,67 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Count processes from tree lines (lines starting with ├, └, or digits)
-			count := strings.Count(responseText, "\n")
-			if count > 0 {
+
+			type treeProc struct {
+				pid   int
+				name  string
+				user  string
+				ppid  int
+				depth int
+			}
+			processLineRe := regexp.MustCompile(`(\d+):\s+(.+?)(?:\s+\[(.+)\])?\s*$`)
+
+			var parsed []treeProc
+			depthStack := make(map[int]int) // depth → most recent PID at that depth
+
+			for _, line := range strings.Split(responseText, "\n") {
+				if line == "" || strings.HasPrefix(line, "[*]") {
+					continue
+				}
+				m := processLineRe.FindStringSubmatch(line)
+				if m == nil {
+					continue
+				}
+				pid, _ := strconv.Atoi(m[1])
+				name := m[2]
+				user := m[3]
+
+				stripped := strings.TrimRight(line[:strings.Index(line, m[0])], " ")
+				depth := 0
+				if len(stripped) > 0 {
+					depth = (len(stripped) + 4) / 4
+				}
+
+				ppid := 0
+				if depth > 0 {
+					ppid = depthStack[depth-1]
+				}
+				depthStack[depth] = pid
+
+				parsed = append(parsed, treeProc{pid: pid, name: name, user: user, ppid: ppid, depth: depth})
+			}
+
+			if len(parsed) > 0 {
 				createArtifact(processResponse.TaskData.Task.ID, "Process Discovery",
-					fmt.Sprintf("process-tree: %d processes enumerated", count))
+					fmt.Sprintf("process-tree: %d processes enumerated", len(parsed)))
+
+				host := processResponse.TaskData.Callback.Host
+				rpcProcesses := make([]mythicrpc.MythicRPCProcessCreateProcessData, len(parsed))
+				for i, p := range parsed {
+					rpcProcesses[i] = mythicrpc.MythicRPCProcessCreateProcessData{
+						Host:            &host,
+						ProcessID:       p.pid,
+						ParentProcessID: p.ppid,
+						Name:            p.name,
+						User:            p.user,
+					}
+				}
+				if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+					TaskID:    processResponse.TaskData.Task.ID,
+					Processes: rpcProcesses,
+				}); err != nil {
+					logging.LogError(err, "Failed to populate process browser from process-tree")
+				}
 			}
 			return response
 		},

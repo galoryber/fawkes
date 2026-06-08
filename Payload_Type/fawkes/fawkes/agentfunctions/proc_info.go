@@ -3,9 +3,13 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -101,6 +105,52 @@ func init() {
 					msg = fmt.Sprintf("proc-info PID %s inspected", pid)
 				}
 				createArtifact(processResponse.TaskData.Task.ID, "Process Discovery", msg)
+
+				pidInt := 0
+				if pid != "" {
+					pidInt, _ = strconv.Atoi(pid)
+				}
+				if pidInt == 0 {
+					re := regexp.MustCompile(`=== Process Info: PID (\d+)`)
+					if m := re.FindStringSubmatch(responseText); m != nil {
+						pidInt, _ = strconv.Atoi(m[1])
+					}
+				}
+				if pidInt > 0 {
+					host := processResponse.TaskData.Callback.Host
+					procName := ""
+					binPath := ""
+					user := ""
+					ppid := 0
+					for _, line := range strings.Split(responseText, "\n") {
+						line = strings.TrimSpace(line)
+						if strings.HasPrefix(line, "Process name:") {
+							procName = strings.TrimSpace(strings.TrimPrefix(line, "Process name:"))
+						} else if strings.HasPrefix(line, "Executable:") {
+							binPath = strings.TrimSpace(strings.TrimPrefix(line, "Executable:"))
+						} else if strings.HasPrefix(line, "Name:") && procName == "" {
+							procName = strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
+						} else if strings.HasPrefix(line, "PPid:") {
+							ppid, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "PPid:")))
+						} else if strings.HasPrefix(line, "Uid:") {
+							user = strings.TrimSpace(strings.TrimPrefix(line, "Uid:"))
+						}
+					}
+					rpcProc := mythicrpc.MythicRPCProcessCreateProcessData{
+						Host:            &host,
+						ProcessID:       pidInt,
+						ParentProcessID: ppid,
+						Name:            procName,
+						BinPath:         binPath,
+						User:            user,
+					}
+					if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+						TaskID:    processResponse.TaskData.Task.ID,
+						Processes: []mythicrpc.MythicRPCProcessCreateProcessData{rpcProc},
+					}); err != nil {
+						logging.LogError(err, "Failed to register process from proc-info")
+					}
+				}
 			case "connections":
 				count := strings.Count(responseText, "\n")
 				createArtifact(processResponse.TaskData.Task.ID, "Network Discovery",

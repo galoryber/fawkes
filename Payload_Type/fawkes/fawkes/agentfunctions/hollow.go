@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"path/filepath"
@@ -263,6 +265,27 @@ func init() {
 			})
 			logOperationEvent(processResponse.TaskData.Task.ID,
 				fmt.Sprintf("[EXECUTION] Process hollowing → %s on %s", target, host), true)
+
+			responseText, _ := processResponse.Response.(string)
+			if responseText != "" {
+				re := regexp.MustCompile(`Created suspended process PID:\s*(\d+)`)
+				if m := re.FindStringSubmatch(responseText); m != nil {
+					pid, _ := strconv.Atoi(m[1])
+					if pid > 0 {
+						if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+							TaskID: processResponse.TaskData.Task.ID,
+							Processes: []mythicrpc.MythicRPCProcessCreateProcessData{{
+								Host:      &host,
+								ProcessID: pid,
+								Name:      target,
+								BinPath:   target,
+							}},
+						}); err != nil {
+							logging.LogError(err, "Failed to register hollowed process")
+						}
+					}
+				}
+			}
 			return response
 		},
 	})

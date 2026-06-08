@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -360,6 +363,25 @@ func init() {
 				createArtifact(processResponse.TaskData.Task.ID, "Process Migration",
 					fmt.Sprintf("Agent migrated into PID %s via CreateRemoteThread injection. "+
 						"Original agent process terminated. New callback expected from target process.", pid))
+			}
+
+			if strings.Contains(responseText, "completed successfully") || strings.Contains(responseText, "injection completed") {
+				re := regexp.MustCompile(`Target PID:\s*(\d+)`)
+				if m := re.FindStringSubmatch(responseText); m != nil {
+					pid, _ := strconv.Atoi(m[1])
+					if pid > 0 {
+						host := processResponse.TaskData.Callback.Host
+						if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+							TaskID: processResponse.TaskData.Task.ID,
+							Processes: []mythicrpc.MythicRPCProcessCreateProcessData{{
+								Host:      &host,
+								ProcessID: pid,
+							}},
+						}); err != nil {
+							logging.LogError(err, "Failed to register injected process")
+						}
+					}
+				}
 			}
 			return response
 		},

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -132,6 +134,19 @@ func init() {
 				count++
 				if count >= 50 {
 					break
+				}
+			}
+
+			if hr.PID > 0 {
+				host := processResponse.TaskData.Callback.Host
+				if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+					TaskID: processResponse.TaskData.Task.ID,
+					Processes: []mythicrpc.MythicRPCProcessCreateProcessData{{
+						Host:      &host,
+						ProcessID: hr.PID,
+					}},
+				}); err != nil {
+					logging.LogError(err, "Failed to register process from handles")
 				}
 			}
 			return response
