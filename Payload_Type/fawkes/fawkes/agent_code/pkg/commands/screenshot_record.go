@@ -28,7 +28,7 @@ type screenshotRecordResult struct {
 func parseScreenshotParams(task structs.Task) screenshotParams {
 	var params screenshotParams
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &params)
+		_ = json.Unmarshal([]byte(task.Params), &params) // best-effort; proceed with defaults on error
 	}
 	if params.Action == "" {
 		params.Action = "single"

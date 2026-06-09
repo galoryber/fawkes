@@ -45,7 +45,7 @@ type vmdetectArgs struct {
 func (c *VmDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	var args vmdetectArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		_ = json.Unmarshal([]byte(task.Params), &args) // best-effort; proceed with defaults on error
 	}
 	if args.Action == "" {
 		args.Action = "detect"
