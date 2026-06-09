@@ -161,121 +161,21 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		args.Format = "kirbi"
 	}
 
-	var ck *pkinitCertKey
-	var err error
-
-	if args.PFX != "" {
-		ck, err = parsePFXCertKey(args.PFX, args.PFXPassword)
-		if err != nil {
-			return errorf("Error loading PFX/PKCS#12: %v", err)
-		}
-	} else {
-		certPEM := args.Certificate
-		keyPEM := args.PrivateKey
-		if certPEM == "" || keyPEM == "" {
-			return errorResult("Error: certificate+private_key or pfx is required for pkinit")
-		}
-		certPEM = readIfPath(certPEM)
-		keyPEM = readIfPath(keyPEM)
-		ck, err = parsePEMCertKey(certPEM, keyPEM)
-		if err != nil {
-			return errorf("Error loading certificate/key: %v", err)
-		}
+	ck, err := pkinitLoadCertKey(args)
+	if err != nil {
+		return errorf("%v", err)
 	}
 
-	// Resolve KDC
 	kdcAddr := args.Server
 	if !strings.Contains(kdcAddr, ":") {
 		kdcAddr += ":88"
 	}
 
-	// Create gokrb5 config
-	cfgStr := fmt.Sprintf(
-		"[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n"+
-			"[realms]\n  %s = {\n    kdc = %s\n  }\n",
-		realm, realm, kdcAddr)
-	cfg, err := config.NewFromString(cfgStr)
+	asReq, dhPriv, clientDHNonce, err := pkinitBuildASReq(args.Username, realm, kdcAddr, ck)
 	if err != nil {
-		return errorf("Error creating Kerberos config: %v", err)
+		return errorf("%v", err)
 	}
 
-	cname := types.PrincipalName{
-		NameType:   nametype.KRB_NT_PRINCIPAL,
-		NameString: []string{args.Username},
-	}
-
-	// Build AS-REQ
-	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
-	if err != nil {
-		return errorf("Error building AS-REQ: %v", err)
-	}
-
-	// PKINIT typically uses AES256
-	asReq.ReqBody.EType = []int32{18, 17} // aes256-cts, aes128-cts
-
-	// Marshal AS-REQ body for checksum
-	bodyBytes, err := gokrb5asn1.Marshal(asReq.ReqBody)
-	if err != nil {
-		return errorf("Error marshaling AS-REQ body: %v", err)
-	}
-
-	// Generate DH key pair (IKE Group 2 / 1024-bit)
-	dhPriv, dhPubBytes, clientDHNonce, err := generateDHKeyPair()
-	if err != nil {
-		return errorf("Error generating DH key pair: %v", err)
-	}
-
-	// Build SubjectPublicKeyInfo for DH
-	spki, err := buildDHSubjectPublicKeyInfo(dhPubBytes)
-	if err != nil {
-		return errorf("Error building DH SPKI: %v", err)
-	}
-
-	// Build PKAuthenticator
-	now := time.Now().UTC()
-	bodyChecksum := sha1.Sum(bodyBytes)
-	pkAuth := pkAuthenticator{
-		CUSec:      int(now.Nanosecond() / 1000),
-		CTime:      now,
-		Nonce:      int(asReq.ReqBody.Nonce),
-		PaChecksum: bodyChecksum[:],
-	}
-
-	// Build AuthPack with clientDHNonce (required for key derivation)
-	// RawValue.FullBytes bypasses struct tags, so pre-wrap SPKI in [1] EXPLICIT
-	spkiTagged := derWrap(0xa1, spki)
-	spkiRaw := gokrb5asn1.RawValue{FullBytes: spkiTagged}
-	ap := authPack{
-		PKAuthenticator:   pkAuth,
-		ClientPublicValue: spkiRaw,
-		ClientDHNonce:     clientDHNonce,
-	}
-	authPackBytes, err := gokrb5asn1.Marshal(ap)
-	if err != nil {
-		return errorf("Error marshaling AuthPack: %v", err)
-	}
-
-	// Sign the AuthPack with CMS SignedData
-	signedAuthPack, err := buildCMSSignedData(authPackBytes, ck)
-	if err != nil {
-		return errorf("Error building CMS SignedData: %v", err)
-	}
-
-	// Build PA-PK-AS-REQ
-	req := paPkAsReq{
-		SignedAuthPack: signedAuthPack,
-	}
-	reqBytes, err := gokrb5asn1.Marshal(req)
-	if err != nil {
-		return errorf("Error marshaling PA-PK-AS-REQ: %v", err)
-	}
-
-	// Add PKINIT PA-DATA (type 16 = PA-PK-AS-REQ)
-	asReq.PAData = types.PADataSequence{
-		{PADataType: 16, PADataValue: reqBytes},
-	}
-
-	// Marshal and send AS-REQ
 	asReqBytes, err := asReq.Marshal()
 	if err != nil {
 		return errorf("Error marshaling AS-REQ: %v", err)
@@ -286,7 +186,6 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		return errorf("%v", err)
 	}
 
-	// Check for KRB-ERROR
 	if len(respBuf) > 0 && respBuf[0] == 0x7e {
 		var krbErr messages.KRBError
 		if err := krbErr.Unmarshal(respBuf); err == nil {
@@ -298,28 +197,136 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		}
 	}
 
-	// Parse AS-REP
 	var asRep messages.ASRep
 	if err := asRep.Unmarshal(respBuf); err != nil {
 		return errorf("Error parsing AS-REP: %v", err)
 	}
 
-	// Extract PA-PK-AS-REP from response PA-DATA
+	sessionKey, err := pkinitDeriveSessionKey(asRep, dhPriv, clientDHNonce, ck)
+	if err != nil {
+		return errorf("%v", err)
+	}
+
+	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)
+	if err != nil {
+		return errorf("Error decrypting AS-REP: %v", err)
+	}
+	var decPart messages.EncKDCRepPart
+	if err := decPart.Unmarshal(plainBytes); err != nil {
+		return errorf("Error parsing decrypted AS-REP: %v", err)
+	}
+
+	return pkinitFormatTicket(args, realm, ck, asRep, decPart)
+}
+
+func pkinitLoadCertKey(args ticketArgs) (*pkinitCertKey, error) {
+	if args.PFX != "" {
+		ck, err := parsePFXCertKey(args.PFX, args.PFXPassword)
+		if err != nil {
+			return nil, fmt.Errorf("Error loading PFX/PKCS#12: %v", err)
+		}
+		return ck, nil
+	}
+	certPEM := args.Certificate
+	keyPEM := args.PrivateKey
+	if certPEM == "" || keyPEM == "" {
+		return nil, fmt.Errorf("Error: certificate+private_key or pfx is required for pkinit")
+	}
+	certPEM = readIfPath(certPEM)
+	keyPEM = readIfPath(keyPEM)
+	ck, err := parsePEMCertKey(certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("Error loading certificate/key: %v", err)
+	}
+	return ck, nil
+}
+
+func pkinitBuildASReq(username, realm, kdcAddr string, ck *pkinitCertKey) (messages.ASReq, *big.Int, []byte, error) {
+	cfgStr := fmt.Sprintf(
+		"[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n"+
+			"[realms]\n  %s = {\n    kdc = %s\n  }\n",
+		realm, realm, kdcAddr)
+	cfg, err := config.NewFromString(cfgStr)
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error creating Kerberos config: %v", err)
+	}
+
+	cname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{username},
+	}
+	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error building AS-REQ: %v", err)
+	}
+	asReq.ReqBody.EType = []int32{18, 17}
+
+	bodyBytes, err := gokrb5asn1.Marshal(asReq.ReqBody)
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error marshaling AS-REQ body: %v", err)
+	}
+
+	dhPriv, dhPubBytes, clientDHNonce, err := generateDHKeyPair()
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error generating DH key pair: %v", err)
+	}
+	spki, err := buildDHSubjectPublicKeyInfo(dhPubBytes)
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error building DH SPKI: %v", err)
+	}
+
+	now := time.Now().UTC()
+	bodyChecksum := sha1.Sum(bodyBytes)
+	pkAuth := pkAuthenticator{
+		CUSec:      int(now.Nanosecond() / 1000),
+		CTime:      now,
+		Nonce:      int(asReq.ReqBody.Nonce),
+		PaChecksum: bodyChecksum[:],
+	}
+
+	spkiTagged := derWrap(0xa1, spki)
+	spkiRaw := gokrb5asn1.RawValue{FullBytes: spkiTagged}
+	ap := authPack{
+		PKAuthenticator:   pkAuth,
+		ClientPublicValue: spkiRaw,
+		ClientDHNonce:     clientDHNonce,
+	}
+	authPackBytes, err := gokrb5asn1.Marshal(ap)
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error marshaling AuthPack: %v", err)
+	}
+	signedAuthPack, err := buildCMSSignedData(authPackBytes, ck)
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error building CMS SignedData: %v", err)
+	}
+
+	req := paPkAsReq{SignedAuthPack: signedAuthPack}
+	reqBytes, err := gokrb5asn1.Marshal(req)
+	if err != nil {
+		return messages.ASReq{}, nil, nil, fmt.Errorf("Error marshaling PA-PK-AS-REQ: %v", err)
+	}
+	asReq.PAData = types.PADataSequence{
+		{PADataType: 16, PADataValue: reqBytes},
+	}
+
+	return asReq, dhPriv, clientDHNonce, nil
+}
+
+func pkinitDeriveSessionKey(asRep messages.ASRep, dhPriv *big.Int, clientDHNonce []byte, ck *pkinitCertKey) (types.EncryptionKey, error) {
 	var paPkAsRepBytes []byte
 	for _, pa := range asRep.PAData {
-		if pa.PADataType == 17 { // PA-PK-AS-REP
+		if pa.PADataType == 17 {
 			paPkAsRepBytes = pa.PADataValue
 			break
 		}
 	}
 	if paPkAsRepBytes == nil {
-		return errorResult("Error: KDC response missing PA-PK-AS-REP (type 17)")
+		return types.EncryptionKey{}, fmt.Errorf("Error: KDC response missing PA-PK-AS-REP (type 17)")
 	}
 
-	// Detect PA-PK-AS-REP variant: [0] DHRepInfo or [1] encKeyPack
 	var rawRep gokrb5asn1.RawValue
 	if _, err := gokrb5asn1.Unmarshal(paPkAsRepBytes, &rawRep); err != nil {
-		return errorf("Error parsing PA-PK-AS-REP: %v", err)
+		return types.EncryptionKey{}, fmt.Errorf("Error parsing PA-PK-AS-REP: %v", err)
 	}
 	repHdr := paPkAsRepBytes
 	if len(repHdr) > 16 {
@@ -328,18 +335,15 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	diagInfo := fmt.Sprintf("PA-PK-AS-REP: tag=%d class=%d raw[0:16]=%x",
 		rawRep.Tag, rawRep.Class, repHdr)
 
-	var sessionKey types.EncryptionKey
 	switch rawRep.Tag {
 	case 0:
-		// DH variant — extract KDC DH public key, compute shared secret
 		var rep paPkAsRepDH
-		// EXPLICIT [0] wraps the DHRepInfo SEQUENCE; rawRep.Bytes is the inner SEQUENCE TLV.
 		if _, err := gokrb5asn1.Unmarshal(rawRep.Bytes, &rep); err != nil {
-			return errorf("Error parsing PA-PK-AS-REP DH: %v", err)
+			return types.EncryptionKey{}, fmt.Errorf("Error parsing PA-PK-AS-REP DH: %v", err)
 		}
 		kdcDHPub, err := extractKDCDHPublicKey(rep.DHSignedData)
 		if err != nil {
-			return errorf("Error extracting KDC DH key: %v", err)
+			return types.EncryptionKey{}, fmt.Errorf("Error extracting KDC DH key: %v", err)
 		}
 		sharedSecret := new(big.Int).Exp(kdcDHPub, dhPriv, dhGroupP)
 		sharedSecretBytes := sharedSecret.Bytes()
@@ -352,39 +356,29 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 		defer structs.ZeroBytes(fullKey)
 
 		etype := int32(asRep.EncPart.EType)
-		keySize := 32 // AES-256
+		keySize := 32
 		keyType := int32(18)
 		if etype == 17 {
-			keySize = 16 // AES-128
+			keySize = 16
 			keyType = 17
 		}
 		keyBytes := pkinitOctetstring2Key(fullKey, keySize)
 		defer structs.ZeroBytes(keyBytes)
-		sessionKey = types.EncryptionKey{KeyType: keyType, KeyValue: keyBytes}
+		return types.EncryptionKey{KeyType: keyType, KeyValue: keyBytes}, nil
 
 	case 1:
-		// encKeyPack variant — decrypt CMS EnvelopedData with our RSA key
-		var err error
-		sessionKey, err = decryptEncKeyPack(rawRep.Bytes, ck)
+		sessionKey, err := decryptEncKeyPack(rawRep.Bytes, ck)
 		if err != nil {
-			return errorf("Error decrypting encKeyPack: %v | %s", err, diagInfo)
+			return types.EncryptionKey{}, fmt.Errorf("Error decrypting encKeyPack: %v | %s", err, diagInfo)
 		}
+		return sessionKey, nil
 
 	default:
-		return errorf("Error: unexpected PA-PK-AS-REP tag: %d", rawRep.Tag)
+		return types.EncryptionKey{}, fmt.Errorf("Error: unexpected PA-PK-AS-REP tag: %d", rawRep.Tag)
 	}
+}
 
-	// Decrypt the AS-REP EncPart using the session key
-	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)
-	if err != nil {
-		return errorf("Error decrypting AS-REP: %v", err)
-	}
-	var decPart messages.EncKDCRepPart
-	if err := decPart.Unmarshal(plainBytes); err != nil {
-		return errorf("Error parsing decrypted AS-REP: %v", err)
-	}
-
-	// Use the session key from the decrypted reply (not our derived one)
+func pkinitFormatTicket(args ticketArgs, realm string, ck *pkinitCertKey, asRep messages.ASRep, decPart messages.EncKDCRepPart) structs.CommandResult {
 	realSessionKey := decPart.Key
 	sname := decPart.SName
 	ticketFlags := decPart.Flags
@@ -392,27 +386,23 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	endTime := decPart.EndTime
 	renewTill := decPart.RenewTill
 
-	// Format output
-	var output string
 	switch strings.ToLower(args.Format) {
 	case "kirbi":
 		kirbiBytes, err := ticketToKirbi(asRep.Ticket, realSessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
 		if err != nil {
 			return errorf("Error creating kirbi: %v", err)
 		}
-		output = pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "kirbi", base64.StdEncoding.EncodeToString(kirbiBytes))
+		return successResult(pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "kirbi", base64.StdEncoding.EncodeToString(kirbiBytes)))
 	case "ccache":
 		ticketBytes, err := asRep.Ticket.Marshal()
 		if err != nil {
 			return errorf("Error marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, realSessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
-		output = pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "ccache", base64.StdEncoding.EncodeToString(ccacheBytes))
+		return successResult(pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "ccache", base64.StdEncoding.EncodeToString(ccacheBytes)))
 	default:
 		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
 	}
-
-	return successResult(output)
 }
 
 func pkinitFormatOutput(username, realm string, cert *x509.Certificate, key types.EncryptionKey, authTime, endTime time.Time, format, b64 string) string {
