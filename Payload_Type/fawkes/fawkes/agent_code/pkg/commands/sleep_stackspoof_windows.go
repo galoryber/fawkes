@@ -240,20 +240,20 @@ type spoofGadgets struct {
 func findSpoofGadgets() (*spoofGadgets, error) {
 	kernel32, err := windows.LoadDLL("kernel32.dll")
 	if err != nil {
-		return nil, fmt.Errorf("load kernel32: %w", err)
+		return nil, fmt.Errorf("load system library: %w", err)
 	}
 	ntdll, err := windows.LoadDLL("ntdll.dll")
 	if err != nil {
-		return nil, fmt.Errorf("load ntdll: %w", err)
+		return nil, fmt.Errorf("load system library (nt): %w", err)
 	}
 
 	waitAddr, err := kernel32.FindProc("WaitForSingleObject")
 	if err != nil {
-		return nil, fmt.Errorf("find WaitForSingleObject: %w", err)
+		return nil, fmt.Errorf("resolve wait function: %w", err)
 	}
 	setEvtAddr, err := kernel32.FindProc("SetEvent")
 	if err != nil {
-		return nil, fmt.Errorf("find SetEvent: %w", err)
+		return nil, fmt.Errorf("resolve event function: %w", err)
 	}
 
 	// Find ret gadgets (0xC3) near well-known functions

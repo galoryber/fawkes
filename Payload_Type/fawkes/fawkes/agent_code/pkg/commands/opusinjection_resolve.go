@@ -50,13 +50,13 @@ type ripRef struct {
 func scanSetConsoleCtrlHandler() (ctrlHandlerOffsets, error) {
 	kb := windows.NewLazySystemDLL("kernelbase.dll")
 	if err := kb.Load(); err != nil {
-		return ctrlHandlerOffsets{}, fmt.Errorf("load kernelbase.dll: %w", err)
+		return ctrlHandlerOffsets{}, fmt.Errorf("load system library: %w", err)
 	}
 	kbBase := uintptr(kb.Handle())
 
 	proc := kb.NewProc("SetConsoleCtrlHandler")
 	if err := proc.Find(); err != nil {
-		return ctrlHandlerOffsets{}, fmt.Errorf("find SetConsoleCtrlHandler: %w", err)
+		return ctrlHandlerOffsets{}, fmt.Errorf("find ctrl handler function: %w", err)
 	}
 	funcAddr := proc.Addr()
 
