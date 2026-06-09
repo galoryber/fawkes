@@ -73,16 +73,12 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	switch args.Action {
 	case "detect":
 		return cloudDetect(timeout)
-	case "all":
-		return cloudAll(args.Provider, timeout)
-	case "creds", "iam":
-		return cloudCreds(args.Provider, timeout)
-	case "identity":
-		return cloudIdentity(args.Provider, timeout)
-	case "userdata":
-		return cloudUserdata(args.Provider, timeout)
-	case "network":
-		return cloudNetwork(args.Provider, timeout)
+	case "all", "creds", "iam", "identity", "userdata", "network":
+		action := args.Action
+		if action == "iam" {
+			action = "creds"
+		}
+		return cloudProviderDispatch(action, args.Provider, timeout)
 	case "aws-iam":
 		return successResult(awsEnumIAM(timeout))
 	case "azure-graph":
@@ -189,133 +185,48 @@ func cloudDetect(timeout time.Duration) structs.CommandResult {
 	return successResult(sb.String())
 }
 
-// cloudAll dumps all available metadata from the detected/specified provider
-func cloudAll(provider string, timeout time.Duration) structs.CommandResult {
-	var sb strings.Builder
+type cloudProviderFunc func(time.Duration) string
 
+type cloudActionConfig struct {
+	header string
+	fns    map[string]cloudProviderFunc
+}
+
+var cloudActions = map[string]cloudActionConfig{
+	"all": {fns: map[string]cloudProviderFunc{
+		"aws": awsDumpAll, "azure": azureDumpAll, "gcp": gcpDumpAll, "digitalocean": doDumpAll,
+	}},
+	"creds": {header: "=== Cloud IAM Credentials ===\n\n", fns: map[string]cloudProviderFunc{
+		"aws": awsGetCreds, "azure": azureGetToken, "gcp": gcpGetToken,
+		"digitalocean": func(time.Duration) string { return "[-] DigitalOcean: No IAM credential endpoint\n" },
+	}},
+	"identity": {header: "=== Cloud Instance Identity ===\n\n", fns: map[string]cloudProviderFunc{
+		"aws": awsGetIdentity, "azure": azureGetIdentity, "gcp": gcpGetIdentity, "digitalocean": doGetIdentity,
+	}},
+	"userdata": {header: "=== Cloud User Data ===\n\n", fns: map[string]cloudProviderFunc{
+		"aws": awsGetUserdata, "azure": azureGetUserdata, "gcp": gcpGetUserdata, "digitalocean": doGetUserdata,
+	}},
+	"network": {header: "=== Cloud Network Configuration ===\n\n", fns: map[string]cloudProviderFunc{
+		"aws": awsGetNetwork, "azure": azureGetNetwork, "gcp": gcpGetNetwork, "digitalocean": doGetNetwork,
+	}},
+}
+
+func cloudProviderDispatch(action, provider string, timeout time.Duration) structs.CommandResult {
+	cfg := cloudActions[action]
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
 		return successResult("[-] No cloud metadata service detected or specified provider not available")
 	}
-
-	for _, p := range providers {
-		switch p {
-		case "aws":
-			sb.WriteString(awsDumpAll(timeout))
-		case "azure":
-			sb.WriteString(azureDumpAll(timeout))
-		case "gcp":
-			sb.WriteString(gcpDumpAll(timeout))
-		case "digitalocean":
-			sb.WriteString(doDumpAll(timeout))
-		}
-		sb.WriteString("\n")
-	}
-
-	return successResult(sb.String())
-}
-
-// cloudCreds extracts IAM credentials from the detected provider
-func cloudCreds(provider string, timeout time.Duration) structs.CommandResult {
 	var sb strings.Builder
-	sb.WriteString("=== Cloud IAM Credentials ===\n\n")
-
-	providers := resolveProviders(provider, timeout)
-	if len(providers) == 0 {
-		return successResult("[-] No cloud metadata service detected or specified provider not available")
-	}
-
+	sb.WriteString(cfg.header)
 	for _, p := range providers {
-		switch p {
-		case "aws":
-			sb.WriteString(awsGetCreds(timeout))
-		case "azure":
-			sb.WriteString(azureGetToken(timeout))
-		case "gcp":
-			sb.WriteString(gcpGetToken(timeout))
-		case "digitalocean":
-			sb.WriteString("[-] DigitalOcean: No IAM credential endpoint\n")
+		if fn, ok := cfg.fns[p]; ok {
+			sb.WriteString(fn(timeout))
+		}
+		if action == "all" {
+			sb.WriteString("\n")
 		}
 	}
-
-	return successResult(sb.String())
-}
-
-// cloudIdentity extracts instance identity information
-func cloudIdentity(provider string, timeout time.Duration) structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString("=== Cloud Instance Identity ===\n\n")
-
-	providers := resolveProviders(provider, timeout)
-	if len(providers) == 0 {
-		return successResult("[-] No cloud metadata service detected")
-	}
-
-	for _, p := range providers {
-		switch p {
-		case "aws":
-			sb.WriteString(awsGetIdentity(timeout))
-		case "azure":
-			sb.WriteString(azureGetIdentity(timeout))
-		case "gcp":
-			sb.WriteString(gcpGetIdentity(timeout))
-		case "digitalocean":
-			sb.WriteString(doGetIdentity(timeout))
-		}
-	}
-
-	return successResult(sb.String())
-}
-
-// cloudUserdata extracts instance user-data (may contain secrets)
-func cloudUserdata(provider string, timeout time.Duration) structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString("=== Cloud User Data ===\n\n")
-
-	providers := resolveProviders(provider, timeout)
-	if len(providers) == 0 {
-		return successResult("[-] No cloud metadata service detected")
-	}
-
-	for _, p := range providers {
-		switch p {
-		case "aws":
-			sb.WriteString(awsGetUserdata(timeout))
-		case "azure":
-			sb.WriteString(azureGetUserdata(timeout))
-		case "gcp":
-			sb.WriteString(gcpGetUserdata(timeout))
-		case "digitalocean":
-			sb.WriteString(doGetUserdata(timeout))
-		}
-	}
-
-	return successResult(sb.String())
-}
-
-// cloudNetwork extracts network configuration
-func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString("=== Cloud Network Configuration ===\n\n")
-
-	providers := resolveProviders(provider, timeout)
-	if len(providers) == 0 {
-		return successResult("[-] No cloud metadata service detected")
-	}
-
-	for _, p := range providers {
-		switch p {
-		case "aws":
-			sb.WriteString(awsGetNetwork(timeout))
-		case "azure":
-			sb.WriteString(azureGetNetwork(timeout))
-		case "gcp":
-			sb.WriteString(gcpGetNetwork(timeout))
-		case "digitalocean":
-			sb.WriteString(doGetNetwork(timeout))
-		}
-	}
-
 	return successResult(sb.String())
 }
 
