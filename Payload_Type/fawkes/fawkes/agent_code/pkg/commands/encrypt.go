@@ -156,7 +156,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	return successResult(sb.String())
 }
 
-const fawkesEncExt = ".fawkes"
+const fawkesEncExt = ".enc"
 
 // encryptFiles performs batch file encryption by glob pattern (T1486 ransomware simulation).
 // Safety: requires -confirm SIMULATE and enforces max_files limit.
@@ -270,7 +270,7 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 	return successResult(sb.String())
 }
 
-// decryptFiles reverses batch encryption by decrypting all .fawkes files in a directory.
+// decryptFiles reverses batch encryption by decrypting all .enc files in a directory.
 func decryptFiles(args encryptArgs) structs.CommandResult {
 	if args.Key == "" {
 		return errorResult("Error: recovery key required (base64-encoded AES-256 key from encrypt-files)")
@@ -297,11 +297,11 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 		return errorf("Error creating GCM: %v", err)
 	}
 
-	// Find all .fawkes files in the path (directory or glob)
+	// Find all .enc files in the path (directory or glob)
 	var files []string
 	info, statErr := os.Stat(args.Path)
 	if statErr == nil && info.IsDir() {
-		// Walk directory for .fawkes files
+		// Walk directory for .enc files
 		filepath.Walk(args.Path, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
 				return nil
@@ -322,7 +322,7 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 	}
 
 	if len(files) == 0 {
-		return errorResult("Error: no .fawkes files found in the specified path")
+		return errorResult("Error: no .enc files found in the specified path")
 	}
 
 	nonceSize := gcm.NonceSize()
@@ -350,7 +350,7 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 		}
 		structs.ZeroBytes(ciphertext)
 
-		// Restore original filename by removing .fawkes extension
+		// Restore original filename by removing .enc extension
 		outPath := strings.TrimSuffix(path, fawkesEncExt)
 		if err := os.WriteFile(outPath, plaintext, 0600); err != nil {
 			errors = append(errors, fmt.Sprintf("%s: write error: %v", filepath.Base(path), err))

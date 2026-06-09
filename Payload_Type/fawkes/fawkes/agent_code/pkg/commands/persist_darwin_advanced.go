@@ -172,7 +172,7 @@ func persistXPCServiceInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (executable for XPC service) is required")
 	}
 
-	name := "com.fawkes.helper"
+	name := "com.apple.security.helper"
 	if args.Name != "" {
 		name = args.Name
 		if !strings.Contains(name, ".") {
@@ -237,7 +237,7 @@ func persistXPCServiceInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistXPCServiceRemove(args persistArgs) structs.CommandResult {
-	name := "com.fawkes.helper"
+	name := "com.apple.security.helper"
 	if args.Name != "" {
 		name = args.Name
 		if !strings.Contains(name, ".") {

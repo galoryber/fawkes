@@ -112,7 +112,7 @@ func testShareAccess(sc *smbConn, shareName string) sharePermResult {
 	r.Remark = classifyShare(shareName, entries)
 
 	// Test write access with a temp file
-	testFile := fmt.Sprintf(".fawkes_perm_test_%d", time.Now().UnixNano()%100000)
+	testFile := fmt.Sprintf(".sys_perm_test_%d", time.Now().UnixNano()%100000)
 	sc.setDeadline(smbOperationTimeout)
 	f, err := share.OpenFile(testFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	sc.clearDeadline()

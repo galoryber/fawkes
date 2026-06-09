@@ -31,7 +31,7 @@ func persistPeriodicInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: periodic scripts require root (install to /etc/periodic/)")
 	}
 
-	name := "500.fawkes"
+	name := "500.maintenance"
 	if args.Name != "" {
 		if !strings.HasPrefix(args.Name, "5") && !strings.HasPrefix(args.Name, "6") &&
 			!strings.HasPrefix(args.Name, "7") && !strings.HasPrefix(args.Name, "8") &&
@@ -70,7 +70,7 @@ func persistPeriodicRemove(args persistArgs) structs.CommandResult {
 		return errorResult("Error: periodic scripts require root")
 	}
 
-	name := "500.fawkes"
+	name := "500.maintenance"
 	if args.Name != "" {
 		if !strings.HasPrefix(args.Name, "5") {
 			name = "500." + args.Name
