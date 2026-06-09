@@ -316,7 +316,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	select {
 	case triggerErr = <-triggerDone:
 	case <-time.After(5 * time.Second):
-		triggerErr = fmt.Errorf("COM interface unmarshal blocked for >5s")
+		triggerErr = fmt.Errorf("com interface unmarshal blocked for >5s")
 	}
 
 	capture, captureErr := potatoCaptureSystemToken(pipes, phase)

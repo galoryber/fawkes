@@ -192,7 +192,7 @@ func disarmThreadsBreakpoint(tids []uint32) {
 // successfully redirect a target thread.
 func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	if runtime.GOOS != "windows" {
-		return "", fmt.Errorf("This injection method requires Windows")
+		return "", fmt.Errorf("this injection method requires Windows")
 	}
 	if len(params.Shellcode) == 0 {
 		return "", fmt.Errorf("shellcode is empty")
@@ -202,7 +202,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	}
 	currentPID, _, _ := procGetCurrentProcessId.Call()
 	if uintptr(params.PID) == currentPID {
-		return "", fmt.Errorf("Cannot target the current process (PID %d)", params.PID)
+		return "", fmt.Errorf("cannot target the current process (PID %d)", params.PID)
 	}
 	if params.TimeoutMs == 0 {
 		params.TimeoutMs = 30000

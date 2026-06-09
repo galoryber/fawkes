@@ -89,14 +89,14 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	sa.InheritHandle = 1
 
 	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &sa, 0); err != nil {
-		return "", fmt.Errorf("CreatePipe: %w", err)
+		return "", fmt.Errorf("pipe creation: %w", err)
 	}
 	defer windows.CloseHandle(stdoutRead)
 
 	// Prevent read handle from being inherited
 	if err := windows.SetHandleInformation(stdoutRead, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("SetHandleInformation: %w", err)
+		return "", fmt.Errorf("handle attribute set: %w", err)
 	}
 
 	// Step 1: Create process SUSPENDED with SPOOFED command line

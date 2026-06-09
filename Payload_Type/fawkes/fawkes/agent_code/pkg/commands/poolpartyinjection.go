@@ -209,11 +209,11 @@ func hijackProcessHandle(hProcess uintptr, objectType string, desiredAccess uint
 		}
 
 		// Some other error
-		return 0, fmt.Errorf("Process info query failed: 0x%X", status)
+		return 0, fmt.Errorf("process info query failed: 0x%X", status)
 	}
 
 	if status != 0 {
-		return 0, fmt.Errorf("Process info query failed after %d retries: 0x%X (buffer size: %d)", maxRetries, status, bufferSize)
+		return 0, fmt.Errorf("process info query failed after %d retries: 0x%X (buffer size: %d)", maxRetries, status, bufferSize)
 	}
 
 	// Parse handle information

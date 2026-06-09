@@ -209,11 +209,11 @@ func logonUser(username, domain, password string, logonType int) (windows.Token,
 	zeroUTF16Ptr(passwordPtr)
 
 	if ret == 0 {
-		return 0, fmt.Errorf("Logon failed: %v (check credentials and logon type)", callErr)
+		return 0, fmt.Errorf("logon failed: %v (check credentials and logon type)", callErr)
 	}
 
 	if newToken == 0 {
-		return 0, fmt.Errorf("Logon succeeded but returned null token")
+		return 0, fmt.Errorf("logon succeeded but returned null token")
 	}
 
 	return newToken, nil

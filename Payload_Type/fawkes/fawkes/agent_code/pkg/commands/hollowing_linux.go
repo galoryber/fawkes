@@ -82,7 +82,7 @@ func performHollowingLinux(shellcode []byte, params hollowParams) (string, error
 	}
 
 	if err := cmd.Start(); err != nil {
-		return sb.String(), fmt.Errorf("Process creation failed: %w", err)
+		return sb.String(), fmt.Errorf("process creation failed: %w", err)
 	}
 
 	pid := cmd.Process.Pid
