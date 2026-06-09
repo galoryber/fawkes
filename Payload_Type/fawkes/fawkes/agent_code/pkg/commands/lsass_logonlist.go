@@ -172,9 +172,9 @@ func findLogonSessionListAnchorMulti(lsasrvBytes []byte, lsasrvBase uintptr) (ui
 		return lsasrvBase + uintptr(target), v.Name, nil
 	}
 	if lastErr != nil {
-		return 0, "", fmt.Errorf("LogonSessionList: no variant matched in %d-byte lsasrv.dll (last error: %w)", len(lsasrvBytes), lastErr)
+		return 0, "", fmt.Errorf("session list: no variant matched in %d-byte target module (last error: %w)", len(lsasrvBytes), lastErr)
 	}
-	return 0, "", fmt.Errorf("LogonSessionList: no variant matched in %d-byte lsasrv.dll (%d variants tried)", len(lsasrvBytes), len(logonSessionListVariants))
+	return 0, "", fmt.Errorf("session list: no variant matched in %d-byte target module (%d variants tried)", len(lsasrvBytes), len(logonSessionListVariants))
 }
 
 // walkLogonSessionList follows Flink pointers from the LogonSessionList head
@@ -206,10 +206,10 @@ func walkLogonSessionList(r lsassReader, anchorAddr uintptr, nodeReadSize uint32
 
 	head, err := readListEntry(r, anchorAddr)
 	if err != nil {
-		return nil, fmt.Errorf("read LogonSessionList head at 0x%X: %w", anchorAddr, err)
+		return nil, fmt.Errorf("read session list head at 0x%X: %w", anchorAddr, err)
 	}
 	if head.Flink == 0 || head.Flink == anchorAddr {
-		return nil, fmt.Errorf("LogonSessionList head is empty (anchor=0x%X, head.Flink=0x%X)", anchorAddr, head.Flink)
+		return nil, fmt.Errorf("session list head is empty (anchor=0x%X, head.Flink=0x%X)", anchorAddr, head.Flink)
 	}
 
 	nodes := make([]logonListNode, 0, 8)

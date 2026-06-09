@@ -134,9 +134,9 @@ func findKerbSessionTable(kerbDllBytes []byte, kerbDllBase uintptr) (uintptr, st
 		lastErr = fmt.Errorf("variant %q: %d matches, none had valid target", v.Name, len(hits))
 	}
 	if lastErr != nil {
-		return 0, "", fmt.Errorf("KerbGlobalLogonSessionTable: no variant matched in %d-byte kerberos.dll (last error: %w)", len(kerbDllBytes), lastErr)
+		return 0, "", fmt.Errorf("session table: no variant matched in %d-byte target module (last error: %w)", len(kerbDllBytes), lastErr)
 	}
-	return 0, "", fmt.Errorf("KerbGlobalLogonSessionTable: no variant matched in %d-byte kerberos.dll (%d variants tried)", len(kerbDllBytes), len(kerbTableVariants))
+	return 0, "", fmt.Errorf("session table: no variant matched in %d-byte target module (%d variants tried)", len(kerbDllBytes), len(kerbTableVariants))
 }
 
 // ---------------------------------------------------------------------------

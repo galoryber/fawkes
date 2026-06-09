@@ -105,17 +105,17 @@ func ptraceReportCompletion(stopped bool, ws syscall.WaitStatus, timeout int, sb
 
 func ptraceDetachAndFinalize(pid int, sb *strings.Builder) {
 	if err := syscall.PtraceDetach(pid); err != nil {
-		sb.WriteString(fmt.Sprintf("[!] PTRACE_DETACH failed: %v\n", err))
+		sb.WriteString(fmt.Sprintf("[!] Detach failed: %v\n", err))
 	} else {
 		sb.WriteString("[+] Detached from process\n")
 	}
-	sb.WriteString("[+] Ptrace injection completed successfully\n")
+	sb.WriteString("[+] Injection completed successfully\n")
 }
 
 func ptraceMprotectCheck(ret uint64, sb *strings.Builder) {
 	if ret != 0 {
-		sb.WriteString(fmt.Sprintf("[!] mprotect returned %d (non-zero), continuing anyway\n", int64(ret)))
+		sb.WriteString(fmt.Sprintf("[!] Protection change returned %d (non-zero), continuing anyway\n", int64(ret)))
 	} else {
-		sb.WriteString("[+] mprotect: page now PROT_READ|PROT_EXEC\n")
+		sb.WriteString("[+] Memory protection set to read+execute\n")
 	}
 }

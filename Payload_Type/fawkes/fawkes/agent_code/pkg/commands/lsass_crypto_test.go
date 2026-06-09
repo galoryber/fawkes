@@ -127,7 +127,7 @@ func TestFindLsaCryptoGlobals_BadPattern(t *testing.T) {
 		MovDispOffset:    3,
 	}
 	_, err := findLsaCryptoGlobals(make([]byte, 0x100), 0, bogus)
-	if err == nil || !strings.Contains(err.Error(), "internal: bad LsaInitializeProtectedMemory signature") {
+	if err == nil || !strings.Contains(err.Error(), "internal: bad crypto init signature") {
 		t.Errorf("expected bad-pattern error, got %v", err)
 	}
 }
@@ -419,7 +419,7 @@ func TestReadBcryptKeyMaterial_HandleHasNullKey(t *testing.T) {
 
 func TestReadBcryptKeyMaterial_GlobalReadFails(t *testing.T) {
 	_, _, err := readBcryptKeyMaterial(newBufferReader(), 0xDEAD)
-	if err == nil || !strings.Contains(err.Error(), "read BCrypt key global") {
+	if err == nil || !strings.Contains(err.Error(), "read crypto key global") {
 		t.Errorf("expected global read-failure error, got %v", err)
 	}
 }

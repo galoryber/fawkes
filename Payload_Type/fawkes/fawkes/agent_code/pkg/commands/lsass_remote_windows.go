@@ -73,9 +73,9 @@ func lsassOpenForRead(pid uint32) (windows.Handle, error) {
 		pid,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("OpenProcess(LSASS pid=%d) failed: %w "+
-			"(LSASS may be running as PPL, Credential Guard may be enabled, "+
-			"or the agent lacks SYSTEM + SeDebugPrivilege)", pid, err)
+		return 0, fmt.Errorf("process open (pid=%d) failed: %w "+
+			"(target may be protected, credential guard may be enabled, "+
+			"or insufficient privileges)", pid, err)
 	}
 	return h, nil
 }
@@ -152,10 +152,10 @@ func lsassReadBytes(h windows.Handle, addr uintptr, size uint32) ([]byte, error)
 		uintptr(unsafe.Pointer(&read)),
 	)
 	if ret == 0 {
-		return nil, fmt.Errorf("ReadProcessMemory(addr=0x%X size=%d): %w", addr, size, callErr)
+		return nil, fmt.Errorf("memory read (addr=0x%X size=%d): %w", addr, size, callErr)
 	}
 	if read != uintptr(size) {
-		return nil, fmt.Errorf("ReadProcessMemory short read at 0x%X: got %d, want %d", addr, read, size)
+		return nil, fmt.Errorf("memory short read at 0x%X: got %d, want %d", addr, read, size)
 	}
 	return buf, nil
 }
@@ -177,10 +177,10 @@ func lsassReadInto(h windows.Handle, addr uintptr, dst []byte) error {
 		uintptr(unsafe.Pointer(&read)),
 	)
 	if ret == 0 {
-		return fmt.Errorf("ReadProcessMemory(addr=0x%X size=%d): %w", addr, len(dst), callErr)
+		return fmt.Errorf("memory read (addr=0x%X size=%d): %w", addr, len(dst), callErr)
 	}
 	if int(read) != len(dst) {
-		return fmt.Errorf("ReadProcessMemory short read at 0x%X: got %d, want %d", addr, read, len(dst))
+		return fmt.Errorf("memory short read at 0x%X: got %d, want %d", addr, read, len(dst))
 	}
 	return nil
 }

