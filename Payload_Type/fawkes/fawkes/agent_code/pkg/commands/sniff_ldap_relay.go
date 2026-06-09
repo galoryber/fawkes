@@ -212,7 +212,7 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 	defer func() {
 		if r := recover(); r != nil {
 			entry.Status = "panic"
-			entry.Detail = fmt.Sprintf("relay handler panic: %v", r)
+			entry.Detail = "relay handler crashed unexpectedly"
 		}
 		mu.Lock()
 		result.Relays = append(result.Relays, entry)
@@ -340,7 +340,7 @@ func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, m
 func executeLDAPRelayOperation(rawConn net.Conn, ops ldapRelayOps, isTLS bool) (opResult string) {
 	defer func() {
 		if r := recover(); r != nil {
-			opResult = fmt.Sprintf("post-auth panic: %v", r)
+			opResult = "post-auth operation crashed unexpectedly"
 		}
 	}()
 

@@ -319,7 +319,7 @@ func hijackTriggerRestart(args privescCheckArgs) structs.CommandResult {
 	}
 
 	sb.WriteString("[+] Service started — proxy DLL should have been loaded\n")
-	sb.WriteString("[+] If shellcode was a Fawkes payload, check for new callback in Mythic\n")
+	sb.WriteString("[+] If shellcode was an agent payload, check for new callback\n")
 	return successResult(sb.String())
 }
 
@@ -350,7 +350,7 @@ func hijackTriggerSpawn(args privescCheckArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("[+] Process spawned: PID %d\n", cmd.Process.Pid))
 	sb.WriteString(fmt.Sprintf("[+] Working directory: %s\n", cmd.Dir))
 	sb.WriteString("[+] DLL search order will load from the application directory first\n")
-	sb.WriteString("[+] If shellcode was a Fawkes payload, check for new callback in Mythic\n")
+	sb.WriteString("[+] If shellcode was an agent payload, check for new callback\n")
 
 	go func() {
 		_ = cmd.Wait()

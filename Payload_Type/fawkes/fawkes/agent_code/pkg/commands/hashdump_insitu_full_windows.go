@@ -49,7 +49,7 @@ func executeInsituFull() structs.CommandResult {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				ch <- result{cr: errorf("Phase 2B: panic: %v", r)}
+				ch <- result{cr: errorf("hash extraction crashed unexpectedly")}
 			}
 		}()
 		ch <- result{cr: executeInsituFullInner()}

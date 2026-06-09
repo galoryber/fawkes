@@ -68,7 +68,7 @@ func executeKerbTickets() structs.CommandResult {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				ch <- errorf("Kerberos tickets: panic: %v", r)
+				ch <- errorf("ticket extraction crashed unexpectedly")
 			}
 		}()
 		ch <- executeKerbTicketsInner()

@@ -242,7 +242,7 @@ func coffRunEntry(parsedCoff *pecoff.File, sections map[string]coffSection, entr
 	defer close(outputChan)
 	defer func() {
 		if r := recover(); r != nil {
-			outputChan <- fmt.Sprintf("BOF panic: %v", r)
+			outputChan <- "BOF execution crashed unexpectedly"
 		}
 	}()
 	for _, symbol := range parsedCoff.Symbols {
