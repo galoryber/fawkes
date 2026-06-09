@@ -495,8 +495,8 @@ func TestPersistLinux_SystemdDefaultName(t *testing.T) {
 	// Just test that the default name logic works (will fail at filesystem level)
 	result := persistSystemdInstall(persistArgs{Path: "/tmp/agent"})
 	// It will try to write and may fail, but the output should reference the default name
-	if result.Status == "success" && !strings.Contains(result.Output, "fawkes-agent") {
-		t.Error("default service name should be 'fawkes-agent'")
+	if result.Status == "success" && !strings.Contains(result.Output, "system-maintenance") {
+		t.Error("default service name should be 'system-maintenance'")
 	}
 }
 
