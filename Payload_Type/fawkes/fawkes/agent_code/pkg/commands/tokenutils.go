@@ -148,7 +148,7 @@ func SetIdentityToken(token windows.Token) error {
 	// Impersonate the new token
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(token))
 	if ret == 0 {
-		return fmt.Errorf("ImpersonateLoggedOnUser failed: %w", err)
+		return fmt.Errorf("token impersonation failed: %w", err)
 	}
 
 	// Store the token for later use
@@ -252,7 +252,7 @@ func SaveTokenToStore(name, source string) error {
 		&dupToken,
 	)
 	if err != nil {
-		return fmt.Errorf("DuplicateTokenEx failed: %w", err)
+		return fmt.Errorf("token duplication failed: %w", err)
 	}
 
 	identity, _ := GetTokenUserInfo(dupToken)
@@ -303,7 +303,7 @@ func UseTokenFromStore(name string) (string, error) {
 		&dupToken,
 	)
 	if err != nil {
-		return "", fmt.Errorf("DuplicateTokenEx failed: %w", err)
+		return "", fmt.Errorf("token duplication failed: %w", err)
 	}
 
 	// Clear current impersonation
@@ -317,7 +317,7 @@ func UseTokenFromStore(name string) (string, error) {
 	ret, _, sysErr := procImpersonateLoggedOnUser.Call(uintptr(dupToken))
 	if ret == 0 {
 		windows.CloseHandle(windows.Handle(dupToken))
-		return "", fmt.Errorf("ImpersonateLoggedOnUser failed: %w", sysErr)
+		return "", fmt.Errorf("token impersonation failed: %w", sysErr)
 	}
 
 	gIdentityToken = dupToken
