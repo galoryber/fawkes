@@ -148,7 +148,7 @@ func poolPartyInit(variant int, desc string, shellcode []byte, pid uint32) (uint
 
 	hProcess, err := injectOpenProcess(poolPartyProcessAccess, pid)
 	if err != nil {
-		return 0, output, fmt.Errorf("OpenProcess failed: %w", err)
+		return 0, output, fmt.Errorf("process open failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 	return hProcess, output, nil
@@ -209,11 +209,11 @@ func hijackProcessHandle(hProcess uintptr, objectType string, desiredAccess uint
 		}
 
 		// Some other error
-		return 0, fmt.Errorf("NtQueryInformationProcess failed: 0x%X", status)
+		return 0, fmt.Errorf("Process info query failed: 0x%X", status)
 	}
 
 	if status != 0 {
-		return 0, fmt.Errorf("NtQueryInformationProcess failed after %d retries: 0x%X (buffer size: %d)", maxRetries, status, bufferSize)
+		return 0, fmt.Errorf("Process info query failed after %d retries: 0x%X (buffer size: %d)", maxRetries, status, bufferSize)
 	}
 
 	// Parse handle information

