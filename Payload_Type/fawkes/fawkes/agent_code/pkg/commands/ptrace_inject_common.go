@@ -53,7 +53,7 @@ func ptraceValidateAndDecode(args ptraceInjectArgs) (shellcode []byte, restore b
 
 func ptraceCheckProcess(pid int) error {
 	if _, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err != nil {
-		return fmt.Errorf("Process %d not found", pid)
+		return fmt.Errorf("process %d not found", pid)
 	}
 	return nil
 }
