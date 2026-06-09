@@ -400,7 +400,7 @@ func generateSleepStub() []byte {
 // createNativeThread creates a Windows thread outside Go's runtime, starting
 // at stubAddr with dataAddr as the parameter. Thread is created suspended.
 func createNativeThread(stubAddr, dataAddr uintptr, threadID *uint32) (windows.Handle, error) {
-	h, _, err := procthread creation.Call(
+	h, _, err := procCreateThread.Call(
 		0,        // security attributes
 		0,        // default stack size
 		stubAddr, // start address

