@@ -128,7 +128,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	)
 	if err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("CreateProcess (suspended): %w", err)
+		return "", fmt.Errorf("process creation (suspended): %w", err)
 	}
 
 	defer windows.CloseHandle(pi.Process)
@@ -147,7 +147,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	if status != 0 {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("NtQueryInformationProcess: NTSTATUS 0x%X", status)
+		return "", fmt.Errorf("process info query: status 0x%X", status)
 	}
 
 	// Step 3: Read ProcessParameters pointer from PEB+0x20
@@ -156,7 +156,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	if err != nil {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("read PEB.ProcessParameters: %w", err)
+		return "", fmt.Errorf("read process parameters: %w", err)
 	}
 
 	// Step 4: Read CommandLine UNICODE_STRING from ProcessParameters+0x70
@@ -222,7 +222,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	)
 	if status != 0 {
 		windows.TerminateProcess(pi.Process, 1)
-		return "", fmt.Errorf("NtResumeThread: NTSTATUS 0x%X", status)
+		return "", fmt.Errorf("thread resume: status 0x%X", status)
 	}
 
 	// Step 9: Read output

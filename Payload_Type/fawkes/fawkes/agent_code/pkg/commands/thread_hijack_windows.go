@@ -216,7 +216,7 @@ func resumeThread(sb *strings.Builder, hThread uintptr) {
 		var prevCount uint32
 		status := IndirectNtResumeThread(hThread, &prevCount)
 		if status != 0 {
-			sb.WriteString(fmt.Sprintf("[!] NtResumeThread failed: NTSTATUS 0x%X\n", status))
+			sb.WriteString(fmt.Sprintf("[!] Thread resume failed: status 0x%X\n", status))
 			return
 		}
 		sb.WriteString(fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount))

