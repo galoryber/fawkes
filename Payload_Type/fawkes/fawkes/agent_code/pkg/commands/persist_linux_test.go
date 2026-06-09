@@ -202,8 +202,8 @@ func TestPersistLinux_ShellProfileDefaultMarker(t *testing.T) {
 		}
 
 		data, _ := os.ReadFile(bashrcPath)
-		if !strings.Contains(string(data), "# BEGIN fawkes") {
-			t.Error("default marker should be 'fawkes'")
+		if !strings.Contains(string(data), "# BEGIN maintenance") {
+			t.Error("default marker should be 'maintenance'")
 		}
 
 		// Cleanup
@@ -300,8 +300,8 @@ func TestPersistLinux_SSHKeyDefaultMarker(t *testing.T) {
 
 		authKeysPath := filepath.Join(tmpHome, ".ssh", "authorized_keys")
 		data, _ := os.ReadFile(authKeysPath)
-		if !strings.Contains(string(data), " fawkes\n") {
-			t.Error("default marker should be 'fawkes'")
+		if !strings.Contains(string(data), " maintenance\n") {
+			t.Error("default marker should be 'maintenance'")
 		}
 
 		// Cleanup

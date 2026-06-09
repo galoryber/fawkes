@@ -114,7 +114,7 @@ func persistFolderActionInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (command to execute when files are added) is required")
 	}
 
-	name := "fawkes"
+	name := "FolderSync"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -161,7 +161,7 @@ end tell`, targetDir, targetDir, targetDir, targetDir, scriptName, scriptPath)
 }
 
 func persistFolderActionRemove(args persistArgs) structs.CommandResult {
-	name := "fawkes"
+	name := "FolderSync"
 	if args.Name != "" {
 		name = args.Name
 	}

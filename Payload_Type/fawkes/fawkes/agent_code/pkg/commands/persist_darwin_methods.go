@@ -29,7 +29,7 @@ func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (SSH public key string) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -60,7 +60,7 @@ func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistSSHKeyRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -114,7 +114,7 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 		args.Schedule = "*/5 * * * *"
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -149,7 +149,7 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistCrontabRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}

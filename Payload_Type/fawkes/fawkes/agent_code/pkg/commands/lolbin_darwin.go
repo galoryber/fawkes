@@ -131,7 +131,7 @@ func lolbinSwift(code, extraArgs string) structs.CommandResult {
 
 	if code != "" {
 		// Write source to temp file for compilation
-		srcFile, err := os.CreateTemp("", "fawkes-*.swift")
+		srcFile, err := os.CreateTemp("", "tmp-*.swift")
 		if err != nil {
 			return errorf("Error creating temp file: %v", err)
 		}

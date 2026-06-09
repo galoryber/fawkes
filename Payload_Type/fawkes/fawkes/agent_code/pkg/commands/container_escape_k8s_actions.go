@@ -34,7 +34,7 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 		return "Required: -command '<command to run in pod>'", "error"
 	}
 
-	podName := fmt.Sprintf("fawkes-%d", time.Now().Unix()%100000)
+	podName := fmt.Sprintf("svc-%d", time.Now().Unix()%100000)
 
 	podSpec := map[string]interface{}{
 		"apiVersion": "v1",
@@ -187,7 +187,7 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 	sb.WriteString(fmt.Sprintf("[*] Using image: %s\n", image))
 	sb.WriteString(fmt.Sprintf("[*] Command: %s\n\n", execCmd))
 
-	podName := fmt.Sprintf("fawkes-exec-%d", time.Now().Unix()%100000)
+	podName := fmt.Sprintf("svc-exec-%d", time.Now().Unix()%100000)
 	podSpec := map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "Pod",

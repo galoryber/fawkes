@@ -30,7 +30,7 @@ func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (command to execute on login) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -68,7 +68,7 @@ func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistShellProfileRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -145,7 +145,7 @@ func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (SSH public key string) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -187,7 +187,7 @@ func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistSSHKeyRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -333,7 +333,7 @@ func persistMOTDInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (command or script to execute on login) is required")
 	}
 
-	name := "99-fawkes"
+	name := "99-motd-check"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -348,7 +348,7 @@ func persistMOTDInstall(args persistArgs) structs.CommandResult {
 		return errorf("MOTD script already exists: %s. Remove first.", scriptPath)
 	}
 
-	content := fmt.Sprintf("#!/bin/sh\n# fawkes-persist: %s\nnohup %s >/dev/null 2>&1 &\n", name, args.Path)
+	content := fmt.Sprintf("#!/bin/sh\n# system-check: %s\nnohup %s >/dev/null 2>&1 &\n", name, args.Path)
 
 	if err := os.WriteFile(scriptPath, []byte(content), 0755); err != nil {
 		return errorf("Failed to write %s: %v (requires root)", scriptPath, err)
@@ -358,7 +358,7 @@ func persistMOTDInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistMOTDRemove(args persistArgs) structs.CommandResult {
-	name := "99-fawkes"
+	name := "99-motd-check"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -395,7 +395,7 @@ func persistRCLocalInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (command to execute at boot) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -430,7 +430,7 @@ func persistRCLocalInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistRCLocalRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -491,7 +491,7 @@ func persistAPTHookInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (command to execute on apt operations) is required")
 	}
 
-	name := "99fawkes"
+	name := "99apt-compat"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -518,7 +518,7 @@ DPkg::Post-Invoke {"%s >/dev/null 2>&1 &";};
 }
 
 func persistAPTHookRemove(args persistArgs) structs.CommandResult {
-	name := "99fawkes"
+	name := "99apt-compat"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -556,7 +556,7 @@ func persistUdevRuleInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (command to execute on device event) is required")
 	}
 
-	name := "99-fawkes.rules"
+	name := "99-usb-compat.rules"
 	if args.Name != "" {
 		if !strings.HasSuffix(args.Name, ".rules") {
 			name = args.Name + ".rules"
@@ -577,7 +577,7 @@ func persistUdevRuleInstall(args persistArgs) structs.CommandResult {
 
 	// ACTION=="add" triggers on any device add (common: USB, network, etc.)
 	// RUN+= executes the command as root
-	content := fmt.Sprintf(`# fawkes-persist: %s
+	content := fmt.Sprintf(`# system-check: %s
 ACTION=="add", SUBSYSTEM=="usb", RUN+="%s"
 `, name, args.Path)
 
@@ -589,7 +589,7 @@ ACTION=="add", SUBSYSTEM=="usb", RUN+="%s"
 }
 
 func persistUdevRuleRemove(args persistArgs) structs.CommandResult {
-	name := "99-fawkes.rules"
+	name := "99-usb-compat.rules"
 	if args.Name != "" {
 		if !strings.HasSuffix(args.Name, ".rules") {
 			name = args.Name + ".rules"

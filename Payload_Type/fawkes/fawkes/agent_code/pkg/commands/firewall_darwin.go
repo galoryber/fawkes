@@ -189,7 +189,7 @@ func buildPfRule(args firewallArgs) string {
 func darwinPfAdd(args firewallArgs) structs.CommandResult {
 	anchor := args.Name
 	if anchor == "" {
-		anchor = "fawkes"
+		anchor = "com.apple.pfctl"
 	}
 
 	rule := buildPfRule(args)
@@ -218,7 +218,7 @@ func darwinPfAdd(args firewallArgs) structs.CommandResult {
 func darwinPfDelete(args firewallArgs) structs.CommandResult {
 	anchor := args.Name
 	if anchor == "" {
-		anchor = "fawkes"
+		anchor = "com.apple.pfctl"
 	}
 
 	out, err := execCmdTimeout("pfctl", "-a", anchor, "-F", "rules")
@@ -233,7 +233,7 @@ func darwinPfDelete(args firewallArgs) structs.CommandResult {
 func darwinPfList(args firewallArgs) structs.CommandResult {
 	anchor := args.Name
 	if anchor == "" {
-		anchor = "fawkes"
+		anchor = "com.apple.pfctl"
 	}
 
 	out, err := execCmdTimeout("pfctl", "-a", anchor, "-s", "rules")

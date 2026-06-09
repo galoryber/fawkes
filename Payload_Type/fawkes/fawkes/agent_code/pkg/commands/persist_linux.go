@@ -93,7 +93,7 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 	}
 
 	// Build the crontab line with a marker comment for easy removal
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -133,7 +133,7 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistCrontabRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -188,7 +188,7 @@ func persistSystemdInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (executable to persist) is required")
 	}
 	if args.Name == "" {
-		args.Name = "fawkes-agent"
+		args.Name = "system-maintenance"
 	}
 
 	// Determine user vs system service
@@ -258,7 +258,7 @@ WantedBy=%s
 
 func persistSystemdRemove(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = "fawkes-agent"
+		args.Name = "system-maintenance"
 	}
 
 	serviceName := args.Name + ".service"

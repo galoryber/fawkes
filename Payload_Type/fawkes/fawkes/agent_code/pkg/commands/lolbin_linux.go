@@ -178,7 +178,7 @@ func gtfobinGCC(code, extraArgs string) structs.CommandResult {
 	}
 
 	// Write source to temp file
-	srcFile, err := os.CreateTemp("", "fawkes-*.c")
+	srcFile, err := os.CreateTemp("", "tmp-*.c")
 	if err != nil {
 		return errorf("Error creating temp file: %v", err)
 	}

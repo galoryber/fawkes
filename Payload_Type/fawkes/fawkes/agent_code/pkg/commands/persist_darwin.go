@@ -191,7 +191,7 @@ func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 		return errorResult("Error: path (command to execute on login) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -220,7 +220,7 @@ func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistShellProfileRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
