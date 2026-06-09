@@ -8,8 +8,18 @@ import (
 
 func securityInfoLinux() []secControl {
 	var controls []secControl
+	controls = append(controls, checkMACControls()...)
+	controls = append(controls, checkAuditAndFirewall()...)
+	controls = append(controls, checkKernelHardening()...)
+	controls = append(controls, checkDiskEncryption()...)
+	controls = append(controls, checkLDPreload()...)
+	controls = append(controls, checkEBPFMonitoring()...)
+	return controls
+}
 
-	// SELinux — read from sysfs first (no subprocess), fall back to getenforce
+func checkMACControls() []secControl {
+	var controls []secControl
+
 	selinuxEnforce := readFileQuiet("/sys/fs/selinux/enforce")
 	if selinuxEnforce != "" {
 		val := strings.TrimSpace(selinuxEnforce)
@@ -31,7 +41,6 @@ func securityInfoLinux() []secControl {
 		controls = append(controls, secControl{"SELinux", "not found", "not available"})
 	}
 
-	// AppArmor — check kernel module first (no subprocess), fall back to aa-status
 	aaEnabled := readFileQuiet("/sys/module/apparmor/parameters/enabled")
 	if strings.TrimSpace(aaEnabled) == "Y" {
 		controls = append(controls, secControl{"AppArmor", "enabled", "kernel module loaded"})
@@ -41,7 +50,6 @@ func securityInfoLinux() []secControl {
 		controls = append(controls, secControl{"AppArmor", "not found", ""})
 	}
 
-	// Seccomp
 	seccomp := readFileQuiet("/proc/self/status")
 	if seccomp != "" {
 		for _, line := range strings.Split(seccomp, "\n") {
@@ -60,9 +68,13 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// Audit daemon — native detection via procfs/pidfile (no subprocess)
+	return controls
+}
+
+func checkAuditAndFirewall() []secControl {
+	var controls []secControl
+
 	auditDetected := false
-	// Check loginuid: a valid UID (not 4294967295) means audit tracking is active
 	loginuid := readFileQuiet("/proc/self/loginuid")
 	if loginuid != "" {
 		val := strings.TrimSpace(loginuid)
@@ -70,7 +82,6 @@ func securityInfoLinux() []secControl {
 			auditDetected = true
 		}
 	}
-	// Check if auditd PID file exists (standard location)
 	auditPid := readFileQuiet("/var/run/auditd.pid")
 	if auditPid == "" {
 		auditPid = readFileQuiet("/run/auditd.pid")
@@ -88,7 +99,6 @@ func securityInfoLinux() []secControl {
 		controls = append(controls, secControl{"Linux Audit (auditd)", "not found", ""})
 	}
 
-	// Firewall (iptables)
 	iptables := runQuietCommand("iptables", "-L", "-n", "--line-numbers")
 	if iptables != "" {
 		lines := strings.Split(strings.TrimSpace(iptables), "\n")
@@ -105,13 +115,17 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// nftables
 	nft := runQuietCommand("nft", "list", "ruleset")
 	if nft != "" && len(strings.TrimSpace(nft)) > 10 {
 		controls = append(controls, secControl{"nftables", "enabled", "ruleset present"})
 	}
 
-	// ASLR
+	return controls
+}
+
+func checkKernelHardening() []secControl {
+	var controls []secControl
+
 	aslr := readFileQuiet("/proc/sys/kernel/randomize_va_space")
 	if aslr != "" {
 		val := strings.TrimSpace(aslr)
@@ -125,13 +139,11 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// Kernel lockdown
 	lockdown := readFileQuiet("/sys/kernel/security/lockdown")
 	if lockdown != "" {
 		controls = append(controls, secControl{"Kernel Lockdown", "info", strings.TrimSpace(lockdown)})
 	}
 
-	// YAMA ptrace scope
 	yama := readFileQuiet("/proc/sys/kernel/yama/ptrace_scope")
 	if yama != "" {
 		val := strings.TrimSpace(yama)
@@ -147,7 +159,6 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// Active LSMs (Landlock, BPF LSM, TOMOYO, etc.)
 	lsm := readFileQuiet("/sys/kernel/security/lsm")
 	if lsm != "" {
 		modules := strings.TrimSpace(lsm)
@@ -163,7 +174,6 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// Unprivileged BPF restriction
 	bpfRestrict := readFileQuiet("/proc/sys/kernel/unprivileged_bpf_disabled")
 	if bpfRestrict != "" {
 		val := strings.TrimSpace(bpfRestrict)
@@ -177,7 +187,6 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// kptr_restrict — hides kernel pointers from non-root
 	kptr := readFileQuiet("/proc/sys/kernel/kptr_restrict")
 	if kptr != "" {
 		val := strings.TrimSpace(kptr)
@@ -191,7 +200,6 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// dmesg_restrict — limits dmesg to root
 	dmesg := readFileQuiet("/proc/sys/kernel/dmesg_restrict")
 	if dmesg != "" {
 		if strings.TrimSpace(dmesg) == "1" {
@@ -201,7 +209,11 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// Disk encryption — check for dm-crypt/LUKS devices
+	return controls
+}
+
+func checkDiskEncryption() []secControl {
+	var controls []secControl
 	if dmEntries, err := os.ReadDir("/dev/mapper"); err == nil {
 		var encrypted []string
 		for _, e := range dmEntries {
@@ -215,13 +227,6 @@ func securityInfoLinux() []secControl {
 				fmt.Sprintf("%d device(s): %s", len(encrypted), strings.Join(encrypted, ", "))})
 		}
 	}
-
-	// LD_PRELOAD — library injection detection
-	controls = append(controls, checkLDPreload()...)
-
-	// eBPF monitoring — detect runtime security tools using eBPF
-	controls = append(controls, checkEBPFMonitoring()...)
-
 	return controls
 }
 
