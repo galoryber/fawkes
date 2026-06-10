@@ -174,7 +174,7 @@ func dcsyncNTLMStandalone(ha dcsyncHelperArgs) ([]dcsyncResult, error) {
 		if item.Status != 0 {
 			results = append(results, dcsyncResult{
 				Username: ha.Targets[i],
-				NTHash:   fmt.Sprintf("CrackNames failed: %v", drsr.FromCode(int32(item.Status))),
+				Error:    fmt.Sprintf("CrackNames failed: %v", drsr.FromCode(int32(item.Status))),
 			})
 			continue
 		}
@@ -198,7 +198,7 @@ func dcsyncNTLMStandalone(ha dcsyncHelperArgs) ([]dcsyncResult, error) {
 		if err != nil {
 			results = append(results, dcsyncResult{
 				Username: ha.Targets[i],
-				NTHash:   fmt.Sprintf("GetNCChanges failed: %v", err),
+				Error:    fmt.Sprintf("GetNCChanges failed: %v", err),
 			})
 			continue
 		}
