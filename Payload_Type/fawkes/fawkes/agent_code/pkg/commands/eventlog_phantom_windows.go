@@ -78,7 +78,7 @@ func evtPhantom() structs.CommandResult {
 
 	wevtsvcBase, wevtsvcSize, err := findModuleRange(hProcess, "wevtsvc.dll")
 	if err != nil {
-		return errorf("Failed to find wevtsvc.dll in PID %d: %v", pid, err)
+		return errorf("Failed to find target module in PID %d: %v", pid, err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] wevtsvc.dll: base=0x%X size=0x%X\n", wevtsvcBase, wevtsvcSize))
 

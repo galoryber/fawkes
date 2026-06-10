@@ -84,11 +84,11 @@ func executeInsituFullInner() structs.CommandResult {
 
 	pid, err := lsassFindPID()
 	if err != nil {
-		return errorf("Phase 2B: locate lsass.exe: %v", err)
+		return errorf("Phase 2B: locate target process: %v", err)
 	}
 	h, err := lsassOpenForRead(pid)
 	if err != nil {
-		return errorf("Phase 2B: open lsass.exe pid=%d: %v\n[!] Detected protection state: %s\n[!] %s",
+		return errorf("Phase 2B: open target process pid=%d: %v\n[!] Detected protection state: %s\n[!] %s",
 			pid, err, protection.Summary(), protection.AccessDeniedHint())
 	}
 	defer windows.CloseHandle(h)

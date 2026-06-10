@@ -198,7 +198,7 @@ func persistPrintProcessor(args persistArgs) structs.CommandResult {
 
 		dst, err := os.Create(destPath)
 		if err != nil {
-			return errorf("Error creating '%s': %v (admin required, spoolsv.exe may lock directory)", destPath, err)
+			return errorf("Error creating '%s': %v (admin required, print service may lock directory)", destPath, err)
 		}
 		defer dst.Close()
 

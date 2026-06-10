@@ -79,7 +79,7 @@ func lolbinRegsvcs(dllPath, extraArgs string) structs.CommandResult {
 
 	regsvcsPath := findDotNetTool("RegSvcs.exe")
 	if regsvcsPath == "" {
-		return errorResult("Error: RegSvcs.exe not found in .NET Framework directories")
+		return errorResult("Error: required binary not found in .NET Framework directories")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
@@ -110,7 +110,7 @@ func lolbinRegasm(dllPath, extraArgs string) structs.CommandResult {
 
 	regasmPath := findDotNetTool("RegAsm.exe")
 	if regasmPath == "" {
-		return errorResult("Error: RegAsm.exe not found in .NET Framework directories")
+		return errorResult("Error: required binary not found in .NET Framework directories")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
@@ -228,7 +228,7 @@ func lolbinRegsvr32(payloadPath, extraArgs string) structs.CommandResult {
 func lolbinInstallUtil(assemblyPath, extraArgs string) structs.CommandResult {
 	installUtilPath := findDotNetTool("InstallUtil.exe")
 	if installUtilPath == "" {
-		return errorResult("Error: InstallUtil.exe not found in .NET Framework directories")
+		return errorResult("Error: required binary not found in .NET Framework directories")
 	}
 
 	cmdArgs := []string{"/logfile=", "/LogToConsole=false"}

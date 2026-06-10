@@ -326,7 +326,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 
 	if hKernel32 == 0 {
 		windows.CloseHandle(windows.Handle(hProcess))
-		return errorResult(output + "Error: Failed to get kernel32.dll handle")
+		return errorResult(output + "Error: Failed to get system library handle")
 	}
 
 	sleepProc, _ := syscall.BytePtrFromString("Sleep")

@@ -102,7 +102,7 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 
 		// Set SCRNSAVE.EXE to our payload
 		if err := key.SetStringValue("SCRNSAVE.EXE", args.Path); err != nil {
-			return errorf("Error setting SCRNSAVE.EXE: %v", err)
+			return errorf("Error setting screensaver value: %v", err)
 		}
 
 		// Enable screensaver

@@ -53,7 +53,7 @@ type lsassRemoteModule struct {
 func lsassFindPID() (uint32, error) {
 	pid, _, err := findProcessByName("lsass.exe")
 	if err != nil {
-		return 0, fmt.Errorf("locating lsass.exe: %w", err)
+		return 0, fmt.Errorf("locating target process: %w", err)
 	}
 	return pid, nil
 }

@@ -123,7 +123,7 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	// Get Item(0) — returns an Internet Explorer / Explorer window
 	itemResult, err := oleutil.CallMethod(shellWin, "Item")
 	if err != nil {
-		return errorf("Failed to get Item: %v (requires an explorer.exe shell on target)", err)
+		return errorf("Failed to get Item: %v (requires an interactive desktop session on target)", err)
 	}
 	defer itemResult.Clear()
 	item := itemResult.ToIDispatch()
