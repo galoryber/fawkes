@@ -59,86 +59,7 @@ func tarGzCreate(task structs.Task, params CompressParams) structs.CommandResult
 	var fileErrors []string
 
 	if srcInfo.IsDir() {
-		baseDir := srcPath
-		err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
-			if task.DidStop() {
-				return fmt.Errorf("cancelled")
-			}
-			if walkErr != nil {
-				relName, _ := filepath.Rel(baseDir, path)
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
-				return nil
-			}
-
-			if path == outputPath {
-				return nil
-			}
-
-			relPath, _ := filepath.Rel(baseDir, path)
-			depth := len(strings.Split(relPath, string(os.PathSeparator)))
-			if depth > params.MaxDepth {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			if d.IsDir() {
-				return nil
-			}
-
-			if params.Pattern != "" {
-				matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
-				if matchErr != nil || !matched {
-					return nil
-				}
-			}
-
-			info, infoErr := d.Info()
-			if infoErr != nil {
-				relName, _ := filepath.Rel(baseDir, path)
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
-				return nil
-			}
-
-			if info.Size() > params.MaxSize {
-				skipped++
-				return nil
-			}
-
-			relName, _ := filepath.Rel(baseDir, path)
-			relName = filepath.ToSlash(relName)
-
-			header, headerErr := tar.FileInfoHeader(info, "")
-			if headerErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
-				return nil
-			}
-			header.Name = relName
-
-			if writeErr := tarWriter.WriteHeader(header); writeErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: write header: %v", relName, writeErr))
-				return nil
-			}
-
-			file, openErr := os.Open(path)
-			if openErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
-				return nil
-			}
-			defer file.Close()
-
-			written, copyErr := io.Copy(tarWriter, file)
-			if copyErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
-				return nil
-			}
-
-			fileCount++
-			totalSize += written
-			return nil
-		})
-
+		fileCount, totalSize, skipped, fileErrors, err = tarGzAddDirectory(tarWriter, task, srcPath, outputPath, params)
 		if err != nil {
 			return errorf("Error walking directory: %v", err)
 		}
@@ -194,6 +115,92 @@ func tarGzCreate(task structs.Task, params CompressParams) structs.CommandResult
 	}
 
 	return successResult(result)
+}
+
+// tarGzAddDirectory walks a directory tree and adds matching files to the tar archive.
+func tarGzAddDirectory(tarWriter *tar.Writer, task structs.Task, srcPath, outputPath string, params CompressParams) (int, int64, int, []string, error) {
+	var fileCount, skipped int
+	var totalSize int64
+	var fileErrors []string
+	baseDir := srcPath
+
+	err := filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
+		if walkErr != nil {
+			relName, _ := filepath.Rel(baseDir, path)
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
+			return nil
+		}
+		if path == outputPath {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(baseDir, path)
+		depth := len(strings.Split(relPath, string(os.PathSeparator)))
+		if depth > params.MaxDepth {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		if params.Pattern != "" {
+			matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
+			if matchErr != nil || !matched {
+				return nil
+			}
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			relName, _ := filepath.Rel(baseDir, path)
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
+			return nil
+		}
+		if info.Size() > params.MaxSize {
+			skipped++
+			return nil
+		}
+
+		relName, _ := filepath.Rel(baseDir, path)
+		relName = filepath.ToSlash(relName)
+
+		header, headerErr := tar.FileInfoHeader(info, "")
+		if headerErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
+			return nil
+		}
+		header.Name = relName
+
+		if writeErr := tarWriter.WriteHeader(header); writeErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: write header: %v", relName, writeErr))
+			return nil
+		}
+
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
+			return nil
+		}
+		defer file.Close()
+
+		written, copyErr := io.Copy(tarWriter, file)
+		if copyErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
+			return nil
+		}
+
+		fileCount++
+		totalSize += written
+		return nil
+	})
+
+	return fileCount, totalSize, skipped, fileErrors, err
 }
 
 func tarGzList(params CompressParams) structs.CommandResult {

@@ -715,101 +715,16 @@ func derAlgIDNoParams(oid gokrb5asn1.ObjectIdentifier) []byte {
 // decryptEncKeyPack handles the encKeyPack [1] variant of PA-PK-AS-REP.
 // Uses sequential element parsing to avoid Go ASN.1 struct-tag edge cases.
 func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.EncryptionKey, error) {
-	// Parse outer ContentInfo
-	var ci contentInfo
-	if _, err := gokrb5asn1.Unmarshal(encKeyPackBytes, &ci); err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse ContentInfo: %w", err)
-	}
-
-	// ci.Content is the [0] EXPLICIT wrapper — .Bytes contains the EnvelopedData SEQUENCE TLV
-	edBytes := ci.Content.Bytes
-	if len(edBytes) == 0 {
-		edBytes = ci.Content.FullBytes
-	}
-	var edSeq gokrb5asn1.RawValue
-	if _, err := gokrb5asn1.Unmarshal(edBytes, &edSeq); err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse EnvelopedData SEQUENCE: %w", err)
-	}
-	remain := edSeq.Bytes
-
-	dbg := fmt.Sprintf("ci.Content: tag=%d class=%d | edSeq: tag=%d bytesLen=%d | remain[0:8]=%x",
-		ci.Content.Tag, ci.Content.Class, edSeq.Tag, len(edSeq.Bytes), remain[:min(8, len(remain))])
-
-	// Element 1: version INTEGER
-	var version int
-	var err error
-	remain, err = gokrb5asn1.Unmarshal(remain, &version)
+	encryptedKey, remain, dbg, err := parseEnvelopedRecipientInfo(encKeyPackBytes)
 	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse version: %w | %s", err, dbg)
-	}
-	dbg += fmt.Sprintf(" | ver=%d remainAfterVer=%d", version, len(remain))
-
-	// Element 2: originatorInfo [0] IMPLICIT (optional, skip if present)
-	if len(remain) > 0 && remain[0] == 0xa0 {
-		var skip gokrb5asn1.RawValue
-		if rest, err := gokrb5asn1.Unmarshal(remain, &skip); err == nil {
-			remain = rest
-		}
+		return types.EncryptionKey{}, err
 	}
 
-	if len(remain) > 0 {
-		dbg += fmt.Sprintf(" | nextTag=0x%02x", remain[0])
-	}
-
-	// Element 3: recipientInfos SET
-	var riSet gokrb5asn1.RawValue
-	remain, err = gokrb5asn1.Unmarshal(remain, &riSet)
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse recipientInfos: %w | %s", err, dbg)
-	}
-	dbg += fmt.Sprintf(" | riSet: tag=%d class=%d bytesLen=%d", riSet.Tag, riSet.Class, len(riSet.Bytes))
-
-	// Parse first KeyTransRecipientInfo from SET content
-	riContent := riSet.Bytes
-	if len(riContent) == 0 {
-		riContent = riSet.FullBytes
-	}
-	dbg += fmt.Sprintf(" | riContent[0:min(8)]=%x", riContent[:min(8, len(riContent))])
-
-	var ktriSeq gokrb5asn1.RawValue
-	_, err = gokrb5asn1.Unmarshal(riContent, &ktriSeq)
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse KTRI seq: %w | %s", err, dbg)
-	}
-	ktriRemain := ktriSeq.Bytes
-	dbg += fmt.Sprintf(" | ktri: tag=%d bytesLen=%d", ktriSeq.Tag, len(ktriSeq.Bytes))
-
-	var ktriVer int
-	ktriRemain, err = gokrb5asn1.Unmarshal(ktriRemain, &ktriVer)
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse KTRI ver: %w | %s", err, dbg)
-	}
-	var rid gokrb5asn1.RawValue
-	ktriRemain, err = gokrb5asn1.Unmarshal(ktriRemain, &rid)
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse KTRI rid: %w | %s", err, dbg)
-	}
-	dbg += fmt.Sprintf(" | ktriVer=%d ridTag=%d ridLen=%d", ktriVer, rid.Tag, len(rid.Bytes))
-
-	var keyEncAlg algorithmIdentifier
-	ktriRemain, err = gokrb5asn1.Unmarshal(ktriRemain, &keyEncAlg)
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse keyEncAlg: %w | %s", err, dbg)
-	}
-	var encryptedKey []byte
-	_, err = gokrb5asn1.Unmarshal(ktriRemain, &encryptedKey)
-	if err != nil {
-		return types.EncryptionKey{}, fmt.Errorf("parse encryptedKey: %w | %s", err, dbg)
-	}
-	dbg += fmt.Sprintf(" | alg=%v encKeyLen=%d", keyEncAlg.Algorithm, len(encryptedKey))
-
-	// Decrypt CEK with our RSA private key
 	rsaKey, ok := ck.Key.(*rsa.PrivateKey)
 	if !ok {
 		return types.EncryptionKey{}, fmt.Errorf("encKeyPack requires RSA private key")
 	}
 
-	// Verify our private key modulus matches cert public key
 	certPubKey, ok2 := ck.Cert.PublicKey.(*rsa.PublicKey)
 	if ok2 {
 		dbg += fmt.Sprintf(" | keyMatch=%v keyBits=%d", rsaKey.N.Cmp(certPubKey.N) == 0, rsaKey.N.BitLen())
@@ -832,7 +747,100 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 			len(cek), oaep1Err, dbg)
 	}
 
-	// Element 4: EncryptedContentInfo SEQUENCE
+	return decryptEnvelopedContent(remain, cek, dbg)
+}
+
+// parseEnvelopedRecipientInfo parses ContentInfo → EnvelopedData and extracts the
+// encrypted CEK from the first KeyTransRecipientInfo. Returns the encrypted key,
+// remaining bytes (EncryptedContentInfo), and debug info.
+func parseEnvelopedRecipientInfo(encKeyPackBytes []byte) ([]byte, []byte, string, error) {
+	var ci contentInfo
+	if _, err := gokrb5asn1.Unmarshal(encKeyPackBytes, &ci); err != nil {
+		return nil, nil, "", fmt.Errorf("parse ContentInfo: %w", err)
+	}
+
+	edBytes := ci.Content.Bytes
+	if len(edBytes) == 0 {
+		edBytes = ci.Content.FullBytes
+	}
+	var edSeq gokrb5asn1.RawValue
+	if _, err := gokrb5asn1.Unmarshal(edBytes, &edSeq); err != nil {
+		return nil, nil, "", fmt.Errorf("parse EnvelopedData SEQUENCE: %w", err)
+	}
+	remain := edSeq.Bytes
+
+	dbg := fmt.Sprintf("ci.Content: tag=%d class=%d | edSeq: tag=%d bytesLen=%d | remain[0:8]=%x",
+		ci.Content.Tag, ci.Content.Class, edSeq.Tag, len(edSeq.Bytes), remain[:min(8, len(remain))])
+
+	var version int
+	var err error
+	remain, err = gokrb5asn1.Unmarshal(remain, &version)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("parse version: %w | %s", err, dbg)
+	}
+	dbg += fmt.Sprintf(" | ver=%d remainAfterVer=%d", version, len(remain))
+
+	if len(remain) > 0 && remain[0] == 0xa0 {
+		var skip gokrb5asn1.RawValue
+		if rest, err := gokrb5asn1.Unmarshal(remain, &skip); err == nil {
+			remain = rest
+		}
+	}
+	if len(remain) > 0 {
+		dbg += fmt.Sprintf(" | nextTag=0x%02x", remain[0])
+	}
+
+	var riSet gokrb5asn1.RawValue
+	remain, err = gokrb5asn1.Unmarshal(remain, &riSet)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("parse recipientInfos: %w | %s", err, dbg)
+	}
+	dbg += fmt.Sprintf(" | riSet: tag=%d class=%d bytesLen=%d", riSet.Tag, riSet.Class, len(riSet.Bytes))
+
+	riContent := riSet.Bytes
+	if len(riContent) == 0 {
+		riContent = riSet.FullBytes
+	}
+	dbg += fmt.Sprintf(" | riContent[0:min(8)]=%x", riContent[:min(8, len(riContent))])
+
+	var ktriSeq gokrb5asn1.RawValue
+	_, err = gokrb5asn1.Unmarshal(riContent, &ktriSeq)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("parse KTRI seq: %w | %s", err, dbg)
+	}
+	ktriRemain := ktriSeq.Bytes
+	dbg += fmt.Sprintf(" | ktri: tag=%d bytesLen=%d", ktriSeq.Tag, len(ktriSeq.Bytes))
+
+	var ktriVer int
+	ktriRemain, err = gokrb5asn1.Unmarshal(ktriRemain, &ktriVer)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("parse KTRI ver: %w | %s", err, dbg)
+	}
+	var rid gokrb5asn1.RawValue
+	ktriRemain, err = gokrb5asn1.Unmarshal(ktriRemain, &rid)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("parse KTRI rid: %w | %s", err, dbg)
+	}
+	dbg += fmt.Sprintf(" | ktriVer=%d ridTag=%d ridLen=%d", ktriVer, rid.Tag, len(rid.Bytes))
+
+	var keyEncAlg algorithmIdentifier
+	ktriRemain, err = gokrb5asn1.Unmarshal(ktriRemain, &keyEncAlg)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("parse keyEncAlg: %w | %s", err, dbg)
+	}
+	var encryptedKey []byte
+	_, err = gokrb5asn1.Unmarshal(ktriRemain, &encryptedKey)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("parse encryptedKey: %w | %s", err, dbg)
+	}
+	dbg += fmt.Sprintf(" | alg=%v encKeyLen=%d", keyEncAlg.Algorithm, len(encryptedKey))
+
+	return encryptedKey, remain, dbg, nil
+}
+
+// decryptEnvelopedContent decrypts the EncryptedContentInfo using the provided CEK,
+// then extracts the ReplyKeyPack from the decrypted CMS SignedData.
+func decryptEnvelopedContent(remain, cek []byte, dbg string) (types.EncryptionKey, error) {
 	var eciSeq gokrb5asn1.RawValue
 	if _, err := gokrb5asn1.Unmarshal(remain, &eciSeq); err != nil {
 		return types.EncryptionKey{}, fmt.Errorf("parse EncryptedContentInfo: %w | %s", err, dbg)
@@ -840,6 +848,7 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 	eciRemain := eciSeq.Bytes
 
 	var eciContentType gokrb5asn1.ObjectIdentifier
+	var err error
 	eciRemain, err = gokrb5asn1.Unmarshal(eciRemain, &eciContentType)
 	if err != nil {
 		return types.EncryptionKey{}, fmt.Errorf("parse ECI contentType: %w | %s", err, dbg)
@@ -850,7 +859,6 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		return types.EncryptionKey{}, fmt.Errorf("parse ECI algorithm: %w | %s", err, dbg)
 	}
 
-	// Extract IV from content encryption algorithm parameters
 	var iv []byte
 	ivSrc := ceAlg.Parameters.FullBytes
 	if len(ivSrc) == 0 {
@@ -863,7 +871,6 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		}
 	}
 
-	// Extract encrypted content [0] IMPLICIT OCTET STRING
 	var encContentRaw gokrb5asn1.RawValue
 	if _, err := gokrb5asn1.Unmarshal(eciRemain, &encContentRaw); err != nil {
 		return types.EncryptionKey{}, fmt.Errorf("parse encrypted content: %w | %s", err, dbg)
@@ -874,7 +881,6 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 		return types.EncryptionKey{}, fmt.Errorf("no encrypted content in EnvelopedData")
 	}
 
-	// AES-CBC decrypt
 	block, err := aes.NewCipher(cek)
 	if err != nil {
 		return types.EncryptionKey{}, fmt.Errorf("create AES cipher: %w", err)
@@ -888,12 +894,10 @@ func decryptEncKeyPack(encKeyPackBytes []byte, ck *pkinitCertKey) (types.Encrypt
 	decrypted := make([]byte, len(encContent))
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(decrypted, encContent)
 
-	// Remove PKCS#7 padding
 	if padLen := int(decrypted[len(decrypted)-1]); padLen > 0 && padLen <= block.BlockSize() {
 		decrypted = decrypted[:len(decrypted)-padLen]
 	}
 
-	// Decrypted content is CMS SignedData wrapping ReplyKeyPack (RFC 4556 §3.2.3)
 	return extractReplyKeyFromSignedData(decrypted)
 }
 
