@@ -164,7 +164,12 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	wg.Wait()
 
-	// Build JSON output
+	return lateralBuildOutput(results)
+}
+
+// lateralBuildOutput converts scan results into a JSON response with available/closed
+// ports and suggested lateral movement methods per host.
+func lateralBuildOutput(results []lateralTarget) structs.CommandResult {
 	var entries []lateralOutputEntry
 	order := []string{"SMB (445)", "WinRM-HTTP (5985)", "WinRM-HTTPS (5986)", "RDP (3389)", "RPC (135)", "SSH (22)", "WMI-DCOM (135)"}
 
@@ -184,7 +189,6 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 		}
 
-		// Suggest methods
 		if r, ok := target.Results["SMB (445)"]; ok && r.Available {
 			entry.Suggested = append(entry.Suggested, "psexec", "smb", "dcom")
 		}

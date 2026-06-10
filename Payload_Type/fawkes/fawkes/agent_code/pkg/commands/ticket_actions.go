@@ -113,35 +113,10 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 		return errorf("Error marshaling AS-REQ: %v", err)
 	}
 
-	// Send over TCP to KDC
-	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
+	// Exchange AS-REQ with KDC
+	respBuf, err := ticketExchangeKDC(reqBytes, kdcAddr)
 	if err != nil {
-		return errorf("Error connecting to KDC %s: %v", kdcAddr, err)
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
-
-	// TCP Kerberos framing: 4-byte big-endian length prefix
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
-	if _, err := conn.Write(lenBuf); err != nil {
-		return errorf("Error sending to KDC: %v", err)
-	}
-	if _, err := conn.Write(reqBytes); err != nil {
-		return errorf("Error sending AS-REQ: %v", err)
-	}
-
-	// Read response
-	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return errorf("Error reading KDC response length: %v", err)
-	}
-	respLen := binary.BigEndian.Uint32(lenBuf)
-	if respLen > 1048576 {
-		return errorf("Error: KDC response too large (%d bytes)", respLen)
-	}
-	respBuf := make([]byte, respLen)
-	if _, err := io.ReadFull(conn, respBuf); err != nil {
-		return errorf("Error reading KDC response: %v", err)
+		return errorf("%v", err)
 	}
 
 	// Check if response is KRB-ERROR ([APPLICATION 30] = 0x7e)
@@ -201,6 +176,38 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	}
 
 	return successResult(output)
+}
+
+// ticketExchangeKDC sends a Kerberos request over TCP and reads the response.
+func ticketExchangeKDC(reqBytes []byte, kdcAddr string) ([]byte, error) {
+	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("Error connecting to KDC %s: %v", kdcAddr, err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
+
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
+	if _, err := conn.Write(lenBuf); err != nil {
+		return nil, fmt.Errorf("Error sending to KDC: %v", err)
+	}
+	if _, err := conn.Write(reqBytes); err != nil {
+		return nil, fmt.Errorf("Error sending AS-REQ: %v", err)
+	}
+
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return nil, fmt.Errorf("Error reading KDC response length: %v", err)
+	}
+	respLen := binary.BigEndian.Uint32(lenBuf)
+	if respLen > 1048576 {
+		return nil, fmt.Errorf("Error: KDC response too large (%d bytes)", respLen)
+	}
+	respBuf := make([]byte, respLen)
+	if _, err := io.ReadFull(conn, respBuf); err != nil {
+		return nil, fmt.Errorf("Error reading KDC response: %v", err)
+	}
+	return respBuf, nil
 }
 
 func ticketRequestFormatOutput(args ticketArgs, realm string, sessionKey types.EncryptionKey, start, end time.Time, b64 string) string {
