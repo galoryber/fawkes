@@ -374,11 +374,15 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 			}
 			remaining -= writeSize
 		}
-		_ = f.Sync()
+		if syncErr := f.Sync(); syncErr != nil {
+			return errorf("sync failed during shred of %s (pass %d): %v — data may not be flushed to disk", args.File, pass+1, syncErr)
+		}
 	}
 
-	// Truncate to zero
-	_ = os.Truncate(args.File, 0)
+	var warnings string
+	if truncErr := os.Truncate(args.File, 0); truncErr != nil {
+		warnings = fmt.Sprintf("\n[!] Warning: truncate failed: %v — file zeroed but not truncated", truncErr)
+	}
 
-	return successf("Shredded: %s (3-pass zero overwrite, %d bytes destroyed)", args.File, size)
+	return successf("Shredded: %s (3-pass zero overwrite, %d bytes destroyed)%s", args.File, size, warnings)
 }

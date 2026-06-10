@@ -79,16 +79,16 @@ func etwSessions() structs.CommandResult {
 			sessionName = fmt.Sprintf("Session_%d", i)
 		}
 
-		// Get event count from NumberOfBuffers * BufferSize area
-		// EventsLost at offset 56
 		eventsLost := binary.LittleEndian.Uint32(buf[56:60])
-		_ = eventsLost
 
-		// Check security relevance
 		relevance := classifySessionSecurity(sessionName)
 
-		sb.WriteString(fmt.Sprintf("%-35s %-8s %s\n",
-			truncStr(sessionName, 35), "", relevance))
+		lostStr := ""
+		if eventsLost > 0 {
+			lostStr = fmt.Sprintf(" (%d lost)", eventsLost)
+		}
+		sb.WriteString(fmt.Sprintf("%-35s %-8s %s%s\n",
+			truncStr(sessionName, 35), "", relevance, lostStr))
 	}
 
 	return successResult(sb.String())

