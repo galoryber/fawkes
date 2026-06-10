@@ -182,7 +182,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 func ticketExchangeKDC(reqBytes []byte, kdcAddr string) ([]byte, error) {
 	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("Error connecting to KDC %s: %v", kdcAddr, err)
+		return nil, fmt.Errorf("connecting to KDC %s: %w", kdcAddr, err)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
@@ -190,22 +190,22 @@ func ticketExchangeKDC(reqBytes []byte, kdcAddr string) ([]byte, error) {
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
 	if _, err := conn.Write(lenBuf); err != nil {
-		return nil, fmt.Errorf("Error sending to KDC: %v", err)
+		return nil, fmt.Errorf("sending to KDC: %w", err)
 	}
 	if _, err := conn.Write(reqBytes); err != nil {
-		return nil, fmt.Errorf("Error sending AS-REQ: %v", err)
+		return nil, fmt.Errorf("sending AS-REQ: %w", err)
 	}
 
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return nil, fmt.Errorf("Error reading KDC response length: %v", err)
+		return nil, fmt.Errorf("reading KDC response length: %w", err)
 	}
 	respLen := binary.BigEndian.Uint32(lenBuf)
 	if respLen > 1048576 {
-		return nil, fmt.Errorf("Error: KDC response too large (%d bytes)", respLen)
+		return nil, fmt.Errorf("KDC response too large (%d bytes)", respLen)
 	}
 	respBuf := make([]byte, respLen)
 	if _, err := io.ReadFull(conn, respBuf); err != nil {
-		return nil, fmt.Errorf("Error reading KDC response: %v", err)
+		return nil, fmt.Errorf("reading KDC response: %w", err)
 	}
 	return respBuf, nil
 }

@@ -74,7 +74,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err := validateSSHActionParams(action, args); err != nil {
-		return errorResult(err.Error())
+		return errorf("Error: %v", err)
 	}
 
 	// Set defaults for tunnel params
@@ -170,28 +170,28 @@ func validateSSHActionParams(action string, args sshExecArgs) error {
 	switch action {
 	case "exec":
 		if args.Command == "" {
-			return fmt.Errorf("Error: command is required for exec action")
+			return fmt.Errorf("command is required for exec action")
 		}
 	case "push":
 		if args.Source == "" || args.Destination == "" {
-			return fmt.Errorf("Error: source (local file) and destination (remote path) required for push action")
+			return fmt.Errorf("source (local file) and destination (remote path) required for push action")
 		}
 	case "tunnel-local":
 		if args.LocalPort <= 0 || args.RemoteHost == "" || args.RemotePort <= 0 {
-			return fmt.Errorf("Error: local_port, remote_host, and remote_port required for tunnel-local")
+			return fmt.Errorf("local_port, remote_host, and remote_port required for tunnel-local")
 		}
 	case "tunnel-remote":
 		if args.RemotePort <= 0 || args.LocalPort <= 0 {
-			return fmt.Errorf("Error: remote_port and local_port required for tunnel-remote")
+			return fmt.Errorf("remote_port and local_port required for tunnel-remote")
 		}
 	case "tunnel-dynamic":
 		if args.LocalPort <= 0 {
-			return fmt.Errorf("Error: local_port required for tunnel-dynamic")
+			return fmt.Errorf("local_port required for tunnel-dynamic")
 		}
 	case "check":
 		// no additional params needed
 	default:
-		return fmt.Errorf("Error: unknown action %q. Valid: exec, push, check, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
+		return fmt.Errorf("unknown action %q; valid: exec, push, check, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
 	}
 	return nil
 }
@@ -203,7 +203,7 @@ func buildSSHAuthMethods(args sshExecArgs) ([]ssh.AuthMethod, error) {
 	if args.KeyData != "" {
 		signer, err := parsePrivateKey([]byte(args.KeyData), args.Password)
 		if err != nil {
-			return nil, fmt.Errorf("Error parsing inline key: %v", err)
+			return nil, fmt.Errorf("parsing inline key: %w", err)
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
 	}
@@ -211,12 +211,12 @@ func buildSSHAuthMethods(args sshExecArgs) ([]ssh.AuthMethod, error) {
 	if args.KeyPath != "" {
 		keyBytes, err := os.ReadFile(args.KeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("Error reading key file %s: %v", args.KeyPath, err)
+			return nil, fmt.Errorf("reading key file %s: %w", args.KeyPath, err)
 		}
 		defer structs.ZeroBytes(keyBytes)
 		signer, err := parsePrivateKey(keyBytes, args.Password)
 		if err != nil {
-			return nil, fmt.Errorf("Error parsing key file %s: %v", args.KeyPath, err)
+			return nil, fmt.Errorf("parsing key file %s: %w", args.KeyPath, err)
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
 	}
