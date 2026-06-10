@@ -98,6 +98,79 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
+func compressWalkDirectory(zipWriter *zip.Writer, srcPath, outputPath string, params CompressParams, task structs.Task) (fileCount int, totalSize int64, skipped int, fileErrors []string, err error) {
+	baseDir := srcPath
+	err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
+		if walkErr != nil {
+			relName, _ := filepath.Rel(baseDir, path)
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
+			return nil
+		}
+		if path == outputPath {
+			return nil
+		}
+		relPath, _ := filepath.Rel(baseDir, path)
+		depth := len(strings.Split(relPath, string(os.PathSeparator)))
+		if depth > params.MaxDepth {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if params.Pattern != "" {
+			matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
+			if matchErr != nil || !matched {
+				return nil
+			}
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			relName, _ := filepath.Rel(baseDir, path)
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
+			return nil
+		}
+		if info.Size() > params.MaxSize {
+			skipped++
+			return nil
+		}
+		relName, _ := filepath.Rel(baseDir, path)
+		relName = filepath.ToSlash(relName)
+		header, headerErr := zip.FileInfoHeader(info)
+		if headerErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
+			return nil
+		}
+		header.Name = relName
+		header.Method = zip.Deflate
+		writer, createErr := zipWriter.CreateHeader(header)
+		if createErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: create: %v", relName, createErr))
+			return nil
+		}
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
+			return nil
+		}
+		defer file.Close()
+		written, copyErr := io.Copy(writer, file)
+		if copyErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
+			return nil
+		}
+		fileCount++
+		totalSize += written
+		return nil
+	})
+	return
+}
+
 func compressCreate(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
 		return errorResult("Error: 'path' is required for create action")
@@ -143,96 +216,7 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 	var fileErrors []string
 
 	if srcInfo.IsDir() {
-		baseDir := srcPath
-		err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
-			if task.DidStop() {
-				return fmt.Errorf("cancelled")
-			}
-			if walkErr != nil {
-				relName, _ := filepath.Rel(baseDir, path)
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
-				return nil
-			}
-
-			// Skip the output zip file itself
-			if path == outputPath {
-				return nil
-			}
-
-			// Check depth
-			relPath, _ := filepath.Rel(baseDir, path)
-			depth := len(strings.Split(relPath, string(os.PathSeparator)))
-			if depth > params.MaxDepth {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			// Skip directories (they're created implicitly)
-			if d.IsDir() {
-				return nil
-			}
-
-			// Apply pattern filter
-			if params.Pattern != "" {
-				matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
-				if matchErr != nil || !matched {
-					return nil
-				}
-			}
-
-			// Get full file info for entries passing filters
-			info, infoErr := d.Info()
-			if infoErr != nil {
-				relName, _ := filepath.Rel(baseDir, path)
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
-				return nil
-			}
-
-			// Check file size
-			if info.Size() > params.MaxSize {
-				skipped++
-				return nil
-			}
-
-			// Add to zip
-			relName, _ := filepath.Rel(baseDir, path)
-			// Normalize to forward slashes for zip
-			relName = filepath.ToSlash(relName)
-
-			header, headerErr := zip.FileInfoHeader(info)
-			if headerErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
-				return nil
-			}
-			header.Name = relName
-			header.Method = zip.Deflate
-
-			writer, createErr := zipWriter.CreateHeader(header)
-			if createErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: create: %v", relName, createErr))
-				return nil
-			}
-
-			file, openErr := os.Open(path)
-			if openErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
-				return nil
-			}
-			defer file.Close()
-
-			written, copyErr := io.Copy(writer, file)
-			if copyErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
-				return nil
-			}
-
-			fileCount++
-			totalSize += written
-			return nil
-		})
-
+		fileCount, totalSize, skipped, fileErrors, err = compressWalkDirectory(zipWriter, srcPath, outputPath, params, task)
 		if err != nil {
 			return errorf("Error walking directory: %v", err)
 		}

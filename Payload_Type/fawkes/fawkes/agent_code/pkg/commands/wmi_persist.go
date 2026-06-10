@@ -84,6 +84,62 @@ func wmiSubscriptionConnect(target string) (*ole.IDispatch, *ole.IDispatch, func
 	return locator, services, cleanup, nil
 }
 
+func wmiInstallFilter(services *ole.IDispatch, filterName, wqlQuery, trigger string, intervalSec int) error {
+	filterResult, err := oleutil.CallMethod(services, "Get", "__EventFilter")
+	if err != nil {
+		return fmt.Errorf("getting __EventFilter class: %v", err)
+	}
+	defer filterResult.Clear()
+
+	filterClass := filterResult.ToIDispatch()
+	filterInst, err := oleutil.CallMethod(filterClass, "SpawnInstance_")
+	if err != nil {
+		return fmt.Errorf("spawning filter instance: %v", err)
+	}
+	defer filterInst.Clear()
+
+	filterDisp := filterInst.ToIDispatch()
+	for _, prop := range [][2]interface{}{
+		{"Name", filterName}, {"QueryLanguage", "WQL"},
+		{"Query", wqlQuery}, {"EventNamespace", `root\CIMV2`},
+	} {
+		if _, err := oleutil.PutProperty(filterDisp, prop[0].(string), prop[1]); err != nil {
+			return fmt.Errorf("setting filter %s: %v", prop[0], err)
+		}
+	}
+
+	if _, err = oleutil.CallMethod(filterDisp, "Put_"); err != nil {
+		return fmt.Errorf("creating event filter: %v", err)
+	}
+
+	if strings.ToLower(trigger) == "interval" {
+		intervalMs := intervalSec * 1000
+		if intervalMs < 10000 {
+			intervalMs = 300000
+		}
+		timerResult, err := oleutil.CallMethod(services, "Get", "__IntervalTimerInstruction")
+		if err == nil {
+			defer timerResult.Clear()
+			timerClass := timerResult.ToIDispatch()
+			timerInst, err := oleutil.CallMethod(timerClass, "SpawnInstance_")
+			if err == nil {
+				defer timerInst.Clear()
+				timerDisp := timerInst.ToIDispatch()
+				if _, err := oleutil.PutProperty(timerDisp, "TimerID", "PerfDataTimer"); err != nil {
+					return fmt.Errorf("setting timer TimerID: %v", err)
+				}
+				if _, err := oleutil.PutProperty(timerDisp, "IntervalBetweenEvents", intervalMs); err != nil {
+					return fmt.Errorf("setting timer IntervalBetweenEvents: %v", err)
+				}
+				if _, err := oleutil.CallMethod(timerDisp, "Put_"); err != nil {
+					return fmt.Errorf("creating timer instruction: %v", err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	if args.Name == "" {
 		return errorResult("Error: name parameter required (used as subscription identifier)")
@@ -109,60 +165,8 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	filterName := args.Name + "_Filter"
 	consumerName := args.Name + "_Consumer"
 
-	// Step 1: Create __EventFilter
-	filterResult, err := oleutil.CallMethod(services, "Get", "__EventFilter")
-	if err != nil {
-		return errorf("Error getting __EventFilter class: %v", err)
-	}
-	defer filterResult.Clear()
-
-	filterClass := filterResult.ToIDispatch()
-	filterInst, err := oleutil.CallMethod(filterClass, "SpawnInstance_")
-	if err != nil {
-		return errorf("Error spawning filter instance: %v", err)
-	}
-	defer filterInst.Clear()
-
-	filterDisp := filterInst.ToIDispatch()
-	for _, prop := range [][2]interface{}{
-		{"Name", filterName}, {"QueryLanguage", "WQL"},
-		{"Query", wqlQuery}, {"EventNamespace", `root\CIMV2`},
-	} {
-		if _, err := oleutil.PutProperty(filterDisp, prop[0].(string), prop[1]); err != nil {
-			return errorf("Error setting filter %s: %v", prop[0], err)
-		}
-	}
-
-	_, err = oleutil.CallMethod(filterDisp, "Put_")
-	if err != nil {
-		return errorf("Error creating event filter: %v", err)
-	}
-
-	// For interval trigger, also create a __IntervalTimerInstruction
-	if strings.ToLower(args.Trigger) == "interval" {
-		intervalMs := args.IntervalSec * 1000
-		if intervalMs < 10000 {
-			intervalMs = 300000
-		}
-		timerResult, err := oleutil.CallMethod(services, "Get", "__IntervalTimerInstruction")
-		if err == nil {
-			defer timerResult.Clear()
-			timerClass := timerResult.ToIDispatch()
-			timerInst, err := oleutil.CallMethod(timerClass, "SpawnInstance_")
-			if err == nil {
-				defer timerInst.Clear()
-				timerDisp := timerInst.ToIDispatch()
-				if _, err := oleutil.PutProperty(timerDisp, "TimerID", "PerfDataTimer"); err != nil {
-					return errorf("Error setting timer TimerID: %v", err)
-				}
-				if _, err := oleutil.PutProperty(timerDisp, "IntervalBetweenEvents", intervalMs); err != nil {
-					return errorf("Error setting timer IntervalBetweenEvents: %v", err)
-				}
-				if _, err := oleutil.CallMethod(timerDisp, "Put_"); err != nil {
-					return errorf("Error creating timer instruction: %v", err)
-				}
-			}
-		}
+	if err := wmiInstallFilter(services, filterName, wqlQuery, args.Trigger, args.IntervalSec); err != nil {
+		return errorf("Error %v", err)
 	}
 
 	// Step 2: Create event consumer

