@@ -124,15 +124,24 @@ cleanup:
 	restoreToTarget := buildARPReply(targetMAC, gatewayMAC, gatewayIP, targetIP)
 	restoreToGateway := buildARPReply(gatewayMAC, targetMAC, targetIP, gatewayIP)
 
+	restoreFailed := false
 	for i := 0; i < 3; i++ {
-		_ = syscall.Sendto(fd, restoreToTarget, 0, &addr)
-		_ = syscall.Sendto(fd, restoreToGateway, 0, &addr)
+		if err := syscall.Sendto(fd, restoreToTarget, 0, &addr); err != nil {
+			restoreFailed = true
+		}
+		if err := syscall.Sendto(fd, restoreToGateway, 0, &addr); err != nil {
+			restoreFailed = true
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	result.Restored = true
+	result.Restored = !restoreFailed
+	if restoreFailed {
+		result.Warnings = append(result.Warnings, "ARP restore packets failed to send — target ARP cache may not be cleaned up")
+	}
 
-	// Restore original IP forwarding state
-	restoreIPForwarding(prevForward)
+	if fwdErr := restoreIPForwarding(prevForward); fwdErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("failed to restore ip_forward: %v", fwdErr))
+	}
 
 	result.Duration = fmt.Sprintf("%ds", args.Duration)
 
@@ -186,11 +195,11 @@ func enableIPForwarding() (string, error) {
 	return string(prev), nil
 }
 
-// restoreIPForwarding restores the previous IP forwarding state.
-func restoreIPForwarding(prev string) {
-	if prev != "" {
-		_ = os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte(prev), 0644)
+func restoreIPForwarding(prev string) error {
+	if prev == "" {
+		return nil
 	}
+	return os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte(prev), 0644)
 }
 
 // htons converts a uint16 from host to network byte order.

