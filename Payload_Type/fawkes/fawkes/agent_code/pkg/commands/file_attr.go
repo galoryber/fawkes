@@ -28,12 +28,12 @@ func (c *FileAttrCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: -path is required")
+		return errorResult("-path is required")
 	}
 
 	// Verify file exists
 	if _, err := os.Lstat(args.Path); err != nil {
-		return errorf("Error: failed to stat path %q: %v", args.Path, err)
+		return errorf("failed to stat path %q: %v", args.Path, err)
 	}
 
 	if args.Attrs != "" {

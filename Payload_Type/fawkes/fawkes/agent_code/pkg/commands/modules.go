@@ -42,7 +42,7 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	modules, err := listProcessModules(args.PID)
 	if err != nil {
-		return errorf("Error listing modules for PID %d: %v", args.PID, err)
+		return errorf("listing modules for PID %d: %v", args.PID, err)
 	}
 
 	// Sort by base address

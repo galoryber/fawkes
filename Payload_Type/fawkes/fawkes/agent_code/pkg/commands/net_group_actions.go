@@ -20,7 +20,7 @@ func ngList(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return errorf("Error searching groups: %v", err)
+		return errorf("searching groups: %v", err)
 	}
 
 	domain := trustDNToDomain(baseDN)
@@ -57,7 +57,7 @@ func ngMembers(conn *ldap.Conn, baseDN, groupName string) structs.CommandResult 
 	// First find the group DN
 	groupDN, err := ngFindGroupDN(conn, baseDN, groupName)
 	if err != nil {
-		return errorf("Error finding group %q: %v", groupName, err)
+		return errorf("finding group %q: %v", groupName, err)
 	}
 
 	// Recursive member query using LDAP_MATCHING_RULE_IN_CHAIN
@@ -70,7 +70,7 @@ func ngMembers(conn *ldap.Conn, baseDN, groupName string) structs.CommandResult 
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return errorf("Error querying members: %v", err)
+		return errorf("querying members: %v", err)
 	}
 
 	var sb strings.Builder
@@ -148,7 +148,7 @@ func ngUserGroups(conn *ldap.Conn, baseDN, userName string) structs.CommandResul
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return errorf("Error finding user %q: %v", userName, err)
+		return errorf("finding user %q: %v", userName, err)
 	}
 
 	if len(result.Entries) == 0 {
@@ -166,7 +166,7 @@ func ngUserGroups(conn *ldap.Conn, baseDN, userName string) structs.CommandResul
 
 	groupResult, err := conn.SearchWithPaging(groupReq, 100)
 	if err != nil {
-		return errorf("Error querying groups for %q: %v", userName, err)
+		return errorf("querying groups for %q: %v", userName, err)
 	}
 
 	var sb strings.Builder

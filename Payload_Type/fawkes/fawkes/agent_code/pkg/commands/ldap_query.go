@@ -110,7 +110,7 @@ var presetQueries = map[string]struct {
 
 func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|trusts|unconstrained|constrained|dacl|gmsa|bloodhound|query> -server <DC>")
+		return errorResult("parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|trusts|unconstrained|constrained|dacl|gmsa|bloodhound|query> -server <DC>")
 	}
 
 	args, parseErr := unmarshalParams[ldapQueryArgs](task)
@@ -120,7 +120,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Limit <= 0 {
@@ -139,7 +139,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Validate dacl action requires filter (target object name)
 	if strings.ToLower(args.Action) == "dacl" && args.Filter == "" {
-		return errorResult("Error: -filter parameter required for dacl action — specify the target object (sAMAccountName, CN, or full DN)")
+		return errorResult("-filter parameter required for dacl action — specify the target object (sAMAccountName, CN, or full DN)")
 	}
 
 	// Run with timeout protection to prevent agent hangs on unreachable targets
@@ -160,13 +160,13 @@ func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 	// Connect to LDAP
 	conn, err := ldapConnect(args)
 	if err != nil {
-		return errorf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind (authenticate)
 	if err := ldapBind(conn, args); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	// Determine base DN
@@ -174,7 +174,7 @@ func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
+			return errorf("detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 
@@ -196,7 +196,7 @@ func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 	// Resolve filter and attributes
 	filter, attributes, desc := resolveQuery(args, baseDN)
 	if filter == "" {
-		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, gmsa, bloodhound, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
+		return errorResult("action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, gmsa, bloodhound, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
 	}
 
 	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"
@@ -219,7 +219,7 @@ func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 	}
 	result, err := conn.SearchWithPaging(searchRequest, pagingSize)
 	if err != nil {
-		return errorf("Error executing LDAP search: %v", err)
+		return errorf("executing LDAP search: %v", err)
 	}
 
 	// Truncate to requested limit

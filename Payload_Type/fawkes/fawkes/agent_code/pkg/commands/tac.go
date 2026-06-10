@@ -20,7 +20,7 @@ type tacArgs struct {
 
 func (c *TacCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	var args tacArgs
@@ -28,12 +28,12 @@ func (c *TacCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Path = strings.TrimSpace(task.Params)
 	}
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return errorf("Error: failed to read file %q: %v", args.Path, err)
+		return errorf("failed to read file %q: %v", args.Path, err)
 	}
 
 	// Reverse lines

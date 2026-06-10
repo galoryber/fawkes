@@ -89,7 +89,7 @@ func neDarwinUsers() structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -119,7 +119,7 @@ func neDarwinGroups() structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -149,14 +149,14 @@ func neDarwinGroupMembers(group string) structs.CommandResult {
 		empty := []netEnumEntry{{Name: group, Type: "info", Comment: "No members found"}}
 		data, err := json.Marshal(empty)
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -230,7 +230,7 @@ func neDarwinSessions() structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -278,14 +278,14 @@ func neDarwinShares() structs.CommandResult {
 		empty := []netEnumEntry{{Name: "(none)", Type: "info", Comment: "No NFS exports or SMB shares found"}}
 		data, err := json.Marshal(empty)
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }

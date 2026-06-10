@@ -62,7 +62,7 @@ func TestGpoDefaultAction(t *testing.T) {
 	if result.Status != "error" {
 		t.Error("expected connection error")
 	}
-	if !strings.Contains(result.Output, "Error connecting") {
+	if !strings.Contains(result.Output, "connecting") {
 		t.Errorf("expected connection error, got: %s", result.Output)
 	}
 }

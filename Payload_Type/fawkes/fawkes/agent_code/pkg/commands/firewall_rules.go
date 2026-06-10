@@ -20,7 +20,7 @@ import (
 func firewallStatus() structs.CommandResult {
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return errorf("Error connecting to firewall: %v", err)
+		return errorf("connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
@@ -91,7 +91,7 @@ func firewallStatus() structs.CommandResult {
 func firewallList(args firewallArgs) structs.CommandResult {
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return errorf("Error connecting to firewall: %v", err)
+		return errorf("connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
@@ -211,7 +211,7 @@ func firewallList(args firewallArgs) structs.CommandResult {
 	})
 
 	if err != nil {
-		return errorf("Error enumerating rules: %v\n%s", err, sb.String())
+		return errorf("enumerating rules: %v\n%s", err, sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("\nShowing %d/%d rules", matchCount, ruleCount))
@@ -222,24 +222,24 @@ func firewallList(args firewallArgs) structs.CommandResult {
 // firewallAdd creates a new firewall rule.
 func firewallAdd(args firewallArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for adding a rule")
+		return errorResult("name is required for adding a rule")
 	}
 
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return errorf("Error connecting to firewall: %v", err)
+		return errorf("connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
 	// Create a new FwRule COM object
 	ruleUnknown, err := oleutil.CreateObject("HNetCfg.FWRule")
 	if err != nil {
-		return errorf("Error creating FwRule: %v", err)
+		return errorf("creating FwRule: %v", err)
 	}
 	rule, err := ruleUnknown.QueryInterface(ole.IID_IDispatch)
 	ruleUnknown.Release()
 	if err != nil {
-		return errorf("Error querying FwRule IDispatch: %v", err)
+		return errorf("querying FwRule IDispatch: %v", err)
 	}
 	defer rule.Release()
 
@@ -253,13 +253,13 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 	}
 
 	if err := setProp("Name", args.Name); err != nil {
-		return errorf("Error %v", err)
+		return errorf("%v", err)
 	}
 	if err := setProp("Enabled", true); err != nil {
-		return errorf("Error %v", err)
+		return errorf("%v", err)
 	}
 	if err := setProp("Profiles", fwProfileAll); err != nil {
-		return errorf("Error %v", err)
+		return errorf("%v", err)
 	}
 
 	// Direction (default: inbound)
@@ -268,7 +268,7 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 		dir = fwRuleDirectionOut
 	}
 	if err := setProp("Direction", dir); err != nil {
-		return errorf("Error %v", err)
+		return errorf("%v", err)
 	}
 
 	// Action (default: allow)
@@ -277,7 +277,7 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 		action = fwActionBlock
 	}
 	if err := setProp("Action", action); err != nil {
-		return errorf("Error %v", err)
+		return errorf("%v", err)
 	}
 
 	// Protocol
@@ -289,27 +289,27 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 		proto = fwIPProtocolUDP
 	}
 	if err := setProp("Protocol", proto); err != nil {
-		return errorf("Error %v", err)
+		return errorf("%v", err)
 	}
 
 	// Ports (only for TCP/UDP)
 	if args.Port != "" && (proto == fwIPProtocolTCP || proto == fwIPProtocolUDP) {
 		if err := setProp("LocalPorts", args.Port); err != nil {
-			return errorf("Error %v", err)
+			return errorf("%v", err)
 		}
 	}
 
 	// Program path
 	if args.Program != "" {
 		if err := setProp("ApplicationName", args.Program); err != nil {
-			return errorf("Error %v", err)
+			return errorf("%v", err)
 		}
 	}
 
 	// Add the rule to the collection
 	_, err = oleutil.CallMethod(conn.rules, "Add", rule)
 	if err != nil {
-		return errorf("Error adding firewall rule: %v", err)
+		return errorf("adding firewall rule: %v", err)
 	}
 
 	var resultSB strings.Builder
@@ -333,18 +333,18 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 // firewallDelete removes a firewall rule by name.
 func firewallDelete(args firewallArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for deleting a rule")
+		return errorResult("name is required for deleting a rule")
 	}
 
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return errorf("Error connecting to firewall: %v", err)
+		return errorf("connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
 	_, err = oleutil.CallMethod(conn.rules, "Remove", args.Name)
 	if err != nil {
-		return errorf("Error deleting firewall rule '%s': %v", args.Name, err)
+		return errorf("deleting firewall rule '%s': %v", args.Name, err)
 	}
 
 	return successf("Deleted firewall rule: %s", args.Name)
@@ -353,12 +353,12 @@ func firewallDelete(args firewallArgs) structs.CommandResult {
 // firewallEnableDisable enables or disables a rule by name.
 func firewallEnableDisable(args firewallArgs, enable bool) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required")
+		return errorResult("name is required")
 	}
 
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return errorf("Error connecting to firewall: %v", err)
+		return errorf("connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
@@ -385,7 +385,7 @@ func firewallEnableDisable(args firewallArgs, enable bool) structs.CommandResult
 	})
 
 	if err != nil {
-		return errorf("Error modifying rule: %v", err)
+		return errorf("modifying rule: %v", err)
 	}
 
 	if !found {

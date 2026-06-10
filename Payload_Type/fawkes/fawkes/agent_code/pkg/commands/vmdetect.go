@@ -58,7 +58,7 @@ func (c *VmDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	case "detect":
 		// Fall through to existing VM detection logic
 	default:
-		return errorf("Error: unknown action '%s' (use detect or sandbox)", args.Action)
+		return errorf("unknown action '%s' (use detect or sandbox)", args.Action)
 	}
 
 	var evidence []vmEvidence

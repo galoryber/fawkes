@@ -23,7 +23,7 @@ type dcomCheckResult struct {
 
 func dcomCheck(host string, timeout int) structs.CommandResult {
 	if host == "" {
-		return errorResult("Error: host is required for check action")
+		return errorResult("host is required for check action")
 	}
 
 	checkTimeout := 10 * time.Second
@@ -47,7 +47,7 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.Recommendation = "Port 135 (RPC) is not reachable. DCOM requires RPC on port 135 + dynamic high ports."
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
@@ -79,7 +79,7 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 			}
 			data, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return errorf("Error: failed to marshal result: %v", err)
+				return errorf("failed to marshal result: %v", err)
 			}
 			return successResult(string(data))
 		}
@@ -99,7 +99,7 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.Recommendation = "DCOM connection timed out. Host may be firewalled."
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
@@ -113,7 +113,7 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }

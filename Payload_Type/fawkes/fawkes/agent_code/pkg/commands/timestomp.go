@@ -63,7 +63,7 @@ func (c *TimestompCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.Target == "" {
-		return errorResult("Error: target file path is required")
+		return errorResult("target file path is required")
 	}
 
 	switch params.Action {
@@ -78,7 +78,7 @@ func (c *TimestompCommand) Execute(task structs.Task) structs.CommandResult {
 	case "random":
 		return timestompRandom(params.Target, params.Source, params.Timestamp)
 	default:
-		return errorf("Error: unknown action '%s'. Valid actions: get, copy, set, match, random, clean-prefetch", params.Action)
+		return errorf("unknown action '%s'. Valid actions: get, copy, set, match, random, clean-prefetch", params.Action)
 	}
 }
 
@@ -86,7 +86,7 @@ func (c *TimestompCommand) Execute(task structs.Task) structs.CommandResult {
 func timestompGet(target string) structs.CommandResult {
 	info, err := os.Stat(target)
 	if err != nil {
-		return errorf("Error: failed to stat file %s: %v", target, err)
+		return errorf("failed to stat file %s: %v", target, err)
 	}
 
 	output := fmt.Sprintf("Timestamps for: %s\n", target)
@@ -101,12 +101,12 @@ func timestompGet(target string) structs.CommandResult {
 // timestompCopy copies timestamps from source to target
 func timestompCopy(target, source string) structs.CommandResult {
 	if source == "" {
-		return errorResult("Error: source file path is required for copy action")
+		return errorResult("source file path is required for copy action")
 	}
 
 	sourceInfo, err := os.Stat(source)
 	if err != nil {
-		return errorf("Error reading source file: %v", err)
+		return errorf("reading source file: %v", err)
 	}
 
 	// Get access time from platform-specific code
@@ -115,7 +115,7 @@ func timestompCopy(target, source string) structs.CommandResult {
 
 	// Set access and modification times
 	if err := os.Chtimes(target, atime, mtime); err != nil {
-		return errorf("Error setting timestamps: %v", err)
+		return errorf("setting timestamps: %v", err)
 	}
 
 	// On Windows, also copy creation time
@@ -134,17 +134,17 @@ func timestompCopy(target, source string) structs.CommandResult {
 // timestompSet sets timestamps to a specific time
 func timestompSet(target, timestamp string) structs.CommandResult {
 	if timestamp == "" {
-		return errorResult("Error: timestamp is required for set action (format: 2006-01-02T15:04:05Z or 2006-01-02 15:04:05)")
+		return errorResult("timestamp is required for set action (format: 2006-01-02T15:04:05Z or 2006-01-02 15:04:05)")
 	}
 
 	t, err := parseTimestamp(timestamp)
 	if err != nil {
-		return errorf("Error parsing timestamp '%s': %v\nSupported formats: RFC3339, YYYY-MM-DD HH:MM:SS, YYYY-MM-DD, MM/DD/YYYY", timestamp, err)
+		return errorf("parsing timestamp '%s': %v\nSupported formats: RFC3339, YYYY-MM-DD HH:MM:SS, YYYY-MM-DD, MM/DD/YYYY", timestamp, err)
 	}
 
 	// Set access and modification times
 	if err := os.Chtimes(target, t, t); err != nil {
-		return errorf("Error setting timestamps: %v", err)
+		return errorf("setting timestamps: %v", err)
 	}
 
 	// On Windows, also set creation time
@@ -163,7 +163,7 @@ func timestompMatch(target string) structs.CommandResult {
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return errorf("Error reading directory: %v", err)
+		return errorf("reading directory: %v", err)
 	}
 
 	// Collect modification times from sibling files (skip the target itself)
@@ -186,7 +186,7 @@ func timestompMatch(target string) structs.CommandResult {
 	}
 
 	if len(mtimes) < 2 {
-		return errorResult("Error: need at least 2 sibling files in the directory to match timestamps")
+		return errorResult("need at least 2 sibling files in the directory to match timestamps")
 	}
 
 	// Sort and use interquartile range to avoid outliers
@@ -202,11 +202,11 @@ func timestompMatch(target string) structs.CommandResult {
 
 	chosen, err := randomTimeBetween(rangeStart, rangeEnd)
 	if err != nil {
-		return errorf("Error generating random timestamp: %v", err)
+		return errorf("generating random timestamp: %v", err)
 	}
 
 	if err := os.Chtimes(target, chosen, chosen); err != nil {
-		return errorf("Error setting timestamps: %v", err)
+		return errorf("setting timestamps: %v", err)
 	}
 	_ = setCreationTime(target, chosen) // non-fatal
 
@@ -222,25 +222,25 @@ func timestompMatch(target string) structs.CommandResult {
 // source = range start timestamp, timestamp = range end timestamp.
 func timestompRandom(target, rangeStartStr, rangeEndStr string) structs.CommandResult {
 	if rangeStartStr == "" || rangeEndStr == "" {
-		return errorResult("Error: random action requires both source (range start) and timestamp (range end)")
+		return errorResult("random action requires both source (range start) and timestamp (range end)")
 	}
 
 	rangeStart, err := parseTimestamp(rangeStartStr)
 	if err != nil {
-		return errorf("Error parsing range start: %v", err)
+		return errorf("parsing range start: %v", err)
 	}
 	rangeEnd, err := parseTimestamp(rangeEndStr)
 	if err != nil {
-		return errorf("Error parsing range end: %v", err)
+		return errorf("parsing range end: %v", err)
 	}
 
 	chosen, err := randomTimeBetween(rangeStart, rangeEnd)
 	if err != nil {
-		return errorf("Error: failed to generate random timestamp for range %s to %s: %v", rangeStartStr, rangeEndStr, err)
+		return errorf("failed to generate random timestamp for range %s to %s: %v", rangeStartStr, rangeEndStr, err)
 	}
 
 	if err := os.Chtimes(target, chosen, chosen); err != nil {
-		return errorf("Error setting timestamps: %v", err)
+		return errorf("setting timestamps: %v", err)
 	}
 	_ = setCreationTime(target, chosen) // non-fatal
 

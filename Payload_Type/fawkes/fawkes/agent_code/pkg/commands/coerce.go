@@ -34,7 +34,7 @@ type coerceResult struct {
 
 func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <target> -listener <attacker-ip> [-method petitpotam|printerbug|shadowcoerce|all]")
+		return errorResult("parameters required. Use -server <target> -listener <attacker-ip> [-method petitpotam|printerbug|shadowcoerce|all]")
 	}
 
 	args, parseErr := unmarshalParams[coerceArgs](task)
@@ -43,11 +43,11 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Server == "" || args.Listener == "" {
-		return errorResult("Error: server and listener are required")
+		return errorResult("server and listener are required")
 	}
 
 	if args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: username and password (or hash) are required")
+		return errorResult("username and password (or hash) are required")
 	}
 
 	if args.Timeout <= 0 {
@@ -89,7 +89,7 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 	case "all":
 		methods = []string{"petitpotam", "printerbug", "shadowcoerce"}
 	default:
-		return errorf("Error: unknown method '%s'. Use petitpotam, printerbug, shadowcoerce, or all", args.Method)
+		return errorf("unknown method '%s'. Use petitpotam, printerbug, shadowcoerce, or all", args.Method)
 	}
 
 	successCount := 0

@@ -72,13 +72,13 @@ func auditRules() structs.CommandResult {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) || strings.Contains(string(output), "permission denied") {
-			return errorResult("Error: auditctl requires root privileges")
+			return errorResult("auditctl requires root privileges")
 		}
 		if exec.ErrNotFound != nil {
 			// Try reading rules directly from audit.rules file
 			return auditRulesFromFile()
 		}
-		return errorf("Error running auditctl: %v\n%s", err, string(output))
+		return errorf("running auditctl: %v\n%s", err, string(output))
 	}
 
 	result := "[+] Active Audit Rules\n"
@@ -130,7 +130,7 @@ func auditRulesFromFile() structs.CommandResult {
 	}
 
 	if !found {
-		return errorResult("Error: auditctl not available and no audit rules files found")
+		return errorResult("auditctl not available and no audit rules files found")
 	}
 
 	return successResult(result.String())
@@ -139,7 +139,7 @@ func auditRulesFromFile() structs.CommandResult {
 // auditDisableRule disables a specific auditd rule
 func auditDisableRule(ruleSpec string) structs.CommandResult {
 	if ruleSpec == "" {
-		return errorResult("Error: rule specification required in 'session_name' field (e.g., '-w /etc/passwd -p wa')")
+		return errorResult("rule specification required in 'session_name' field (e.g., '-w /etc/passwd -p wa')")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -150,7 +150,7 @@ func auditDisableRule(ruleSpec string) structs.CommandResult {
 	cmd := safeCmdContext(ctx, "auditctl", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error disabling audit rule: %v\n%s", err, string(output))
+		return errorf("disabling audit rule: %v\n%s", err, string(output))
 	}
 
 	return successResult(fmt.Sprintf("[+] Disabled audit rule: %s\n%s", ruleSpec, strings.TrimSpace(string(output))))
@@ -169,7 +169,7 @@ func journalClear(duration string) structs.CommandResult {
 	output, err := cmd.CombinedOutput()
 	rotateResult := string(output)
 	if err != nil {
-		return errorf("Error rotating journal: %v\n%s", err, rotateResult)
+		return errorf("rotating journal: %v\n%s", err, rotateResult)
 	}
 
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
@@ -178,7 +178,7 @@ func journalClear(duration string) structs.CommandResult {
 	cmd2 := safeCmdContext(ctx2, "journalctl", "--vacuum-time="+duration)
 	output2, err2 := cmd2.CombinedOutput()
 	if err2 != nil {
-		return errorf("Error vacuuming journal: %v\n%s", err2, string(output2))
+		return errorf("vacuuming journal: %v\n%s", err2, string(output2))
 	}
 
 	return successResult(fmt.Sprintf("[+] Journal rotated and vacuumed (time=%s)\n%s\n%s",
@@ -193,7 +193,7 @@ func journalRotate() structs.CommandResult {
 	cmd := safeCmdContext(ctx, "journalctl", "--rotate")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error rotating journal: %v\n%s", err, string(output))
+		return errorf("rotating journal: %v\n%s", err, string(output))
 	}
 
 	return successResult(fmt.Sprintf("[+] Journal rotated\n%s", strings.TrimSpace(string(output))))
@@ -368,7 +368,7 @@ func detectSIEMAgents() structs.CommandResult {
 		"total":  len(results),
 	}, "", "  ")
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(output))
@@ -385,7 +385,7 @@ func auditStatus() structs.CommandResult {
 		// Try reading status from /proc
 		data, err2 := os.ReadFile("/proc/sys/kernel/audit_enabled")
 		if err2 != nil {
-			return errorf("Error getting audit status: %v\n%s", err, string(output))
+			return errorf("getting audit status: %v\n%s", err, string(output))
 		}
 		enabled := strings.TrimSpace(string(data))
 		result := "[+] Audit Subsystem Status\n"

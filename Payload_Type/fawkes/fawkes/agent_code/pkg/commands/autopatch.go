@@ -55,12 +55,12 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 			default:
 				// Legacy format: dll function num_bytes
 				if len(parts) != 3 {
-					return errorResult("Error: Invalid arguments. Usage: autopatch <scan|patch-amsi|patch-etw|patch-all> [strategy] OR autopatch <dll> <function> <num_bytes>")
+					return errorResult("Invalid arguments. Usage: autopatch <scan|patch-amsi|patch-etw|patch-all> [strategy] OR autopatch <dll> <function> <num_bytes>")
 				}
 				args.DllName = parts[0]
 				args.FunctionName = parts[1]
 				if n, _ := fmt.Sscanf(parts[2], "%d", &args.NumBytes); n != 1 || args.NumBytes <= 0 {
-					return errorf("Error: num_bytes must be a positive integer, got %q", parts[2])
+					return errorf("num_bytes must be a positive integer, got %q", parts[2])
 				}
 			}
 		}
@@ -79,11 +79,11 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	case "":
 		// Legacy mode: direct DLL/function/numbytes
 		if args.DllName == "" {
-			return errorResult("Error: specify action (scan, patch-amsi, patch-etw, patch-all) or provide dll_name + function_name + num_bytes")
+			return errorResult("specify action (scan, patch-amsi, patch-etw, patch-all) or provide dll_name + function_name + num_bytes")
 		}
 		output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
 		if err != nil {
-			return errorf("Error patching %s!%s: %v", args.DllName, args.FunctionName, err)
+			return errorf("patching %s!%s: %v", args.DllName, args.FunctionName, err)
 		}
 		return successResult(output)
 	default:
@@ -100,7 +100,7 @@ func autopatchScan() structs.CommandResult {
 
 	output, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(output))
 }
@@ -114,7 +114,7 @@ func autopatchTarget(targetName, strategy string) structs.CommandResult {
 
 	output, err := PatchTarget(target, strategy)
 	if err != nil {
-		return errorf("Error patching target '%s': %v", targetName, err)
+		return errorf("patching target '%s': %v", targetName, err)
 	}
 	return successResult(output)
 }

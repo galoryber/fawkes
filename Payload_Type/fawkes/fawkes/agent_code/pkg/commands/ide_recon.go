@@ -40,7 +40,7 @@ func (c *IdeReconCommand) Execute(task structs.Task) structs.CommandResult {
 
 	homes := ideGetUserHomes(args.User)
 	if len(homes) == 0 {
-		return errorResult("Error: could not determine user home directories")
+		return errorResult("could not determine user home directories")
 	}
 
 	var sb strings.Builder

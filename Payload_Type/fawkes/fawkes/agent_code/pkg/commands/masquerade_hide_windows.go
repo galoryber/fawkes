@@ -17,7 +17,7 @@ import (
 func masqueradeHide(path string) structs.CommandResult {
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: path not found: %v", err)
+		return errorf("path not found: %v", err)
 	}
 
 	var actions []string
@@ -26,13 +26,13 @@ func masqueradeHide(path string) structs.CommandResult {
 	pathPtr, _ := syscall.UTF16PtrFromString(path)
 	attrs, err := syscall.GetFileAttributes(pathPtr)
 	if err != nil {
-		return errorf("Error getting attributes: %v", err)
+		return errorf("getting attributes: %v", err)
 	}
 
 	// Set Hidden + System attributes
 	newAttrs := attrs | syscall.FILE_ATTRIBUTE_HIDDEN | syscall.FILE_ATTRIBUTE_SYSTEM
 	if err := syscall.SetFileAttributes(pathPtr, newAttrs); err != nil {
-		return errorf("Error setting hidden attributes: %v", err)
+		return errorf("setting hidden attributes: %v", err)
 	}
 	actions = append(actions, "Set +Hidden +System attributes")
 
@@ -48,19 +48,19 @@ func masqueradeHide(path string) structs.CommandResult {
 func masqueradeUnhide(path string) structs.CommandResult {
 	_, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: path not found: %v", err)
+		return errorf("path not found: %v", err)
 	}
 
 	pathPtr, _ := syscall.UTF16PtrFromString(path)
 	attrs, err := syscall.GetFileAttributes(pathPtr)
 	if err != nil {
-		return errorf("Error getting attributes: %v", err)
+		return errorf("getting attributes: %v", err)
 	}
 
 	// Clear Hidden and System bits
 	newAttrs := attrs &^ (syscall.FILE_ATTRIBUTE_HIDDEN | syscall.FILE_ATTRIBUTE_SYSTEM)
 	if err := syscall.SetFileAttributes(pathPtr, newAttrs); err != nil {
-		return errorf("Error clearing attributes: %v", err)
+		return errorf("clearing attributes: %v", err)
 	}
 
 	return successf("[+] Unhidden: %s\nCleared Hidden+System attributes", path)
@@ -70,14 +70,14 @@ func masqueradeUnhide(path string) structs.CommandResult {
 // The data is hidden from standard file enumeration.
 func masqueradeADS(hostPath, streamName string, data []byte) structs.CommandResult {
 	if streamName == "" {
-		return errorResult("Error: stream name required for ads technique")
+		return errorResult("stream name required for ads technique")
 	}
 
 	adsPath := hostPath + ":" + streamName
 
 	// Write data to ADS
 	if err := os.WriteFile(adsPath, data, 0644); err != nil {
-		return errorf("Error writing ADS %s: %v", adsPath, err)
+		return errorf("writing ADS %s: %v", adsPath, err)
 	}
 
 	return successf("[+] NTFS ADS created: %s\n  Host file: %s\n  Stream: %s\n  Size: %d bytes",
@@ -88,7 +88,7 @@ func masqueradeADS(hostPath, streamName string, data []byte) structs.CommandResu
 func masqueradeDesktopINI(folderPath, clsid string) structs.CommandResult {
 	info, err := os.Stat(folderPath)
 	if err != nil || !info.IsDir() {
-		return errorResult("Error: path must be an existing directory")
+		return errorResult("path must be an existing directory")
 	}
 
 	if clsid == "" {
@@ -99,7 +99,7 @@ func masqueradeDesktopINI(folderPath, clsid string) structs.CommandResult {
 	iniPath := filepath.Join(folderPath, "desktop.ini")
 
 	if err := os.WriteFile(iniPath, []byte(iniContent), 0644); err != nil {
-		return errorf("Error writing desktop.ini: %v", err)
+		return errorf("writing desktop.ini: %v", err)
 	}
 
 	// Set desktop.ini as hidden+system

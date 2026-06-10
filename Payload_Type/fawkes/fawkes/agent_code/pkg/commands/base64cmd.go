@@ -38,7 +38,7 @@ func (c *Base64Command) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Input == "" {
-		return errorResult("Error: input is required")
+		return errorResult("input is required")
 	}
 
 	if args.Action == "" {
@@ -65,7 +65,7 @@ func (c *Base64Command) Execute(task structs.Task) structs.CommandResult {
 	case "caesar":
 		return encodingCaesar(args)
 	default:
-		return errorf("Error: unknown action '%s' (encode, decode, xor, hex, hex-decode, rot13, url, url-decode, caesar)", args.Action)
+		return errorf("unknown action '%s' (encode, decode, xor, hex, hex-decode, rot13, url, url-decode, caesar)", args.Action)
 	}
 }
 
@@ -75,7 +75,7 @@ func base64Encode(args base64Args) structs.CommandResult {
 	if args.File {
 		content, err := os.ReadFile(args.Input)
 		if err != nil {
-			return errorf("Error reading file: %v", err)
+			return errorf("reading file: %v", err)
 		}
 		defer structs.ZeroBytes(content) // opsec: file may contain sensitive data
 		data = content
@@ -88,7 +88,7 @@ func base64Encode(args base64Args) structs.CommandResult {
 	// Write to output file if specified
 	if args.Output != "" {
 		if err := os.WriteFile(args.Output, []byte(encoded), 0644); err != nil {
-			return errorf("Error writing output file: %v", err)
+			return errorf("writing output file: %v", err)
 		}
 		return successf("[+] Encoded %d bytes → %d chars, written to %s", len(data), len(encoded), args.Output)
 	}
@@ -106,7 +106,7 @@ func base64Decode(args base64Args) structs.CommandResult {
 	if args.File {
 		content, err := os.ReadFile(args.Input)
 		if err != nil {
-			return errorf("Error reading file: %v", err)
+			return errorf("reading file: %v", err)
 		}
 		defer structs.ZeroBytes(content) // opsec: file may contain encoded secrets
 		encoded = string(content)
@@ -116,14 +116,14 @@ func base64Decode(args base64Args) structs.CommandResult {
 
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return errorf("Error decoding base64: %v", err)
+		return errorf("decoding base64: %v", err)
 	}
 	defer structs.ZeroBytes(decoded) // opsec: decoded data may be sensitive
 
 	// Write to output file if specified
 	if args.Output != "" {
 		if err := os.WriteFile(args.Output, decoded, 0644); err != nil {
-			return errorf("Error writing output file: %v", err)
+			return errorf("writing output file: %v", err)
 		}
 		return successf("[+] Decoded %d chars → %d bytes, written to %s", len(encoded), len(decoded), args.Output)
 	}
@@ -151,7 +151,7 @@ func readInputData(args base64Args) ([]byte, error) {
 func writeOrReturn(args base64Args, result []byte, actionName string, inputLen int) structs.CommandResult {
 	if args.Output != "" {
 		if err := os.WriteFile(args.Output, result, 0644); err != nil {
-			return errorf("Error writing output file: %v", err)
+			return errorf("writing output file: %v", err)
 		}
 		return successf("[+] %s: %d bytes → %d bytes, written to %s", actionName, inputLen, len(result), args.Output)
 	}
@@ -178,20 +178,20 @@ func parseXORKey(key string) ([]byte, error) {
 // encodingXOR applies XOR with a repeating key (symmetric: same operation for encode/decode).
 func encodingXOR(args base64Args) structs.CommandResult {
 	if args.Key == "" {
-		return errorResult("Error: key is required for XOR (use -key 'secret' or -key 0x41424344)")
+		return errorResult("key is required for XOR (use -key 'secret' or -key 0x41424344)")
 	}
 
 	keyBytes, err := parseXORKey(args.Key)
 	if err != nil {
-		return errorf("Error: failed to parse XOR key: %v", err)
+		return errorf("failed to parse XOR key: %v", err)
 	}
 	if len(keyBytes) == 0 {
-		return errorResult("Error: XOR key must not be empty")
+		return errorResult("XOR key must not be empty")
 	}
 
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: failed to read XOR input data: %v", err)
+		return errorf("failed to read XOR input data: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -204,7 +204,7 @@ func encodingXOR(args base64Args) structs.CommandResult {
 	// If output file specified, write raw bytes; otherwise hex-encode for display
 	if args.Output != "" {
 		if err := os.WriteFile(args.Output, result, 0644); err != nil {
-			return errorf("Error writing output file: %v", err)
+			return errorf("writing output file: %v", err)
 		}
 		return successf("[+] XOR: %d bytes with %d-byte key, written to %s", len(data), len(keyBytes), args.Output)
 	}
@@ -221,7 +221,7 @@ func encodingXOR(args base64Args) structs.CommandResult {
 func encodingHex(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: failed to read input for hex encoding: %v", err)
+		return errorf("failed to read input for hex encoding: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -233,7 +233,7 @@ func encodingHex(args base64Args) structs.CommandResult {
 func encodingHexDecode(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: failed to read input for hex decoding: %v", err)
+		return errorf("failed to read input for hex decoding: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -247,7 +247,7 @@ func encodingHexDecode(args base64Args) structs.CommandResult {
 
 	decoded, err := hex.DecodeString(cleaned)
 	if err != nil {
-		return errorf("Error decoding hex: %v", err)
+		return errorf("decoding hex: %v", err)
 	}
 	defer structs.ZeroBytes(decoded)
 
@@ -258,7 +258,7 @@ func encodingHexDecode(args base64Args) structs.CommandResult {
 func encodingROT13(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: failed to read input for ROT13: %v", err)
+		return errorf("failed to read input for ROT13: %v", err)
 	}
 
 	result := make([]byte, len(data))
@@ -285,7 +285,7 @@ func rot13Byte(b byte) byte {
 func encodingURLEncode(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: failed to read input for URL encoding: %v", err)
+		return errorf("failed to read input for URL encoding: %v", err)
 	}
 
 	encoded := url.QueryEscape(string(data))
@@ -296,12 +296,12 @@ func encodingURLEncode(args base64Args) structs.CommandResult {
 func encodingURLDecode(args base64Args) structs.CommandResult {
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: failed to read input for URL decoding: %v", err)
+		return errorf("failed to read input for URL decoding: %v", err)
 	}
 
 	decoded, err := url.QueryUnescape(string(data))
 	if err != nil {
-		return errorf("Error decoding URL: %v", err)
+		return errorf("decoding URL: %v", err)
 	}
 
 	return writeOrReturn(args, []byte(decoded), "URL decode", len(data))
@@ -310,7 +310,7 @@ func encodingURLDecode(args base64Args) structs.CommandResult {
 // encodingCaesar applies a Caesar cipher shift (1-25). Negative shift for decode.
 func encodingCaesar(args base64Args) structs.CommandResult {
 	if args.Shift == 0 {
-		return errorResult("Error: shift is required for Caesar cipher (1-25, or negative to decode)")
+		return errorResult("shift is required for Caesar cipher (1-25, or negative to decode)")
 	}
 
 	// Normalize shift to 0-25 range
@@ -321,7 +321,7 @@ func encodingCaesar(args base64Args) structs.CommandResult {
 
 	data, err := readInputData(args)
 	if err != nil {
-		return errorf("Error: failed to read input for Caesar cipher: %v", err)
+		return errorf("failed to read input for Caesar cipher: %v", err)
 	}
 
 	result := make([]byte, len(data))

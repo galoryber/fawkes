@@ -39,7 +39,7 @@ type wcResult struct {
 
 func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	var args wcArgs
@@ -48,12 +48,12 @@ func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: failed to access path %s: %v", args.Path, err)
+		return errorf("failed to access path %s: %v", args.Path, err)
 	}
 
 	if info.IsDir() {
@@ -62,7 +62,7 @@ func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 
 	result, err := wcFile(args.Path)
 	if err != nil {
-		return errorf("Error: failed to count file %s: %v", args.Path, err)
+		return errorf("failed to count file %s: %v", args.Path, err)
 	}
 
 	return successResult(formatWcResult(result))

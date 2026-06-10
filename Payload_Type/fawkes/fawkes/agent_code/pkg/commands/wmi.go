@@ -246,19 +246,19 @@ func variantToString(v *ole.VARIANT) string {
 // wmiExecute creates a process on the target via WMI Win32_Process.Create
 func wmiExecute(target, command string) structs.CommandResult {
 	if command == "" {
-		return errorResult("Error: command parameter is required for execute action")
+		return errorResult("command parameter is required for execute action")
 	}
 
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	// Get the Win32_Process class
 	classResult, err := oleutil.CallMethod(conn.services, "Get", "Win32_Process")
 	if err != nil {
-		return errorf("Error getting Win32_Process class: %v", err)
+		return errorf("getting Win32_Process class: %v", err)
 	}
 	defer classResult.Clear()
 	classDisp := classResult.ToIDispatch()
@@ -267,7 +267,7 @@ func wmiExecute(target, command string) structs.CommandResult {
 	// Parameters: CommandLine, CurrentDirectory, ProcessStartupInformation, ProcessId
 	createResult, err := oleutil.CallMethod(classDisp, "Create", command, nil, nil)
 	if err != nil {
-		return errorf("Error calling Win32_Process.Create: %v", err)
+		return errorf("calling Win32_Process.Create: %v", err)
 	}
 	defer createResult.Clear()
 
@@ -286,18 +286,18 @@ func wmiExecute(target, command string) structs.CommandResult {
 // wmiQuery runs an arbitrary WQL query
 func wmiQuery(target, query string) structs.CommandResult {
 	if query == "" {
-		return errorResult("Error: query parameter is required for query action")
+		return errorResult("query parameter is required for query action")
 	}
 
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	result, err := wmiExecQuery(conn, query)
 	if err != nil {
-		return errorf("Error running WMI query: %v\n%s", err, result)
+		return errorf("running WMI query: %v\n%s", err, result)
 	}
 
 	return successf("WMI Query Result:\n%s", result)
@@ -307,13 +307,13 @@ func wmiQuery(target, query string) structs.CommandResult {
 func wmiProcessList(target string) structs.CommandResult {
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	result, err := wmiExecQuery(conn, "SELECT Name, ProcessId, HandleCount, WorkingSetSize FROM Win32_Process")
 	if err != nil {
-		return errorf("Error listing processes: %v\n%s", err, result)
+		return errorf("listing processes: %v\n%s", err, result)
 	}
 
 	return successf("WMI Process List:\n%s", result)
@@ -323,13 +323,13 @@ func wmiProcessList(target string) structs.CommandResult {
 func wmiOsInfo(target string) structs.CommandResult {
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	result, err := wmiExecQuery(conn, "SELECT Caption, Version, BuildNumber, OSArchitecture, LastBootUpTime, TotalVisibleMemorySize, FreePhysicalMemory FROM Win32_OperatingSystem")
 	if err != nil {
-		return errorf("Error getting OS info: %v\n%s", err, result)
+		return errorf("getting OS info: %v\n%s", err, result)
 	}
 
 	return successf("WMI OS Info:\n%s", result)
@@ -338,16 +338,16 @@ func wmiOsInfo(target string) structs.CommandResult {
 // wmiUpload stages a local file on the remote host via WMI command execution.
 func wmiUpload(args wmiArgs) structs.CommandResult {
 	if args.LocalPath == "" {
-		return errorResult("Error: local_path is required (file to upload from agent filesystem)")
+		return errorResult("local_path is required (file to upload from agent filesystem)")
 	}
 	if args.Target == "" {
-		return errorResult("Error: target is required (remote host)")
+		return errorResult("target is required (remote host)")
 	}
 
 	method := parseStagingMethod(args.Method)
 	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
 	if err != nil {
-		return errorf("Error planning staging: %v", err)
+		return errorf("planning staging: %v", err)
 	}
 
 	host := args.Target
@@ -362,7 +362,7 @@ func wmiUpload(args wmiArgs) structs.CommandResult {
 	for i, cmd := range plan.WriteCommands {
 		result := wmiExecute(host, cmd)
 		if !(result.Status == "success") {
-			return errorf("Error on write chunk %d/%d: %s", i+1, len(plan.WriteCommands), result.Output)
+			return errorf("on write chunk %d/%d: %s", i+1, len(plan.WriteCommands), result.Output)
 		}
 		sb.WriteString(fmt.Sprintf("  [%d/%d] Write chunk OK\n", i+1, len(plan.WriteCommands)))
 	}
@@ -371,7 +371,7 @@ func wmiUpload(args wmiArgs) structs.CommandResult {
 	if plan.DecodeCommand != "" {
 		result := wmiExecute(host, plan.DecodeCommand)
 		if !(result.Status == "success") {
-			return errorf("Error decoding staged file: %s", result.Output)
+			return errorf("decoding staged file: %s", result.Output)
 		}
 		sb.WriteString("  Decode OK\n")
 	}
@@ -385,16 +385,16 @@ func wmiUpload(args wmiArgs) structs.CommandResult {
 // wmiExecStaged uploads a file to the remote host, executes it, and optionally cleans up.
 func wmiExecStaged(args wmiArgs) structs.CommandResult {
 	if args.LocalPath == "" {
-		return errorResult("Error: local_path is required (file to stage and execute)")
+		return errorResult("local_path is required (file to stage and execute)")
 	}
 	if args.Target == "" {
-		return errorResult("Error: target is required (remote host)")
+		return errorResult("target is required (remote host)")
 	}
 
 	method := parseStagingMethod(args.Method)
 	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
 	if err != nil {
-		return errorf("Error planning staging: %v", err)
+		return errorf("planning staging: %v", err)
 	}
 
 	host := args.Target

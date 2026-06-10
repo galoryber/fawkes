@@ -52,7 +52,7 @@ func serviceEdrEnumLinux() structs.CommandResult {
 // serviceEdrKillLinux attempts to stop and disable detected EDR/AV services via systemctl.
 func serviceEdrKillLinux(args serviceArgs) structs.CommandResult {
 	if strings.ToUpper(args.Confirm) != "EDR-KILL" {
-		return errorResult("Error: EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to stop and disable security services.")
+		return errorResult("EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to stop and disable security services.")
 	}
 
 	candidates := edrMatchesForPlatform("linux")

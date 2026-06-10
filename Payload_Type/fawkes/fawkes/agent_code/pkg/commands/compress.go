@@ -173,17 +173,17 @@ func compressWalkDirectory(zipWriter *zip.Writer, srcPath, outputPath string, pa
 
 func compressCreate(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for create action")
+		return errorResult("'path' is required for create action")
 	}
 
 	srcPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	srcInfo, err := os.Stat(srcPath)
 	if err != nil {
-		return errorf("Error accessing path: %v", err)
+		return errorf("accessing path: %v", err)
 	}
 
 	// Determine output path
@@ -197,13 +197,13 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 	}
 	outputPath, err = filepath.Abs(outputPath)
 	if err != nil {
-		return errorf("Error resolving output path: %v", err)
+		return errorf("resolving output path: %v", err)
 	}
 
 	// Create zip file
 	zipFile, err := os.Create(outputPath)
 	if err != nil {
-		return errorf("Error creating zip file: %v", err)
+		return errorf("creating zip file: %v", err)
 	}
 	defer zipFile.Close()
 
@@ -218,31 +218,31 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 	if srcInfo.IsDir() {
 		fileCount, totalSize, skipped, fileErrors, err = compressWalkDirectory(zipWriter, srcPath, outputPath, params, task)
 		if err != nil {
-			return errorf("Error walking directory: %v", err)
+			return errorf("walking directory: %v", err)
 		}
 	} else {
 		// Single file
 		header, headerErr := zip.FileInfoHeader(srcInfo)
 		if headerErr != nil {
-			return errorf("Error creating file header: %v", headerErr)
+			return errorf("creating file header: %v", headerErr)
 		}
 		header.Name = filepath.Base(srcPath)
 		header.Method = zip.Deflate
 
 		writer, createErr := zipWriter.CreateHeader(header)
 		if createErr != nil {
-			return errorf("Error creating zip entry: %v", createErr)
+			return errorf("creating zip entry: %v", createErr)
 		}
 
 		file, openErr := os.Open(srcPath)
 		if openErr != nil {
-			return errorf("Error opening file: %v", openErr)
+			return errorf("opening file: %v", openErr)
 		}
 		defer file.Close()
 
 		written, copyErr := io.Copy(writer, file)
 		if copyErr != nil {
-			return errorf("Error writing to zip: %v", copyErr)
+			return errorf("writing to zip: %v", copyErr)
 		}
 
 		fileCount = 1
@@ -251,7 +251,7 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 
 	// Close writer to flush (writes central directory)
 	if closeErr := zipWriter.Close(); closeErr != nil {
-		return errorf("Error finalizing zip archive: %v", closeErr)
+		return errorf("finalizing zip archive: %v", closeErr)
 	}
 
 	// Get final zip size
@@ -278,17 +278,17 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 
 func compressList(params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for list action")
+		return errorResult("'path' is required for list action")
 	}
 
 	zipPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return errorf("Error opening zip: %v", err)
+		return errorf("opening zip: %v", err)
 	}
 	defer reader.Close()
 
@@ -324,17 +324,17 @@ func compressList(params CompressParams) structs.CommandResult {
 
 func compressExtract(params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for extract action")
+		return errorResult("'path' is required for extract action")
 	}
 
 	zipPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return errorf("Error opening zip: %v", err)
+		return errorf("opening zip: %v", err)
 	}
 	defer reader.Close()
 
@@ -345,11 +345,11 @@ func compressExtract(params CompressParams) structs.CommandResult {
 	}
 	outputDir, err = filepath.Abs(outputDir)
 	if err != nil {
-		return errorf("Error resolving output path: %v", err)
+		return errorf("resolving output path: %v", err)
 	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return errorf("Error creating output directory: %v", err)
+		return errorf("creating output directory: %v", err)
 	}
 
 	var extracted int

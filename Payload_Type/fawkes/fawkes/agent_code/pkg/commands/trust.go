@@ -95,7 +95,7 @@ type trustForestInfo struct {
 
 func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <DC> [-username user@domain -password pass]")
+		return errorResult("parameters required. Use -server <DC> [-username user@domain -password pass]")
 	}
 
 	args, parseErr := unmarshalParams[trustArgs](task)
@@ -105,7 +105,7 @@ func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -118,17 +118,17 @@ func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := trustConnect(args)
 	if err != nil {
-		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := trustBind(conn, args); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	baseDN, err := trustDetectBaseDN(conn)
 	if err != nil {
-		return errorf("Error detecting base DN: %v", err)
+		return errorf("detecting base DN: %v", err)
 	}
 
 	return trustEnumerate(conn, baseDN)
@@ -182,7 +182,7 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return errorf("Error querying trustedDomain objects: %v", err)
+		return errorf("querying trustedDomain objects: %v", err)
 	}
 
 	// Parse entries
@@ -226,7 +226,7 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		topLevel := trustTopLevelOutput{Forest: forestInfo}
 		data, err := json.Marshal(topLevel)
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
@@ -263,7 +263,7 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	}
 	data, err := json.Marshal(topLevel)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))

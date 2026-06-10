@@ -199,7 +199,7 @@ func detectSecurityAgents() structs.CommandResult {
 		"total":  len(results),
 	}, "", "  ")
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(out))

@@ -30,20 +30,20 @@ func vssCreate(args vssArgs) structs.CommandResult {
 
 	_, services, cleanup, err := vssWMIConnect()
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	classResult, err := oleutil.CallMethod(services, "Get", "Win32_ShadowCopy")
 	if err != nil {
-		return errorf("Error getting Win32_ShadowCopy class: %v", err)
+		return errorf("getting Win32_ShadowCopy class: %v", err)
 	}
 	defer classResult.Clear()
 	classDisp := classResult.ToIDispatch()
 
 	createResult, err := oleutil.CallMethod(classDisp, "Create", volume, "ClientAccessible")
 	if err != nil {
-		return errorf("Error creating shadow copy: %v\nRequires administrator privileges.", err)
+		return errorf("creating shadow copy: %v\nRequires administrator privileges.", err)
 	}
 	defer createResult.Clear()
 
@@ -80,19 +80,19 @@ func vssCreate(args vssArgs) structs.CommandResult {
 // vssDelete deletes a shadow copy by ID.
 func vssDelete(args vssArgs) structs.CommandResult {
 	if args.ID == "" {
-		return errorResult("Error: id is required (shadow copy ID from list output)")
+		return errorResult("id is required (shadow copy ID from list output)")
 	}
 
 	_, services, cleanup, err := vssWMIConnect()
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	resultSet, err := oleutil.CallMethod(services, "ExecQuery",
 		fmt.Sprintf("SELECT * FROM Win32_ShadowCopy WHERE ID = '%s'", args.ID))
 	if err != nil {
-		return errorf("Error querying shadow copy: %v", err)
+		return errorf("querying shadow copy: %v", err)
 	}
 	defer resultSet.Clear()
 
@@ -112,7 +112,7 @@ func vssDelete(args vssArgs) structs.CommandResult {
 	})
 
 	if deleteErr != nil {
-		return errorf("Error deleting shadow copy: %v\nRequires administrator privileges.", deleteErr)
+		return errorf("deleting shadow copy: %v\nRequires administrator privileges.", deleteErr)
 	}
 
 	if !deleted {
@@ -125,13 +125,13 @@ func vssDelete(args vssArgs) structs.CommandResult {
 // vssExtract copies a file from a shadow copy to a destination.
 func vssExtract(args vssArgs) structs.CommandResult {
 	if args.ID == "" {
-		return errorResult("Error: id is required (shadow copy device path, e.g., \\\\?\\GLOBALROOT\\Device\\HarddiskVolumeShadowCopy1)")
+		return errorResult("id is required (shadow copy device path, e.g., \\\\?\\GLOBALROOT\\Device\\HarddiskVolumeShadowCopy1)")
 	}
 	if args.Source == "" {
-		return errorResult("Error: source is required (path within shadow copy, e.g., \\Windows\\NTDS\\ntds.dit)")
+		return errorResult("source is required (path within shadow copy, e.g., \\Windows\\NTDS\\ntds.dit)")
 	}
 	if args.Dest == "" {
-		return errorResult("Error: dest is required (local destination path)")
+		return errorResult("dest is required (local destination path)")
 	}
 
 	sourcePath := args.ID
@@ -143,19 +143,19 @@ func vssExtract(args vssArgs) structs.CommandResult {
 
 	srcFile, err := os.Open(sourcePath)
 	if err != nil {
-		return errorf("Error opening shadow copy file: %v\nPath: %s", err, sourcePath)
+		return errorf("opening shadow copy file: %v\nPath: %s", err, sourcePath)
 	}
 	defer srcFile.Close()
 
 	dstFile, err := os.Create(args.Dest)
 	if err != nil {
-		return errorf("Error creating destination file: %v", err)
+		return errorf("creating destination file: %v", err)
 	}
 	defer dstFile.Close()
 
 	bytesCopied, err := io.Copy(dstFile, srcFile)
 	if err != nil {
-		return errorf("Error copying file: %v (copied %d bytes before failure)", err, bytesCopied)
+		return errorf("copying file: %v (copied %d bytes before failure)", err, bytesCopied)
 	}
 
 	return successf("Extracted from shadow copy:\n  Source: %s\n  Dest: %s\n  Size: %d bytes", sourcePath, args.Dest, bytesCopied)
@@ -170,14 +170,14 @@ func vssDeleteAll(args vssArgs) structs.CommandResult {
 
 	_, services, cleanup, err := vssWMIConnect()
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	resultSet, err := oleutil.CallMethod(services, "ExecQuery",
 		"SELECT * FROM Win32_ShadowCopy")
 	if err != nil {
-		return errorf("Error querying shadow copies: %v", err)
+		return errorf("querying shadow copies: %v", err)
 	}
 	defer resultSet.Clear()
 

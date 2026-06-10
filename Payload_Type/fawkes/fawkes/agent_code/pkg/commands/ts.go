@@ -248,7 +248,7 @@ func (c *TsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get thread information
 	output, err := getThreadInfo(args.All, args.PID)
 	if err != nil {
-		return errorf("Error listing threads: %v", err)
+		return errorf("listing threads: %v", err)
 	}
 
 	return successResult(output)

@@ -46,7 +46,7 @@ func (c *DrivesCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get logical drive bitmask
 	mask, _, _ := procGetLogicalDrives.Call()
 	if mask == 0 {
-		return errorResult("Error: GetLogicalDrives returned 0")
+		return errorResult("GetLogicalDrives returned 0")
 	}
 
 	var entries []driveEntry
@@ -73,7 +73,7 @@ func (c *DrivesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshalling drive data: %v", err)
+		return errorf("marshalling drive data: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

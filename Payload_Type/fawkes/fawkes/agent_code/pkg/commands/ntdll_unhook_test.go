@@ -29,7 +29,7 @@ func TestNtdllUnhookInvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Error("Expected error status for invalid JSON")
 	}
-	if !strings.Contains(result.Output, "Error parsing parameters") {
+	if !strings.Contains(result.Output, "parsing parameters") {
 		t.Errorf("Expected parsing error, got: %s", result.Output)
 	}
 }
@@ -52,7 +52,7 @@ func TestNtdllUnhookEmptyParams(t *testing.T) {
 	task := structs.Task{Params: ""}
 	result := cmd.Execute(task)
 	// Should not fail on empty params (defaults to "unhook")
-	if strings.Contains(result.Output, "Error parsing parameters") {
+	if strings.Contains(result.Output, "parsing parameters") {
 		t.Error("Should handle empty params gracefully")
 	}
 }

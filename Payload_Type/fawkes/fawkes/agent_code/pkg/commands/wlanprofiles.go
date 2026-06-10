@@ -35,7 +35,7 @@ func (c *WlanProfilesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	profiles, err := getWlanProfiles()
 	if err != nil {
-		return errorf("Error: failed to enumerate WLAN profiles: %v", err)
+		return errorf("failed to enumerate WLAN profiles: %v", err)
 	}
 
 	// Filter by name if specified

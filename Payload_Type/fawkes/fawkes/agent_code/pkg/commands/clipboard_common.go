@@ -39,7 +39,7 @@ func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
 		return readClipboard()
 	case "write":
 		if params.Data == "" {
-			return errorResult("Error: 'data' parameter is required for write action")
+			return errorResult("'data' parameter is required for write action")
 		}
 		return writeClipboard(params.Data)
 	case "monitor":

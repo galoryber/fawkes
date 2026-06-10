@@ -182,7 +182,7 @@ type InlineAssemblyParams struct {
 func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult {
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	// Parse parameters
@@ -193,17 +193,17 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	// Validate assembly_b64
 	if params.AssemblyB64 == "" {
-		return errorResult("Error: No assembly data provided")
+		return errorResult("No assembly data provided")
 	}
 
 	// Decode the base64-encoded assembly
 	assemblyBytes, err := base64.StdEncoding.DecodeString(params.AssemblyB64)
 	if err != nil {
-		return errorf("Error decoding assembly: %v", err)
+		return errorf("decoding assembly: %v", err)
 	}
 
 	if len(assemblyBytes) == 0 {
-		return errorResult("Error: Assembly data is empty")
+		return errorResult("Assembly data is empty")
 	}
 
 	// Parse arguments string into array

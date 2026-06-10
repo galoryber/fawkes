@@ -96,7 +96,7 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		RegType: args.RegType,
 	})
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 
 	output, err := rpcViaSubprocess(rpcHelperRequest{
@@ -110,12 +110,12 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		Params:    params,
 	})
 	if err != nil {
-		return errorf("Error: remote registry RPC call to %s failed: %v", args.Server, err)
+		return errorf("remote registry RPC call to %s failed: %v", args.Server, err)
 	}
 
 	var result winregResult
 	if err := json.Unmarshal(output, &result); err != nil {
-		return errorf("Error parsing result: %v", err)
+		return errorf("parsing result: %v", err)
 	}
 	return successResult(result.Text)
 }

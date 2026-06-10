@@ -27,7 +27,7 @@ func persistShellProfile(args persistArgs) structs.CommandResult {
 
 func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute on login) is required")
+		return errorResult("path (command to execute on login) is required")
 	}
 
 	marker := "maintenance"
@@ -142,7 +142,7 @@ func persistSSHKey(args persistArgs) structs.CommandResult {
 
 func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (SSH public key string) is required")
+		return errorResult("path (SSH public key string) is required")
 	}
 
 	marker := "maintenance"
@@ -244,7 +244,7 @@ func persistXDGAutostart(args persistArgs) structs.CommandResult {
 
 func persistXDGAutostartInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Name == "" {
 		args.Name = "system-update-notifier"
@@ -330,7 +330,7 @@ func persistMOTD(args persistArgs) structs.CommandResult {
 
 func persistMOTDInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command or script to execute on login) is required")
+		return errorResult("path (command or script to execute on login) is required")
 	}
 
 	name := "99-motd-check"
@@ -392,7 +392,7 @@ func persistRCLocal(args persistArgs) structs.CommandResult {
 
 func persistRCLocalInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute at boot) is required")
+		return errorResult("path (command to execute at boot) is required")
 	}
 
 	marker := "maintenance"
@@ -488,7 +488,7 @@ func persistAPTHook(args persistArgs) structs.CommandResult {
 
 func persistAPTHookInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute on apt operations) is required")
+		return errorResult("path (command to execute on apt operations) is required")
 	}
 
 	name := "99apt-compat"
@@ -553,7 +553,7 @@ func persistUdevRule(args persistArgs) structs.CommandResult {
 
 func persistUdevRuleInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute on device event) is required")
+		return errorResult("path (command to execute on device event) is required")
 	}
 
 	name := "99-usb-compat.rules"

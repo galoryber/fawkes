@@ -521,7 +521,7 @@ func TestDownloadCommand_Execute(t *testing.T) {
 		if result.Status != "error" {
 			t.Errorf("expected error for nonexistent file, got %q", result.Status)
 		}
-		if !strings.Contains(result.Output, "Error") || !strings.Contains(result.Output, "no such file") {
+		if !strings.Contains(result.Output, "no such file") {
 			t.Errorf("should mention error with path details, got: %s", result.Output)
 		}
 	})

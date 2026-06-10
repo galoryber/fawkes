@@ -74,7 +74,7 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	processes, err := getProcessList(args)
 	if err != nil {
-		return errorf("Error listing processes: %v", err)
+		return errorf("listing processes: %v", err)
 	}
 
 	// Build Mythic ProcessEntry slice for process browser integration
@@ -96,7 +96,7 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Return JSON for the browser script to render as a table
 	jsonBytes, err := json.Marshal(mythicProcs)
 	if err != nil {
-		return errorf("Error marshalling process list: %v", err)
+		return errorf("marshalling process list: %v", err)
 	}
 
 	return structs.CommandResult{

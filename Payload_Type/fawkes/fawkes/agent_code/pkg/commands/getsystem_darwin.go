@@ -137,7 +137,7 @@ func getsystemCheckDarwin(currentIdentity string) structs.CommandResult {
 
 	output, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(output))
 }
@@ -245,7 +245,7 @@ func getsystemSudoDarwin(oldIdentity string) structs.CommandResult {
 	if !checkSudoCachedDarwin() {
 		rules := checkSudoNopasswdDarwin()
 		if len(rules) == 0 {
-			return errorResult("Error: sudo requires a password and no NOPASSWD rules found. Try 'osascript' technique for elevation prompt.")
+			return errorResult("sudo requires a password and no NOPASSWD rules found. Try 'osascript' technique for elevation prompt.")
 		}
 	}
 
@@ -255,7 +255,7 @@ func getsystemSudoDarwin(oldIdentity string) structs.CommandResult {
 	cmd := safeCmdContext(ctx, "sudo", "-n", "id")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error: sudo -n id failed: %v\n%s", err, string(output))
+		return errorf("sudo -n id failed: %v\n%s", err, string(output))
 	}
 
 	selfPath, _ := os.Executable()
@@ -277,7 +277,7 @@ func getsystemOsascript(oldIdentity string) structs.CommandResult {
 	}
 
 	if !checkAdminGroup() {
-		return errorResult("Error: user is not in the admin group — osascript elevation prompt will fail")
+		return errorResult("user is not in the admin group — osascript elevation prompt will fail")
 	}
 
 	// Use osascript to run a privileged command via admin auth prompt
@@ -290,9 +290,9 @@ func getsystemOsascript(oldIdentity string) structs.CommandResult {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return errorResult("Error: elevation prompt timed out (120s)")
+			return errorResult("elevation prompt timed out (120s)")
 		}
-		return errorf("Error: osascript elevation failed: %v\n%s", err, string(output))
+		return errorf("osascript elevation failed: %v\n%s", err, string(output))
 	}
 
 	selfPath, _ := os.Executable()

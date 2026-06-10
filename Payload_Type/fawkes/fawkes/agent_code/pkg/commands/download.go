@@ -43,19 +43,19 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 	path, compress := parseDownloadArgs(task.Params)
 
 	if path == "" {
-		return errorResult("Error: No file path specified. Usage: download <file_path>")
+		return errorResult("No file path specified. Usage: download <file_path>")
 	}
 
 	// Get absolute path
 	fullPath, err := filepath.Abs(path)
 	if err != nil {
-		return errorf("Error resolving file path: %s", err.Error())
+		return errorf("resolving file path: %s", err.Error())
 	}
 
 	// Check if path exists and whether it's a directory
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return errorf("Error accessing path: %s", err.Error())
+		return errorf("accessing path: %s", err.Error())
 	}
 
 	if info.IsDir() {
@@ -97,13 +97,13 @@ func parseDownloadArgs(params string) (path string, compress *bool) {
 func downloadFile(task structs.Task, fullPath string) structs.CommandResult {
 	file, err := os.Open(fullPath)
 	if err != nil {
-		return errorf("Error opening file: %s", err.Error())
+		return errorf("opening file: %s", err.Error())
 	}
 	defer file.Close()
 
 	fi, err := file.Stat()
 	if err != nil {
-		return errorf("Error getting file info: %s", err.Error())
+		return errorf("getting file info: %s", err.Error())
 	}
 
 	result, tfResult := sendFileToMythicWithResult(task, file, fi.Name(), fullPath)
@@ -160,7 +160,7 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	// Create temp zip file
 	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return errorf("Error: cannot create temp file (disk full or temp directory not writable)")
+		return errorf("cannot create temp file (disk full or temp directory not writable)")
 	}
 	tmpPath := tmpFile.Name()
 
@@ -171,17 +171,17 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	fileCount, totalSize, skipped, zipErr := zipDirectory(tmpFile, dirPath)
 	tmpFile.Close()
 	if zipErr != nil {
-		return errorf("Error creating zip archive: %v", zipErr)
+		return errorf("creating zip archive: %v", zipErr)
 	}
 
 	if fileCount == 0 {
-		return errorf("Error: directory %s contains no accessible files", dirPath)
+		return errorf("directory %s contains no accessible files", dirPath)
 	}
 
 	// Open the temp zip for transfer
 	zipFile, err := os.Open(tmpPath)
 	if err != nil {
-		return errorf("Error: cannot open temp zip file for transfer (file may have been cleaned up)")
+		return errorf("cannot open temp zip file for transfer (file may have been cleaned up)")
 	}
 	defer zipFile.Close()
 

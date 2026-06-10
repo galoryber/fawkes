@@ -344,7 +344,7 @@ func TestKlistImportBadBase64(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error, got %s", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error decoding base64") {
+	if !strings.Contains(result.Output, "decoding base64") {
 		t.Errorf("unexpected output: %s", result.Output)
 	}
 }

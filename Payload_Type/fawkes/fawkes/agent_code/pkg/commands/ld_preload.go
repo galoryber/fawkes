@@ -75,12 +75,12 @@ func ldPreloadList() structs.CommandResult {
 // ldPreloadInstall installs an LD_PRELOAD entry for persistence.
 func ldPreloadInstall(args ldPreloadArgs) structs.CommandResult {
 	if args.LibPath == "" {
-		return errorResult("Error: libpath parameter required (path to shared library)")
+		return errorResult("libpath parameter required (path to shared library)")
 	}
 
 	// Validate library exists
 	if _, err := os.Stat(args.LibPath); os.IsNotExist(err) {
-		return errorf("Error: library not found at %s", args.LibPath)
+		return errorf("library not found at %s", args.LibPath)
 	}
 
 	target := strings.ToLower(args.Target)
@@ -143,7 +143,7 @@ func ldPreloadInstall(args ldPreloadArgs) structs.CommandResult {
 // ldPreloadRemove removes an LD_PRELOAD entry from a target file.
 func ldPreloadRemove(args ldPreloadArgs) structs.CommandResult {
 	if args.LibPath == "" {
-		return errorResult("Error: libpath parameter required")
+		return errorResult("libpath parameter required")
 	}
 
 	target := strings.ToLower(args.Target)

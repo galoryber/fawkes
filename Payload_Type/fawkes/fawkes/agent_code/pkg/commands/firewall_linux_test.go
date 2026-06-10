@@ -40,7 +40,7 @@ func TestFirewallLinuxInvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Error("Expected error status for invalid JSON")
 	}
-	if !strings.Contains(result.Output, "Error parsing parameters") {
+	if !strings.Contains(result.Output, "parsing parameters") {
 		t.Errorf("Expected parsing error, got: %s", result.Output)
 	}
 }

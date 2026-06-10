@@ -28,7 +28,7 @@ func TestUACBypassInvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Error("Expected error status for invalid JSON")
 	}
-	if !strings.Contains(result.Output, "Error parsing parameters") {
+	if !strings.Contains(result.Output, "parsing parameters") {
 		t.Errorf("Expected parsing error, got: %s", result.Output)
 	}
 }
@@ -92,7 +92,7 @@ func TestUACBypassEmptyParams(t *testing.T) {
 	task := structs.Task{Params: ""}
 	result := cmd.Execute(task)
 	// Should not error on empty params (uses defaults)
-	if strings.Contains(result.Output, "Error parsing parameters") {
+	if strings.Contains(result.Output, "parsing parameters") {
 		t.Error("Should handle empty params gracefully")
 	}
 }

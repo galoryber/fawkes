@@ -79,7 +79,7 @@ func lolbinRegsvcs(dllPath, extraArgs string) structs.CommandResult {
 
 	regsvcsPath := findDotNetTool("RegSvcs.exe")
 	if regsvcsPath == "" {
-		return errorResult("Error: required binary not found in .NET Framework directories")
+		return errorResult("required binary not found in .NET Framework directories")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
@@ -110,7 +110,7 @@ func lolbinRegasm(dllPath, extraArgs string) structs.CommandResult {
 
 	regasmPath := findDotNetTool("RegAsm.exe")
 	if regasmPath == "" {
-		return errorResult("Error: required binary not found in .NET Framework directories")
+		return errorResult("required binary not found in .NET Framework directories")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
@@ -228,7 +228,7 @@ func lolbinRegsvr32(payloadPath, extraArgs string) structs.CommandResult {
 func lolbinInstallUtil(assemblyPath, extraArgs string) structs.CommandResult {
 	installUtilPath := findDotNetTool("InstallUtil.exe")
 	if installUtilPath == "" {
-		return errorResult("Error: required binary not found in .NET Framework directories")
+		return errorResult("required binary not found in .NET Framework directories")
 	}
 
 	cmdArgs := []string{"/logfile=", "/LogToConsole=false"}
@@ -297,7 +297,7 @@ func lolbinLua(scriptPath, extraArgs string) structs.CommandResult {
 		}
 	}
 	if interpreter == "" {
-		return errorResult("Error: no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
+		return errorResult("no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
 	}
 
 	cmdArgs := []string{scriptPath}
@@ -334,11 +334,11 @@ func lolbinPython(code, extraArgs string) structs.CommandResult {
 		}
 	}
 	if interpreter == "" {
-		return errorResult("Error: python3/python not found on this system")
+		return errorResult("python3/python not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+		return errorResult("provide code in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string

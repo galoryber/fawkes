@@ -37,7 +37,7 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 
 	pid := params.PID
 	if pid <= 0 {
-		return errorResult("Error: PID must be greater than 0")
+		return errorResult("PID must be greater than 0")
 	}
 
 	// Get process name before killing (best effort)
@@ -54,12 +54,12 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 	// (with SeDebugPrivilege) couldn't kill a SYSTEM-owned ping process.
 	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
 	if err != nil {
-		return errorf("Error opening process %d: %v", pid, err)
+		return errorf("opening process %d: %v", pid, err)
 	}
 	defer windows.CloseHandle(handle)
 
 	if err := windows.TerminateProcess(handle, 1); err != nil {
-		return errorf("Error killing process %d: %v", pid, err)
+		return errorf("killing process %d: %v", pid, err)
 	}
 
 	if procName != "" {

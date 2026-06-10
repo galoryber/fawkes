@@ -39,11 +39,11 @@ func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Code == "" && args.File == "" {
-		return errorResult("Error: must specify either -code (inline script) or -file (script path)")
+		return errorResult("must specify either -code (inline script) or -file (script path)")
 	}
 
 	if args.Code != "" && args.File != "" {
-		return errorResult("Error: specify either -code or -file, not both")
+		return errorResult("specify either -code or -file, not both")
 	}
 
 	timeout := args.Timeout
@@ -55,7 +55,7 @@ func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
 	if args.File != "" {
 		data, err := os.ReadFile(args.File)
 		if err != nil {
-			return errorf("Error reading script file: %v", err)
+			return errorf("reading script file: %v", err)
 		}
 		script = string(data)
 	} else {

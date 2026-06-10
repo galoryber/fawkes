@@ -112,7 +112,7 @@ type multiQI struct {
 
 func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required.\nActions: exec\nObjects: mmc20, shellwindows, shellbrowser, wscript, excel, outlook")
+		return errorResult("parameters required.\nActions: exec\nObjects: mmc20, shellwindows, shellbrowser, wscript, excel, outlook")
 	}
 
 	args, parseErr := unmarshalParams[dcomArgs](task)
@@ -236,10 +236,10 @@ func resolveCredentials(args dcomArgs) (domain, username, password string, hasEx
 
 func dcomExec(args dcomArgs) structs.CommandResult {
 	if args.Host == "" {
-		return errorResult("Error: host is required")
+		return errorResult("host is required")
 	}
 	if args.Command == "" {
-		return errorResult("Error: command is required")
+		return errorResult("command is required")
 	}
 
 	object := strings.ToLower(args.Object)
@@ -337,16 +337,16 @@ func dcomRunCmd(args dcomArgs, command string) bool {
 // dcomUpload stages a local file on the remote host via DCOM command execution.
 func dcomUpload(args dcomArgs) structs.CommandResult {
 	if args.LocalPath == "" {
-		return errorResult("Error: local_path is required (file to upload from agent filesystem)")
+		return errorResult("local_path is required (file to upload from agent filesystem)")
 	}
 	if args.Host == "" {
-		return errorResult("Error: host is required (remote target)")
+		return errorResult("host is required (remote target)")
 	}
 
 	method := parseStagingMethod(args.Method)
 	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
 	if err != nil {
-		return errorf("Error planning staging: %v", err)
+		return errorf("planning staging: %v", err)
 	}
 
 	var sb strings.Builder
@@ -358,14 +358,14 @@ func dcomUpload(args dcomArgs) structs.CommandResult {
 
 	for i, cmd := range plan.WriteCommands {
 		if !dcomRunCmd(args, cmd) {
-			return errorf("Error on write chunk %d/%d", i+1, len(plan.WriteCommands))
+			return errorf("on write chunk %d/%d", i+1, len(plan.WriteCommands))
 		}
 		sb.WriteString(fmt.Sprintf("  [%d/%d] Write chunk OK\n", i+1, len(plan.WriteCommands)))
 	}
 
 	if plan.DecodeCommand != "" {
 		if !dcomRunCmd(args, plan.DecodeCommand) {
-			return errorResult("Error decoding staged file via certutil")
+			return errorResult("decoding staged file via certutil")
 		}
 		sb.WriteString("  Decode OK\n")
 	}
@@ -377,16 +377,16 @@ func dcomUpload(args dcomArgs) structs.CommandResult {
 // dcomExecStaged uploads a file, executes it, and optionally cleans up via DCOM.
 func dcomExecStaged(args dcomArgs) structs.CommandResult {
 	if args.LocalPath == "" {
-		return errorResult("Error: local_path is required (file to stage and execute)")
+		return errorResult("local_path is required (file to stage and execute)")
 	}
 	if args.Host == "" {
-		return errorResult("Error: host is required (remote target)")
+		return errorResult("host is required (remote target)")
 	}
 
 	method := parseStagingMethod(args.Method)
 	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
 	if err != nil {
-		return errorf("Error planning staging: %v", err)
+		return errorf("planning staging: %v", err)
 	}
 
 	var sb strings.Builder

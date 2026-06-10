@@ -50,7 +50,7 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Hosts == "" {
-		return errorResult("Error: -hosts parameter required (IP, comma-separated IPs, or CIDR)")
+		return errorResult("-hosts parameter required (IP, comma-separated IPs, or CIDR)")
 	}
 
 	if args.Timeout <= 0 {
@@ -69,11 +69,11 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse hosts
 	hosts := lateralParseHosts(args.Hosts)
 	if len(hosts) == 0 {
-		return errorResult("Error: no valid hosts parsed from input")
+		return errorResult("no valid hosts parsed from input")
 	}
 
 	if len(hosts) > 256 {
-		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
+		return errorf("too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Check each host concurrently
@@ -214,7 +214,7 @@ func lateralBuildOutput(results []lateralTarget) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }

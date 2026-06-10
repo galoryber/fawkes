@@ -12,24 +12,24 @@ import (
 
 func ldapAddMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Group == "" {
-		return errorResult("Error: -target (user/computer to add) and -group (group name) are required")
+		return errorResult("-target (user/computer to add) and -group (group name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	groupDN, err := ldapResolveDN(conn, args.Group, baseDN)
 	if err != nil {
-		return errorf("Error resolving group: %v", err)
+		return errorf("resolving group: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(groupDN, nil)
 	modReq.Add("member", []string{targetDN})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error adding member: %v", err)
+		return errorf("adding member: %v", err)
 	}
 
 	return successf("[*] LDAP Group Membership Modification (T1098)\n"+
@@ -40,24 +40,24 @@ func ldapAddMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.C
 
 func ldapRemoveMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Group == "" {
-		return errorResult("Error: -target (user/computer to remove) and -group (group name) are required")
+		return errorResult("-target (user/computer to remove) and -group (group name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	groupDN, err := ldapResolveDN(conn, args.Group, baseDN)
 	if err != nil {
-		return errorf("Error resolving group: %v", err)
+		return errorf("resolving group: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(groupDN, nil)
 	modReq.Delete("member", []string{targetDN})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error removing member: %v", err)
+		return errorf("removing member: %v", err)
 	}
 
 	return successf("[*] LDAP Group Membership Modification (T1098)\n"+
@@ -68,12 +68,12 @@ func ldapRemoveMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 
 func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Attr == "" {
-		return errorResult("Error: -target (object to modify) and -attr (attribute name) are required")
+		return errorResult("-target (object to modify) and -attr (attribute name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
@@ -84,7 +84,7 @@ func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	modReq.Replace(args.Attr, values)
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error setting attribute: %v", err)
+		return errorf("setting attribute: %v", err)
 	}
 
 	valDisplay := args.Value
@@ -102,12 +102,12 @@ func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 
 func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Attr == "" {
-		return errorResult("Error: -target (object to modify) and -attr (attribute name) are required")
+		return errorResult("-target (object to modify) and -attr (attribute name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
@@ -118,7 +118,7 @@ func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	modReq.Add(args.Attr, values)
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error adding attribute value: %v", err)
+		return errorf("adding attribute value: %v", err)
 	}
 
 	valDisplay := args.Value
@@ -136,12 +136,12 @@ func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 
 func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Attr == "" {
-		return errorResult("Error: -target (object to modify) and -attr (attribute name) are required")
+		return errorResult("-target (object to modify) and -attr (attribute name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
@@ -152,7 +152,7 @@ func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 	modReq.Delete(args.Attr, values)
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error removing attribute value: %v", err)
+		return errorf("removing attribute value: %v", err)
 	}
 
 	valDisplay := args.Value
@@ -173,19 +173,19 @@ func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 
 func ldapSetSPN(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Value == "" {
-		return errorResult("Error: -target (account) and -value (SPN, e.g. MSSQLSvc/host.domain.local) are required")
+		return errorResult("-target (account) and -value (SPN, e.g. MSSQLSvc/host.domain.local) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
 	modReq.Add("servicePrincipalName", []string{args.Value})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error setting SPN: %v", err)
+		return errorf("setting SPN: %v", err)
 	}
 
 	return successf("[*] LDAP SPN Modification (T1134)\n"+
@@ -198,12 +198,12 @@ func ldapSetSPN(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Comm
 
 func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disable bool) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target (account to disable/enable) is required")
+		return errorResult("-target (account to disable/enable) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	// Read current userAccountControl
@@ -219,13 +219,13 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 
 	result, err := conn.Search(searchReq)
 	if err != nil || len(result.Entries) == 0 {
-		return errorf("Error reading userAccountControl: %v", err)
+		return errorf("reading userAccountControl: %v", err)
 	}
 
 	uacStr := result.Entries[0].GetAttributeValue("userAccountControl")
 	uac, err := strconv.Atoi(uacStr)
 	if err != nil {
-		return errorf("Error parsing userAccountControl value %q: %v", uacStr, err)
+		return errorf("parsing userAccountControl value %q: %v", uacStr, err)
 	}
 
 	const accountDisable = 0x0002
@@ -244,7 +244,7 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 	modReq.Replace("userAccountControl", []string{fmt.Sprintf("%d", newUAC)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error modifying userAccountControl: %v", err)
+		return errorf("modifying userAccountControl: %v", err)
 	}
 
 	return successf("[*] LDAP Account Control Modification (T1098)\n"+
@@ -256,16 +256,16 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 
 func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Value == "" {
-		return errorResult("Error: -target (account) and -value (new password) are required. Requires LDAPS.")
+		return errorResult("-target (account) and -value (new password) are required. Requires LDAPS.")
 	}
 
 	if !args.UseTLS {
-		return errorResult("Error: set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.")
+		return errorResult("set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	// AD password format: UTF-16LE encoded, surrounded by double quotes
@@ -281,7 +281,7 @@ func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 	modReq.Replace("unicodePwd", []string{string(utf16Pwd)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error setting password: %v", err)
+		return errorf("setting password: %v", err)
 	}
 
 	return successf("[*] LDAP Password Change (T1098)\n"+

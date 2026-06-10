@@ -23,7 +23,7 @@ func (c *SuspendCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: PID must be greater than 0")
+		return errorResult("PID must be greater than 0")
 	}
 
 	if params.Action == "" {

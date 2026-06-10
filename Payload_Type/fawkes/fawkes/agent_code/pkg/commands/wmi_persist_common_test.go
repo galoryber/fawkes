@@ -143,8 +143,8 @@ func TestParseWmiPersistArgs_InvalidJSON(t *testing.T) {
 	if errResult.Status != "error" {
 		t.Errorf("expected error status, got %s", errResult.Status)
 	}
-	if !strings.Contains(errResult.Output, "Error parsing") {
-		t.Errorf("expected 'Error parsing' message, got: %s", errResult.Output)
+	if !strings.Contains(errResult.Output, "parsing parameters") {
+		t.Errorf("expected 'parsing parameters' message, got: %s", errResult.Output)
 	}
 }
 

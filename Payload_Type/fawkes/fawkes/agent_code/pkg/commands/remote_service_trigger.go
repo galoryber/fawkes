@@ -39,10 +39,10 @@ var (
 // monitored by EDR and don't appear in standard startup enumeration.
 func remoteSvcTrigger(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: -name is required for trigger action")
+		return errorResult("-name is required for trigger action")
 	}
 	if args.BinPath == "" {
-		return errorResult("Error: -binpath is required for trigger action")
+		return errorResult("-binpath is required for trigger action")
 	}
 
 	// Parse trigger type from start_type parameter (reuse for trigger type selection)

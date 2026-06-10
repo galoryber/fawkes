@@ -61,7 +61,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.PID <= 0 {
-		return errorResult("Error: pid is required")
+		return errorResult("pid is required")
 	}
 
 	if args.MaxCount <= 0 {
@@ -71,7 +71,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	// Query all system handles
 	entries, err := querySystemHandles()
 	if err != nil {
-		return errorf("Error querying system handles: %v", err)
+		return errorf("querying system handles: %v", err)
 	}
 
 	// Filter to target PID
@@ -318,7 +318,7 @@ func formatHandleOutput(handles []handleInfo, typeCounts map[string]int, args ha
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return errorf("Error marshalling handle data: %v", err)
+		return errorf("marshalling handle data: %v", err)
 	}
 
 	return successResult(string(jsonBytes))
@@ -359,7 +359,7 @@ func formatHandleSummary(entries []systemHandleEntry, args handlesArgs, sysTotal
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return errorf("Error marshalling handle data: %v", err)
+		return errorf("marshalling handle data: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

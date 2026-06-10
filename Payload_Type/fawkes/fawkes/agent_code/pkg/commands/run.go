@@ -22,7 +22,7 @@ func (c *RunCommand) Description() string {
 // Execute executes the run command
 func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: No command specified")
+		return errorResult("No command specified")
 	}
 
 	// executeRunCommand is platform-specific:
@@ -36,7 +36,7 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 		if outputStr != "" {
 			return errorf("%s\nError: %v", outputStr, err)
 		}
-		return errorf("Error executing command: %v", err)
+		return errorf("executing command: %v", err)
 	}
 
 	outputStr := strings.TrimSpace(output)

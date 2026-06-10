@@ -62,7 +62,7 @@ func (c *DrivesUnixCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshalling drive data: %v", err)
+		return errorf("marshalling drive data: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

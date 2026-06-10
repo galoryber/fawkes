@@ -12,5 +12,5 @@ func (c *ArgueCommand) Description() string {
 }
 
 func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
-	return errorResult("Error: argue is not yet supported on macOS (PEB manipulation requires mach_vm APIs)")
+	return errorResult("argue is not yet supported on macOS (PEB manipulation requires mach_vm APIs)")
 }

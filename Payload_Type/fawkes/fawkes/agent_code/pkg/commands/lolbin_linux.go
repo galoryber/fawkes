@@ -38,7 +38,7 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action is required (python, curl, wget, gcc, perl, ruby, node, awk)")
+		return errorResult("action is required (python, curl, wget, gcc, perl, ruby, node, awk)")
 	}
 
 	switch args.Action {
@@ -99,11 +99,11 @@ func runWithTimeout(binary string, cmdArgs []string) structs.CommandResult {
 func gtfobinPython(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("python3", "python")
 	if binary == "" {
-		return errorResult("Error: python3/python not found on this system")
+		return errorResult("python3/python not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+		return errorResult("provide code in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string
@@ -125,11 +125,11 @@ func gtfobinPython(code, extraArgs string) structs.CommandResult {
 func gtfobinCurl(url, extraArgs string) structs.CommandResult {
 	binary := findBinary("curl")
 	if binary == "" {
-		return errorResult("Error: curl not found on this system")
+		return errorResult("curl not found on this system")
 	}
 
 	if url == "" {
-		return errorResult("Error: URL is required in 'path' field")
+		return errorResult("URL is required in 'path' field")
 	}
 
 	var cmdArgs []string
@@ -148,11 +148,11 @@ func gtfobinCurl(url, extraArgs string) structs.CommandResult {
 func gtfobinWget(url, extraArgs string) structs.CommandResult {
 	binary := findBinary("wget")
 	if binary == "" {
-		return errorResult("Error: wget not found on this system")
+		return errorResult("wget not found on this system")
 	}
 
 	if url == "" {
-		return errorResult("Error: URL is required in 'path' field")
+		return errorResult("URL is required in 'path' field")
 	}
 
 	var cmdArgs []string
@@ -170,24 +170,24 @@ func gtfobinWget(url, extraArgs string) structs.CommandResult {
 func gtfobinGCC(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("gcc", "cc")
 	if binary == "" {
-		return errorResult("Error: gcc/cc not found on this system")
+		return errorResult("gcc/cc not found on this system")
 	}
 
 	if code == "" {
-		return errorResult("Error: C source code is required in 'path' field")
+		return errorResult("C source code is required in 'path' field")
 	}
 
 	// Write source to temp file
 	srcFile, err := os.CreateTemp("", "tmp-*.c")
 	if err != nil {
-		return errorf("Error creating temp file: %v", err)
+		return errorf("creating temp file: %v", err)
 	}
 	srcPath := srcFile.Name()
 	defer os.Remove(srcPath)
 
 	if _, err := srcFile.WriteString(code); err != nil {
 		srcFile.Close()
-		return errorf("Error writing source: %v", err)
+		return errorf("writing source: %v", err)
 	}
 	srcFile.Close()
 
@@ -237,11 +237,11 @@ func gtfobinGCC(code, extraArgs string) structs.CommandResult {
 func gtfobinPerl(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("perl")
 	if binary == "" {
-		return errorResult("Error: perl not found on this system")
+		return errorResult("perl not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+		return errorResult("provide code in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string
@@ -261,11 +261,11 @@ func gtfobinPerl(code, extraArgs string) structs.CommandResult {
 func gtfobinRuby(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("ruby")
 	if binary == "" {
-		return errorResult("Error: ruby not found on this system")
+		return errorResult("ruby not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+		return errorResult("provide code in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string
@@ -285,11 +285,11 @@ func gtfobinRuby(code, extraArgs string) structs.CommandResult {
 func gtfobinNode(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("node", "nodejs")
 	if binary == "" {
-		return errorResult("Error: node/nodejs not found on this system")
+		return errorResult("node/nodejs not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+		return errorResult("provide code in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string
@@ -309,11 +309,11 @@ func gtfobinNode(code, extraArgs string) structs.CommandResult {
 func gtfobinAwk(program, extraArgs string) structs.CommandResult {
 	binary := findBinary("awk", "gawk", "mawk")
 	if binary == "" {
-		return errorResult("Error: awk not found on this system")
+		return errorResult("awk not found on this system")
 	}
 
 	if program == "" {
-		return errorResult("Error: awk program is required in 'path' field (e.g., 'BEGIN{system(\"id\")}')")
+		return errorResult("awk program is required in 'path' field (e.g., 'BEGIN{system(\"id\")}')")
 	}
 
 	cmdArgs := []string{program}
@@ -328,7 +328,7 @@ func gtfobinAwk(program, extraArgs string) structs.CommandResult {
 func gtfobinLua(scriptPath, extraArgs string) structs.CommandResult {
 	binary := findBinary("lua", "lua5.4", "lua5.3", "lua5.1", "luajit")
 	if binary == "" {
-		return errorResult("Error: no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
+		return errorResult("no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
 	}
 
 	cmdArgs := []string{scriptPath}

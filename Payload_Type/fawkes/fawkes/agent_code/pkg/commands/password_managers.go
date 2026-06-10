@@ -41,7 +41,7 @@ func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResu
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return errorf("Error: cannot determine home directory: %v", err)
+		return errorf("cannot determine home directory: %v", err)
 	}
 
 	var results []pmResult

@@ -28,7 +28,7 @@ type touchArgs struct {
 
 func (c *TouchCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	var args touchArgs
@@ -37,14 +37,14 @@ func (c *TouchCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	// Create parent directories if requested
 	if args.MkDir {
 		dir := filepath.Dir(args.Path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return errorf("Error creating directories: %v", err)
+			return errorf("creating directories: %v", err)
 		}
 	}
 
@@ -56,20 +56,20 @@ func (c *TouchCommand) Execute(task structs.Task) structs.CommandResult {
 		// Create the file
 		f, err := os.Create(args.Path)
 		if err != nil {
-			return errorf("Error creating file: %v", err)
+			return errorf("creating file: %v", err)
 		}
 		if err := f.Close(); err != nil {
-			return errorf("Error creating file: %v", err)
+			return errorf("creating file: %v", err)
 		}
 
 		return successf("[+] Created %s", args.Path)
 	} else if err != nil {
-		return errorf("Error accessing file: %v", err)
+		return errorf("accessing file: %v", err)
 	}
 
 	// File exists — update timestamps
 	if err := os.Chtimes(args.Path, now, now); err != nil {
-		return errorf("Error updating timestamps: %v", err)
+		return errorf("updating timestamps: %v", err)
 	}
 
 	return successf("[+] Updated timestamps on %s", args.Path)

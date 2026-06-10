@@ -29,7 +29,7 @@ type diffArgs struct {
 
 func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	var args diffArgs
@@ -44,7 +44,7 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.File1 == "" || args.File2 == "" {
-		return errorResult("Error: both file1 and file2 are required")
+		return errorResult("both file1 and file2 are required")
 	}
 
 	if args.Context == 0 {
@@ -53,12 +53,12 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 
 	lines1, err := readLines(args.File1)
 	if err != nil {
-		return errorf("Error reading %s: %v", args.File1, err)
+		return errorf("reading %s: %v", args.File1, err)
 	}
 
 	lines2, err := readLines(args.File2)
 	if err != nil {
-		return errorf("Error reading %s: %v", args.File2, err)
+		return errorf("reading %s: %v", args.File2, err)
 	}
 
 	hunks := diffLines(lines1, lines2, args.Context)

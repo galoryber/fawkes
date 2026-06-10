@@ -65,7 +65,7 @@ func getPSProfiles() []psProfile {
 
 func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: history, list, read, inject, remove, clear")
+		return errorResult("parameters required. Actions: history, list, read, inject, remove, clear")
 	}
 
 	var args shellConfigArgs
@@ -128,12 +128,12 @@ func psProfileList() structs.CommandResult {
 func psProfileRead(args shellConfigArgs) structs.CommandResult {
 	path := resolveProfilePath(args.File)
 	if path == "" {
-		return errorResult("Error: file parameter required. Use profile name (e.g., 'PS7 CurrentUser CurrentHost') or full path.")
+		return errorResult("file parameter required. Use profile name (e.g., 'PS7 CurrentUser CurrentHost') or full path.")
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return errorf("Error reading %s: %v", path, err)
+		return errorf("reading %s: %v", path, err)
 	}
 
 	return successf("=== %s (%d bytes) ===\n%s", path, len(content), string(content))
@@ -141,7 +141,7 @@ func psProfileRead(args shellConfigArgs) structs.CommandResult {
 
 func psProfileInject(args shellConfigArgs) structs.CommandResult {
 	if args.Line == "" {
-		return errorResult("Error: line parameter required (PowerShell command to inject)")
+		return errorResult("line parameter required (PowerShell command to inject)")
 	}
 
 	path := resolveProfilePath(args.File)
@@ -166,12 +166,12 @@ func psProfileInject(args shellConfigArgs) structs.CommandResult {
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return errorf("Error creating directory %s: %v", dir, err)
+		return errorf("creating directory %s: %v", dir, err)
 	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return errorf("Error opening %s: %v", path, err)
+		return errorf("opening %s: %v", path, err)
 	}
 	defer f.Close()
 
@@ -182,7 +182,7 @@ func psProfileInject(args shellConfigArgs) structs.CommandResult {
 	writeStr = writeStr + "\n"
 
 	if _, err := f.WriteString(writeStr); err != nil {
-		return errorf("Error writing to %s: %v", path, err)
+		return errorf("writing to %s: %v", path, err)
 	}
 
 	return successf("Injected into %s:\n  %s\n\nThis will execute on every PowerShell session for this user.", path, strings.TrimSpace(writeStr))
@@ -190,17 +190,17 @@ func psProfileInject(args shellConfigArgs) structs.CommandResult {
 
 func psProfileRemove(args shellConfigArgs) structs.CommandResult {
 	if args.Line == "" {
-		return errorResult("Error: line parameter required (exact line to remove)")
+		return errorResult("line parameter required (exact line to remove)")
 	}
 
 	path := resolveProfilePath(args.File)
 	if path == "" {
-		return errorResult("Error: file parameter required")
+		return errorResult("file parameter required")
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return errorf("Error reading %s: %v", path, err)
+		return errorf("reading %s: %v", path, err)
 	}
 	defer structs.ZeroBytes(content) // opsec: clear PowerShell profile data
 
@@ -221,7 +221,7 @@ func psProfileRemove(args shellConfigArgs) structs.CommandResult {
 	}
 
 	if err := os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
-		return errorf("Error writing %s: %v", path, err)
+		return errorf("writing %s: %v", path, err)
 	}
 
 	return successf("Removed %d line(s) from %s", removed, path)

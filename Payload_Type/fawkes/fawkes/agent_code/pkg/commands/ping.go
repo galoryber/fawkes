@@ -37,7 +37,7 @@ type pingResult struct {
 
 func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]")
+		return errorResult("parameters required. Use -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]")
 	}
 
 	// Check for ICMP exfil action
@@ -56,7 +56,7 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Hosts == "" {
-		return errorResult("Error: hosts parameter is required")
+		return errorResult("hosts parameter is required")
 	}
 	if args.Port == 0 {
 		args.Port = 445
@@ -74,12 +74,12 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 	// Expand hosts to individual IPs
 	targets := expandHosts(args.Hosts)
 	if len(targets) == 0 {
-		return errorf("Error: no valid hosts from '%s'", args.Hosts)
+		return errorf("no valid hosts from '%s'", args.Hosts)
 	}
 
 	// Cap at 65536 hosts to prevent memory issues
 	if len(targets) > 65536 {
-		return errorf("Error: too many hosts (%d). Max 65536. Use a smaller range.", len(targets))
+		return errorf("too many hosts (%d). Max 65536. Use a smaller range.", len(targets))
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Millisecond

@@ -53,7 +53,7 @@ func formatHandleResult(handles []handleInfo, typeCounts map[string]int, args ha
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return errorf("Error marshalling handle data: %v", err)
+		return errorf("marshalling handle data: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

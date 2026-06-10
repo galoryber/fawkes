@@ -85,7 +85,7 @@ func defenderExclusions() structs.CommandResult {
 // Uses PowerShell Add-MpPreference cmdlet which works with Tamper Protection.
 func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 	if args.Value == "" {
-		return errorResult("Error: value is required (path, process name, or extension)")
+		return errorResult("value is required (path, process name, or extension)")
 	}
 
 	exType := strings.ToLower(args.Type)
@@ -110,7 +110,7 @@ func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 	psCmd := fmt.Sprintf("Add-MpPreference -%s '%s'", paramName, strings.ReplaceAll(args.Value, "'", "''"))
 	output, err := defenderRunPowerShell(psCmd)
 	if err != nil {
-		return errorf("Error adding exclusion: %v\n%s\nRequires administrator privileges.", err, output)
+		return errorf("adding exclusion: %v\n%s\nRequires administrator privileges.", err, output)
 	}
 
 	return successf("Added Defender %s exclusion: %s", exType, args.Value)
@@ -120,7 +120,7 @@ func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 // Uses PowerShell Remove-MpPreference cmdlet which works with Tamper Protection.
 func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 	if args.Value == "" {
-		return errorResult("Error: value is required (path, process name, or extension)")
+		return errorResult("value is required (path, process name, or extension)")
 	}
 
 	exType := strings.ToLower(args.Type)
@@ -144,7 +144,7 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 	psCmd := fmt.Sprintf("Remove-MpPreference -%s '%s'", paramName, strings.ReplaceAll(args.Value, "'", "''"))
 	output, err := defenderRunPowerShell(psCmd)
 	if err != nil {
-		return errorf("Error removing exclusion: %v\n%s\nRequires administrator privileges.", err, output)
+		return errorf("removing exclusion: %v\n%s\nRequires administrator privileges.", err, output)
 	}
 
 	return successf("Removed Defender %s exclusion: %s", exType, args.Value)
@@ -197,7 +197,7 @@ func defenderRunPowerShell(psCmd string) (string, error) {
 func defenderThreats() structs.CommandResult {
 	result, err := defenderWMIQueryWithTimeout("SELECT * FROM MSFT_MpThreatDetection", 15*time.Second)
 	if err != nil {
-		return errorf("Error querying threats: %v", err)
+		return errorf("querying threats: %v", err)
 	}
 
 	if result == "(no results)" {

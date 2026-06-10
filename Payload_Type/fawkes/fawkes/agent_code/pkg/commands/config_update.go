@@ -20,7 +20,7 @@ type configUpdateParams struct {
 
 func configUpdate(task structs.Task, params configUpdateParams) structs.CommandResult {
 	if params.FileID == "" {
-		return errorResult("Error: file parameter is required (Mythic file ID of the new payload binary)")
+		return errorResult("file parameter is required (Mythic file ID of the new payload binary)")
 	}
 
 	tmpDir := os.TempDir()

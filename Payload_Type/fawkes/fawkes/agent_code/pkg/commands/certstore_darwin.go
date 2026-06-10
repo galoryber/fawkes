@@ -187,7 +187,7 @@ func certstoreListDarwin(store, filter string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 
 	var sb strings.Builder

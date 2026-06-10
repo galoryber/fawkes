@@ -24,7 +24,7 @@ func adcsEnumerateCAs(conn *ldap.Conn, configDN string) structs.CommandResult {
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return errorf("Error querying CAs: %v", err)
+		return errorf("querying CAs: %v", err)
 	}
 
 	var sb strings.Builder
@@ -68,7 +68,7 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return errorf("Error querying templates: %v", err)
+		return errorf("querying templates: %v", err)
 	}
 
 	var sb strings.Builder
@@ -125,7 +125,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 	caResult, err := conn.Search(caReq)
 	if err != nil {
-		return errorf("Error querying CAs: %v", err)
+		return errorf("querying CAs: %v", err)
 	}
 
 	publishedTemplates := make(map[string][]string)
@@ -151,7 +151,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 	templateResult, err := conn.SearchWithPaging(templateReq, 100)
 	if err != nil {
-		return errorf("Error querying templates: %v", err)
+		return errorf("querying templates: %v", err)
 	}
 
 	var sb strings.Builder

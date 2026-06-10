@@ -19,10 +19,10 @@ import (
 // the attacker DLL instead of the legitimate one.
 func remoteSvcDLLSideload(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: -name is required for dll-sideload action")
+		return errorResult("-name is required for dll-sideload action")
 	}
 	if args.BinPath == "" {
-		return errorResult("Error: -binpath is required for dll-sideload action (path to attacker DLL on target)")
+		return errorResult("-binpath is required for dll-sideload action (path to attacker DLL on target)")
 	}
 
 	// Step 1: Verify service exists and get current config via SVCCTL

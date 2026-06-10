@@ -62,7 +62,7 @@ var gpoLinkRegex = regexp.MustCompile(`\[LDAP://[Cc][Nn]=\{([0-9A-Fa-f-]+)\}[^;]
 
 func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <list|links|find|all> -server <DC> -username <user@domain> -password <pass>")
+		return errorResult("parameters required. Use -action <list|links|find|all> -server <DC> -username <user@domain> -password <pass>")
 	}
 
 	args, parseErr := unmarshalParams[gpoArgs](task)
@@ -75,7 +75,7 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Action = "all"
 	}
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -89,18 +89,18 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 	// Connect
 	conn, err := gpoConnect(args)
 	if err != nil {
-		return errorf("Error connecting to %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind
 	if args.Username != "" && args.Password != "" {
 		if err := conn.Bind(args.Username, args.Password); err != nil {
-			return errorf("Error binding: %v", err)
+			return errorf("binding: %v", err)
 		}
 	} else {
 		if err := conn.UnauthenticatedBind(""); err != nil {
-			return errorf("Error anonymous bind: %v", err)
+			return errorf("anonymous bind: %v", err)
 		}
 	}
 
@@ -109,7 +109,7 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = gpoDetectBaseDN(conn)
 		if err != nil {
-			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
+			return errorf("detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 

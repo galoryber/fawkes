@@ -27,7 +27,7 @@ type psexecCheckResult struct {
 
 func psexecCheck(host string, timeout int) structs.CommandResult {
 	if host == "" {
-		return errorResult("Error: host is required for check action")
+		return errorResult("host is required for check action")
 	}
 
 	checkTimeout := 10 * time.Second
@@ -49,7 +49,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 		result.Recommendation = "Port 445 is not reachable. SMB/PSExec requires port 445."
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
@@ -80,7 +80,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 			}
 			data, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return errorf("Error: failed to marshal result: %v", err)
+				return errorf("failed to marshal result: %v", err)
 			}
 			return successResult(string(data))
 		}
@@ -102,7 +102,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 		result.Recommendation = "SCM connection timed out. Host may be firewalled or not a Windows machine."
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
@@ -121,7 +121,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }

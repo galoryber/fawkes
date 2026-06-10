@@ -35,7 +35,7 @@ func netEnumLocalUsers() structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return errorf("Error enumerating local users: NetUserEnum returned %d %s", ret, netApiErrorDesc(ret))
+			return errorf("enumerating local users: NetUserEnum returned %d %s", ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {
@@ -63,7 +63,7 @@ func netEnumLocalUsers() structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -73,7 +73,7 @@ func netEnumLocalUsers() structs.CommandResult {
 func netEnumLocalGroups(target string) structs.CommandResult {
 	serverPtr, err := neGetServerPtr(target)
 	if err != nil {
-		return errorf("Error: failed to resolve server pointer for local group enumeration: %v", err)
+		return errorf("failed to resolve server pointer for local group enumeration: %v", err)
 	}
 
 	var buf uintptr
@@ -98,7 +98,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return errorf("Error enumerating local groups: NetLocalGroupEnum returned %d %s", ret, netApiErrorDesc(ret))
+			return errorf("enumerating local groups: NetLocalGroupEnum returned %d %s", ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {
@@ -132,7 +132,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -141,7 +141,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 
 func netEnumGroupMembers(group, target string) structs.CommandResult {
 	if group == "" {
-		return errorResult("Error: group name is required for groupmembers/admins action. Use -group <name> or -target <name>.")
+		return errorResult("group name is required for groupmembers/admins action. Use -group <name> or -target <name>.")
 	}
 
 	// For groupmembers, target is the group name (backward compat) unless group param is set.
@@ -153,12 +153,12 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 
 	serverPtr, err := neGetServerPtr(server)
 	if err != nil {
-		return errorf("Error: failed to resolve server pointer for group member enumeration: %v", err)
+		return errorf("failed to resolve server pointer for group member enumeration: %v", err)
 	}
 
 	groupPtr, err := windows.UTF16PtrFromString(group)
 	if err != nil {
-		return errorf("Error: failed to convert group name %q to UTF-16: %v", group, err)
+		return errorf("failed to convert group name %q to UTF-16: %v", group, err)
 	}
 
 	var buf uintptr
@@ -203,7 +203,7 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -213,7 +213,7 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 func netEnumDomainUsers() structs.CommandResult {
 	dcName, err := getDomainControllerName()
 	if err != nil {
-		return errorf("Error: failed to find domain controller for user enumeration: %v", err)
+		return errorf("failed to find domain controller for user enumeration: %v", err)
 	}
 
 	serverPtr, _ := syscall.UTF16PtrFromString("\\\\" + dcName)
@@ -236,7 +236,7 @@ func netEnumDomainUsers() structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return errorf("Error enumerating domain users from %s: NetUserEnum returned %d %s (hint: use ldap-query -action users for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret))
+			return errorf("enumerating domain users from %s: NetUserEnum returned %d %s (hint: use ldap-query -action users for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {
@@ -264,7 +264,7 @@ func netEnumDomainUsers() structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -274,7 +274,7 @@ func netEnumDomainUsers() structs.CommandResult {
 func netEnumDomainGroups() structs.CommandResult {
 	dcName, err := getDomainControllerName()
 	if err != nil {
-		return errorf("Error: failed to find domain controller for group enumeration: %v", err)
+		return errorf("failed to find domain controller for group enumeration: %v", err)
 	}
 
 	serverPtr, _ := syscall.UTF16PtrFromString("\\\\" + dcName)
@@ -296,7 +296,7 @@ func netEnumDomainGroups() structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return errorf("Error enumerating domain groups from %s: NetGroupEnum returned %d %s (hint: use ldap-query -action groups for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret))
+			return errorf("enumerating domain groups from %s: NetGroupEnum returned %d %s (hint: use ldap-query -action groups for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {
@@ -324,7 +324,7 @@ func netEnumDomainGroups() structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -377,7 +377,7 @@ func netEnumDomainInfo() structs.CommandResult {
 			procNetApiBufferFree.Call(modalsInfo)
 		}
 	} else {
-		return errorf("Error: DsGetDcNameW failed (error %d — machine may not be domain-joined)", ret)
+		return errorf("DsGetDcNameW failed (error %d — machine may not be domain-joined)", ret)
 	}
 
 	var trustCount uint32
@@ -407,7 +407,7 @@ func netEnumDomainInfo() structs.CommandResult {
 
 	data, err := json.Marshal(out)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }

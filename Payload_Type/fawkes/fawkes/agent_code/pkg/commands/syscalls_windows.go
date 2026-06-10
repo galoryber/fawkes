@@ -114,7 +114,7 @@ func (c *SyscallsCommand) initSyscalls() structs.CommandResult {
 	}
 
 	if err := InitIndirectSyscalls(); err != nil {
-		return errorf("Error initializing indirect syscalls: %v", err)
+		return errorf("initializing indirect syscalls: %v", err)
 	}
 
 	entries := GetResolvedSyscalls()

@@ -48,11 +48,11 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Host == "" {
-		return errorResult("Error: host is required")
+		return errorResult("host is required")
 	}
 
 	if args.Command == "" {
-		return errorResult("Error: command is required")
+		return errorResult("command is required")
 	}
 
 	// Generate random service name if not provided

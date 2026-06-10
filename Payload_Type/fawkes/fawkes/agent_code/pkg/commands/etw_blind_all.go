@@ -31,7 +31,7 @@ import (
 // Requires Administrator/SYSTEM. Returns a per-session result table.
 func etwBlindAll(provider string) structs.CommandResult {
 	if provider == "" {
-		return errorResult("Error: provider is required for blind-all action (GUID or shorthand)\n" +
+		return errorResult("provider is required for blind-all action (GUID or shorthand)\n" +
 			"Shorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
 	}
 

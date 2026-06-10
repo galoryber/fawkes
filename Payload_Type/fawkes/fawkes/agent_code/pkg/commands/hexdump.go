@@ -31,7 +31,7 @@ const hexdumpMaxLength = 4096 // prevent accidental massive output
 
 func (c *HexdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	var args hexdumpArgs
@@ -40,7 +40,7 @@ func (c *HexdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	if args.Length == 0 {
@@ -52,13 +52,13 @@ func (c *HexdumpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	f, err := os.Open(args.Path)
 	if err != nil {
-		return errorf("Error opening file: %v", err)
+		return errorf("opening file: %v", err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return errorf("Error stating file: %v", err)
+		return errorf("stating file: %v", err)
 	}
 
 	fileSize := info.Size()
@@ -66,17 +66,17 @@ func (c *HexdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Seek to offset
 	if args.Offset > 0 {
 		if args.Offset >= fileSize {
-			return errorf("Error: offset %d exceeds file size %d", args.Offset, fileSize)
+			return errorf("offset %d exceeds file size %d", args.Offset, fileSize)
 		}
 		if _, err := f.Seek(args.Offset, io.SeekStart); err != nil {
-			return errorf("Error seeking: %v", err)
+			return errorf("seeking: %v", err)
 		}
 	}
 
 	buf := make([]byte, args.Length)
 	n, err := f.Read(buf)
 	if err != nil && err != io.EOF {
-		return errorf("Error reading file: %v", err)
+		return errorf("reading file: %v", err)
 	}
 	buf = buf[:n]
 

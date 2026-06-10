@@ -83,7 +83,7 @@ const fileTypeHeaderSize = 32 // Read first 32 bytes for identification
 
 func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required (path). Use -recursive true for directory mode.")
+		return errorResult("parameters required (path). Use -recursive true for directory mode.")
 	}
 
 	args, parseErr := unmarshalParams[fileTypeArgs](task)
@@ -92,7 +92,7 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	if args.MaxFiles <= 0 {
@@ -106,7 +106,7 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: failed to stat path %q: %v", args.Path, err)
+		return errorf("failed to stat path %q: %v", args.Path, err)
 	}
 
 	var sb strings.Builder

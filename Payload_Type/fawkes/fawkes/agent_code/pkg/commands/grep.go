@@ -39,7 +39,7 @@ type grepMatch struct {
 
 func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Usage: grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]")
+		return errorResult("parameters required. Usage: grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]")
 	}
 
 	args, parseErr := unmarshalParams[grepArgs](task)
@@ -48,7 +48,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Pattern == "" {
-		return errorResult("Error: pattern is required")
+		return errorResult("pattern is required")
 	}
 
 	// Set defaults
@@ -72,7 +72,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return errorf("Error: invalid regex pattern: %v", err)
+		return errorf("invalid regex pattern: %v", err)
 	}
 
 	// Parse extension filter
@@ -91,13 +91,13 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve start path
 	startPath, err := filepath.Abs(args.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	// Check if path is a single file
 	info, err := os.Stat(startPath)
 	if err != nil {
-		return errorf("Error: failed to stat search path %q: %v", startPath, err)
+		return errorf("failed to stat search path %q: %v", startPath, err)
 	}
 
 	var matches []grepMatch

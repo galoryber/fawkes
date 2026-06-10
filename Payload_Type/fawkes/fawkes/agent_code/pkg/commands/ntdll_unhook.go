@@ -88,7 +88,7 @@ type ntdllUnhookArgs struct {
 
 func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	args, parseErr := unmarshalParams[ntdllUnhookArgs](task)

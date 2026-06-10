@@ -19,7 +19,7 @@ func netEnumLoggedOn(target string) structs.CommandResult {
 	if target != "" {
 		serverName, err := windows.UTF16PtrFromString(`\\` + target)
 		if err != nil {
-			return errorf("Error: failed to encode target server name %q to UTF16: %v", target, err)
+			return errorf("failed to encode target server name %q to UTF16: %v", target, err)
 		}
 		serverPtr = uintptr(unsafe.Pointer(serverName))
 	}
@@ -62,7 +62,7 @@ func netEnumLoggedOn(target string) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -76,7 +76,7 @@ func netEnumSessions(target string) structs.CommandResult {
 		// Fall back to level 10 (less detail, no admin required)
 		output, err = neEnumSessions10(target)
 		if err != nil {
-			return errorf("Error enumerating sessions: %v", err)
+			return errorf("enumerating sessions: %v", err)
 		}
 	}
 	return successResult(output)

@@ -41,7 +41,7 @@ func (c *ExecuteMemoryCommand) Description() string {
 
 func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: binary_b64 parameter required (base64-encoded PE binary)")
+		return errorResult("binary_b64 parameter required (base64-encoded PE binary)")
 	}
 
 	args, parseErr := unmarshalParams[executeMemoryArgs](task)
@@ -50,20 +50,20 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	if args.BinaryB64 == "" {
-		return errorResult("Error: binary_b64 is empty")
+		return errorResult("binary_b64 is empty")
 	}
 
 	binaryData, err := base64.StdEncoding.DecodeString(args.BinaryB64)
 	if err != nil {
-		return errorf("Error decoding binary: %v", err)
+		return errorf("decoding binary: %v", err)
 	}
 
 	if len(binaryData) < 64 {
-		return errorResult("Error: binary data too small to be a valid PE")
+		return errorResult("binary data too small to be a valid PE")
 	}
 
 	if !isValidPE(binaryData) {
-		return errorResult("Error: not a valid PE binary (missing MZ/PE signature)")
+		return errorResult("not a valid PE binary (missing MZ/PE signature)")
 	}
 
 	if args.StackSpoof {
@@ -125,14 +125,14 @@ func executeMemoryNET(assemblyBytes []byte, arguments string) structs.CommandRes
 func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, prefix string) structs.CommandResult {
 	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return errorf("Error creating temp file: %v", err)
+		return errorf("creating temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.Write(binaryData); err != nil {
 		tmpFile.Close()
 		secureRemove(tmpPath)
-		return errorf("Error writing binary: %v", err)
+		return errorf("writing binary: %v", err)
 	}
 	tmpFile.Close()
 

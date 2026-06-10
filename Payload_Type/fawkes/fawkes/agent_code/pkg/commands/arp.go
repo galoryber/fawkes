@@ -46,7 +46,7 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := getArpTable()
 	if err != nil {
-		return errorf("Error reading ARP table: %v", err)
+		return errorf("reading ARP table: %v", err)
 	}
 
 	// Apply filters
@@ -73,7 +73,7 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshalling ARP table: %v", err)
+		return errorf("marshalling ARP table: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

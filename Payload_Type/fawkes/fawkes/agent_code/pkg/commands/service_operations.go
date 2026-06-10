@@ -20,24 +20,24 @@ import (
 
 func serviceStart(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to start a service")
+		return errorResult("name is required to start a service")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(args.Name)
 	if err != nil {
-		return errorf("Error opening service '%s': %v", args.Name, err)
+		return errorf("opening service '%s': %v", args.Name, err)
 	}
 	defer s.Close()
 
 	err = s.Start()
 	if err != nil {
-		return errorf("Error starting service '%s': %v", args.Name, err)
+		return errorf("starting service '%s': %v", args.Name, err)
 	}
 
 	return successf("Started service '%s'", args.Name)
@@ -45,24 +45,24 @@ func serviceStart(args serviceArgs) structs.CommandResult {
 
 func serviceStop(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to stop a service")
+		return errorResult("name is required to stop a service")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(args.Name)
 	if err != nil {
-		return errorf("Error opening service '%s': %v", args.Name, err)
+		return errorf("opening service '%s': %v", args.Name, err)
 	}
 	defer s.Close()
 
 	status, err := s.Control(svc.Stop)
 	if err != nil {
-		return errorf("Error stopping service '%s': %v", args.Name, err)
+		return errorf("stopping service '%s': %v", args.Name, err)
 	}
 
 	return successf("Stopped service '%s' (state: %s)", args.Name, describeServiceState(status.State))
@@ -70,31 +70,31 @@ func serviceStop(args serviceArgs) structs.CommandResult {
 
 func serviceRestart(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to restart a service")
+		return errorResult("name is required to restart a service")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(args.Name)
 	if err != nil {
-		return errorf("Error opening service '%s': %v", args.Name, err)
+		return errorf("opening service '%s': %v", args.Name, err)
 	}
 	defer s.Close()
 
 	_, err = s.Control(svc.Stop)
 	if err != nil {
-		return errorf("Error stopping service '%s': %v", args.Name, err)
+		return errorf("stopping service '%s': %v", args.Name, err)
 	}
 
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		status, qErr := s.Query()
 		if qErr != nil {
-			return errorf("Error querying service '%s': %v", args.Name, qErr)
+			return errorf("querying service '%s': %v", args.Name, qErr)
 		}
 		if status.State == svc.Stopped {
 			break
@@ -112,15 +112,15 @@ func serviceRestart(args serviceArgs) structs.CommandResult {
 
 func serviceCreate(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for service creation")
+		return errorResult("name is required for service creation")
 	}
 	if args.BinPath == "" {
-		return errorResult("Error: binpath is required for service creation")
+		return errorResult("binpath is required for service creation")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
@@ -142,7 +142,7 @@ func serviceCreate(args serviceArgs) structs.CommandResult {
 		DisplayName: displayName,
 	})
 	if err != nil {
-		return errorf("Error creating service '%s': %v", args.Name, err)
+		return errorf("creating service '%s': %v", args.Name, err)
 	}
 	defer s.Close()
 
@@ -164,24 +164,24 @@ func serviceCreate(args serviceArgs) structs.CommandResult {
 
 func serviceDelete(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for service deletion")
+		return errorResult("name is required for service deletion")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(args.Name)
 	if err != nil {
-		return errorf("Error opening service '%s': %v", args.Name, err)
+		return errorf("opening service '%s': %v", args.Name, err)
 	}
 	defer s.Close()
 
 	err = s.Delete()
 	if err != nil {
-		return errorf("Error deleting service '%s': %v", args.Name, err)
+		return errorf("deleting service '%s': %v", args.Name, err)
 	}
 
 	return successf("Deleted service '%s'", args.Name)
@@ -190,31 +190,31 @@ func serviceDelete(args serviceArgs) structs.CommandResult {
 // serviceSetStartType changes a service's start type (enable=auto, disable=disabled).
 func serviceSetStartType(args serviceArgs, startType uint32) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required")
+		return errorResult("name is required")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(args.Name)
 	if err != nil {
-		return errorf("Error opening service '%s': %v", args.Name, err)
+		return errorf("opening service '%s': %v", args.Name, err)
 	}
 	defer s.Close()
 
 	cfg, err := s.Config()
 	if err != nil {
-		return errorf("Error reading config for '%s': %v", args.Name, err)
+		return errorf("reading config for '%s': %v", args.Name, err)
 	}
 
 	oldType := startTypeToString(cfg.StartType)
 	cfg.StartType = startType
 
 	if err := s.UpdateConfig(cfg); err != nil {
-		return errorf("Error updating service '%s': %v", args.Name, err)
+		return errorf("updating service '%s': %v", args.Name, err)
 	}
 
 	newType := startTypeToString(startType)

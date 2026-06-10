@@ -32,7 +32,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 		args.PID = os.Getpid()
 	}
 	if args.PID < 0 {
-		return errorResult("Error: pid is required")
+		return errorResult("pid is required")
 	}
 
 	if args.MaxCount <= 0 {
@@ -41,7 +41,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	handles, err := enumerateLinuxFDs(args.PID, args.MaxCount)
 	if err != nil {
-		return errorf("Error enumerating file descriptors: %v", err)
+		return errorf("enumerating file descriptors: %v", err)
 	}
 
 	// Apply type filter and build summary

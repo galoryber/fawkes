@@ -37,7 +37,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	if args.Action == "wipe" {
@@ -53,7 +53,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Lstat(args.Path)
 	if err != nil {
-		return errorf("Error: failed to stat target path %s: %v", args.Path, err)
+		return errorf("failed to stat target path %s: %v", args.Path, err)
 	}
 
 	if info.IsDir() {
@@ -70,7 +70,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	size := info.Size()
 	if err := secureDeleteFile(args.Path, size, args.Passes); err != nil {
-		return errorf("Error securely deleting file: %v", err)
+		return errorf("securely deleting file: %v", err)
 	}
 
 	return successf("[+] Securely deleted: %s (%s, %d passes)", args.Path, formatFileSize(size), args.Passes)
@@ -81,7 +81,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 // This is intentionally destructive and requires confirmation.
 func secureWipe(args secureDeleteArgs) structs.CommandResult {
 	if args.Confirm != "DESTROY" {
-		return errorResult("Error: wipe requires -confirm DESTROY (safety gate for data destruction)")
+		return errorResult("wipe requires -confirm DESTROY (safety gate for data destruction)")
 	}
 
 	passes := args.Passes
@@ -91,7 +91,7 @@ func secureWipe(args secureDeleteArgs) structs.CommandResult {
 
 	info, err := os.Lstat(args.Path)
 	if err != nil {
-		return errorf("Error: failed to stat wipe target %s: %v", args.Path, err)
+		return errorf("failed to stat wipe target %s: %v", args.Path, err)
 	}
 
 	if info.IsDir() {
@@ -108,7 +108,7 @@ func secureWipe(args secureDeleteArgs) structs.CommandResult {
 
 	size := info.Size()
 	if err := secureWipeFile(args.Path, size, passes); err != nil {
-		return errorf("Error wiping file: %v", err)
+		return errorf("wiping file: %v", err)
 	}
 
 	return successf("[+] Wiped: %s (%s, %d passes, zeros+ones+random pattern)", args.Path, formatFileSize(size), passes)
@@ -265,16 +265,16 @@ func secureRemove(path string) {
 // Requires root/Administrator privileges. Safety gate: -confirm DESTROY.
 func secureWipeMBR(args secureDeleteArgs) structs.CommandResult {
 	if args.Confirm != "DESTROY" {
-		return errorResult("Error: wipe-mbr requires -confirm DESTROY (safety gate — this destroys the boot record)")
+		return errorResult("wipe-mbr requires -confirm DESTROY (safety gate — this destroys the boot record)")
 	}
 	if args.Path == "" {
-		return errorResult("Error: path to disk device is required (e.g., /dev/sda, \\\\.\\PhysicalDrive0)")
+		return errorResult("path to disk device is required (e.g., /dev/sda, \\\\.\\PhysicalDrive0)")
 	}
 
 	// Open the disk device for writing
 	f, err := os.OpenFile(args.Path, os.O_WRONLY, 0)
 	if err != nil {
-		return errorf("Error opening disk device %s: %v (requires root/Administrator)", args.Path, err)
+		return errorf("opening disk device %s: %v (requires root/Administrator)", args.Path, err)
 	}
 	defer f.Close()
 
@@ -285,11 +285,11 @@ func secureWipeMBR(args secureDeleteArgs) structs.CommandResult {
 
 	n, err := f.Write(zeros)
 	if err != nil {
-		return errorf("Error writing to %s: %v (wrote %d/%d bytes)", args.Path, err, n, wipeSize)
+		return errorf("writing to %s: %v (wrote %d/%d bytes)", args.Path, err, n, wipeSize)
 	}
 
 	if err := f.Sync(); err != nil {
-		return errorf("Error syncing %s: %v", args.Path, err)
+		return errorf("syncing %s: %v", args.Path, err)
 	}
 
 	return successf("[+] MBR/GPT wiped: %s (%d bytes zeroed — MBR + GPT primary header destroyed)", args.Path, n)

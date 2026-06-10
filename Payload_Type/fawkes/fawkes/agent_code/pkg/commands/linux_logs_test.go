@@ -67,7 +67,7 @@ func TestLinuxLogsReadMissingFile(t *testing.T) {
 func TestLinuxLogsReadNonexistent(t *testing.T) {
 	cmd := &LinuxLogsCommand{}
 	result := cmd.Execute(structs.Task{Params: `{"action":"read","file":"/tmp/nonexistent_log_test_12345"}`})
-	if result.Status != "error" || !strings.Contains(result.Output, "Error reading") {
+	if result.Status != "error" || !strings.Contains(result.Output, "reading") {
 		t.Errorf("expected error reading, got %s: %s", result.Status, result.Output)
 	}
 }

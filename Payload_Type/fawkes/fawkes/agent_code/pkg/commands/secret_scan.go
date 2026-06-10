@@ -128,7 +128,7 @@ func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Path == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return errorf("Error getting home directory: %v", err)
+			return errorf("getting home directory: %v", err)
 		}
 		args.Path = home
 	}

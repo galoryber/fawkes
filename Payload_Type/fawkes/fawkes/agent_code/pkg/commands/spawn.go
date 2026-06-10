@@ -113,7 +113,7 @@ func (c *SpawnCommand) Description() string {
 func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[SpawnParams](task)
@@ -129,7 +129,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	case "thread":
 		return spawnSuspendedThread(params.PID)
 	default:
-		return errorf("Error: Unknown mode '%s'. Use 'process' or 'thread'", params.Mode)
+		return errorf("Unknown mode '%s'. Use 'process' or 'thread'", params.Mode)
 	}
 }
 

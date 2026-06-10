@@ -86,7 +86,7 @@ func persistLaunchAgent(args persistArgs) structs.CommandResult {
 
 func persistLaunchAgentInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Name == "" {
 		args.Name = "com.apple.systempreferences.agent"
@@ -188,7 +188,7 @@ func persistShellProfile(args persistArgs) structs.CommandResult {
 
 func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute on login) is required")
+		return errorResult("path (command to execute on login) is required")
 	}
 
 	marker := "maintenance"

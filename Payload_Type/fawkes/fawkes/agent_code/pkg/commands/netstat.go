@@ -50,7 +50,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get all connections (TCP and UDP)
 	conns, err := psnet.Connections("all")
 	if err != nil {
-		return errorf("Error enumerating connections: %v", err)
+		return errorf("enumerating connections: %v", err)
 	}
 
 	// Apply filters
@@ -116,7 +116,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshalling connections: %v", err)
+		return errorf("marshalling connections: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

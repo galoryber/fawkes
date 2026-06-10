@@ -96,7 +96,7 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 			output, err := json.Marshal(result)
 			if err != nil {
-				return errorf("Error: failed to marshal result: %v", err)
+				return errorf("failed to marshal result: %v", err)
 			}
 			return successResult(string(output))
 		case <-time.After(1 * time.Second):

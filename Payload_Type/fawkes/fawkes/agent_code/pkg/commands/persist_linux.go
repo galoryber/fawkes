@@ -86,7 +86,7 @@ func persistCrontab(args persistArgs) structs.CommandResult {
 
 func persistCrontabInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Schedule == "" {
 		args.Schedule = "*/5 * * * *" // Default: every 5 minutes
@@ -185,7 +185,7 @@ func persistSystemd(args persistArgs) structs.CommandResult {
 
 func persistSystemdInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Name == "" {
 		args.Name = "system-maintenance"

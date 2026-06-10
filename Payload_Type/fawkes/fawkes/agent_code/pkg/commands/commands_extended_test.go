@@ -34,7 +34,7 @@ func TestFindCommand(t *testing.T) {
 		task := structs.Task{Params: "*.go"}
 		result := cmd.Execute(task)
 		// Plain text treated as pattern — should not return a parse error
-		if result.Status == "error" && strings.Contains(result.Output, "Error parsing") {
+		if result.Status == "error" && strings.Contains(result.Output, "parsing") {
 			t.Errorf("plain text should be treated as pattern, got parse error: %s", result.Output)
 		}
 	})

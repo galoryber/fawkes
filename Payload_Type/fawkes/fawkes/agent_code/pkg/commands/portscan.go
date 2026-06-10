@@ -36,7 +36,7 @@ type scanResult struct {
 
 func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: hosts parameter is required")
+		return errorResult("hosts parameter is required")
 	}
 
 	args, parseErr := unmarshalParams[portScanArgs](task)
@@ -45,7 +45,7 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Hosts == "" {
-		return errorResult("Error: hosts parameter is required")
+		return errorResult("hosts parameter is required")
 	}
 
 	if args.Ports == "" {
@@ -63,17 +63,17 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse hosts
 	hosts, err := parseHosts(args.Hosts)
 	if err != nil {
-		return errorf("Error parsing hosts: %v", err)
+		return errorf("parsing hosts: %v", err)
 	}
 
 	// Parse ports
 	ports, err := parsePorts(args.Ports)
 	if err != nil {
-		return errorf("Error parsing ports: %v", err)
+		return errorf("parsing ports: %v", err)
 	}
 
 	if len(hosts) == 0 || len(ports) == 0 {
-		return errorResult("Error: no valid hosts or ports to scan")
+		return errorResult("no valid hosts or ports to scan")
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Second

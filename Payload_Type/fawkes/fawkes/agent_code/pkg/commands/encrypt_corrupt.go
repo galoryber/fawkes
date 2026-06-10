@@ -28,18 +28,18 @@ const (
 // without destroying the entire file. Simulates data manipulation attacks.
 func corruptFile(args encryptArgs) structs.CommandResult {
 	if args.Confirm != "CORRUPT" {
-		return errorResult("Error: destructive operation requires -confirm CORRUPT safety parameter")
+		return errorResult("destructive operation requires -confirm CORRUPT safety parameter")
 	}
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: failed to stat file %q for corruption: %v", args.Path, err)
+		return errorf("failed to stat file %q for corruption: %v", args.Path, err)
 	}
 	if info.IsDir() {
-		return errorResult("Error: path must be a file, not directory")
+		return errorResult("path must be a file, not directory")
 	}
 	if info.Size() > corruptMaxFileSize {
-		return errorf("Error: file too large (%d bytes, max %d)", info.Size(), corruptMaxFileSize)
+		return errorf("file too large (%d bytes, max %d)", info.Size(), corruptMaxFileSize)
 	}
 
 	// Determine how much to corrupt: first 4KB or 10% of file, whichever is larger
@@ -55,17 +55,17 @@ func corruptFile(args encryptArgs) structs.CommandResult {
 	// Open file for writing at the beginning
 	f, err := os.OpenFile(args.Path, os.O_WRONLY, 0)
 	if err != nil {
-		return errorf("Error opening file: %v", err)
+		return errorf("opening file: %v", err)
 	}
 	defer f.Close()
 
 	// Overwrite with random data
 	randomData := make([]byte, corruptSize)
 	if _, err := rand.Read(randomData); err != nil {
-		return errorf("Error generating random data: %v", err)
+		return errorf("generating random data: %v", err)
 	}
 	if _, err := f.Write(randomData); err != nil {
-		return errorf("Error writing corrupt data: %v", err)
+		return errorf("writing corrupt data: %v", err)
 	}
 
 	result := corruptResult{
@@ -77,7 +77,7 @@ func corruptFile(args encryptArgs) structs.CommandResult {
 
 	output, err := json.Marshal(result)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(output))
 }
@@ -85,7 +85,7 @@ func corruptFile(args encryptArgs) structs.CommandResult {
 // corruptFiles performs batch targeted corruption on files matching a pattern.
 func corruptFiles(args encryptArgs) structs.CommandResult {
 	if args.Confirm != "CORRUPT" {
-		return errorResult("Error: destructive operation requires -confirm CORRUPT safety parameter")
+		return errorResult("destructive operation requires -confirm CORRUPT safety parameter")
 	}
 
 	maxFiles := args.MaxFiles
@@ -95,15 +95,15 @@ func corruptFiles(args encryptArgs) structs.CommandResult {
 
 	matches, err := filepath.Glob(args.Path)
 	if err != nil {
-		return errorf("Error: invalid glob pattern: %v", err)
+		return errorf("invalid glob pattern: %v", err)
 	}
 
 	if len(matches) == 0 {
-		return errorResult("Error: no files match pattern")
+		return errorResult("no files match pattern")
 	}
 
 	if len(matches) > maxFiles {
-		return errorf("Error: pattern matches %d files, max %d. Use -max_files to increase limit.", len(matches), maxFiles)
+		return errorf("pattern matches %d files, max %d. Use -max_files to increase limit.", len(matches), maxFiles)
 	}
 
 	var results []corruptResult
@@ -164,7 +164,7 @@ func corruptFiles(args encryptArgs) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 
 	var sb strings.Builder

@@ -156,14 +156,14 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 	return successResult(string(jsonBytes))
 }
 
 func amcacheSearch(params amcacheParams) structs.CommandResult {
 	if params.Name == "" {
-		return errorResult("Error: -name parameter required for search")
+		return errorResult("-name parameter required for search")
 	}
 
 	// macOS forensic artifacts are binary formats — search matches against artifact labels/paths
@@ -207,14 +207,14 @@ func amcacheSearch(params amcacheParams) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 	return successResult(string(jsonBytes))
 }
 
 func amcacheDelete(params amcacheParams) structs.CommandResult {
 	if params.Name == "" {
-		return errorResult("Error: -name parameter required for delete")
+		return errorResult("-name parameter required for delete")
 	}
 
 	// macOS artifacts are binary formats — delete removes entire matching artifact files

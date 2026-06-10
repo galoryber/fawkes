@@ -26,7 +26,7 @@ import (
 // Returns a new TGT with an extended lifetime.
 func ticketRenew(args ticketArgs) structs.CommandResult {
 	if args.Ticket == "" || args.Realm == "" || args.Server == "" {
-		return errorResult("Error: ticket (base64 kirbi), realm, and server (KDC) are required for renew")
+		return errorResult("ticket (base64 kirbi), realm, and server (KDC) are required for renew")
 	}
 
 	realm := strings.ToUpper(args.Realm)
@@ -37,12 +37,12 @@ func ticketRenew(args ticketArgs) structs.CommandResult {
 	// Parse the input kirbi ticket
 	kirbiBytes, err := base64.StdEncoding.DecodeString(args.Ticket)
 	if err != nil {
-		return errorf("Error decoding base64 ticket: %v", err)
+		return errorf("decoding base64 ticket: %v", err)
 	}
 
 	tgt, sessionKey, username, err := ticketParseKirbi(kirbiBytes)
 	if err != nil {
-		return errorf("Error parsing kirbi: %v", err)
+		return errorf("parsing kirbi: %v", err)
 	}
 	defer structs.ZeroBytes(sessionKey.KeyValue)
 
@@ -63,7 +63,7 @@ func ticketRenew(args ticketArgs) structs.CommandResult {
 		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
 	cfg, err := config.NewFromString(cfgStr)
 	if err != nil {
-		return errorf("Error creating Kerberos config: %v", err)
+		return errorf("creating Kerberos config: %v", err)
 	}
 
 	cname := tgt.SName // Use the TGT's service name for the request
@@ -79,7 +79,7 @@ func ticketRenew(args ticketArgs) structs.CommandResult {
 
 	tgsReq, err := messages.NewTGSReq(cname, realm, cfg, tgt, sessionKey, sname, true)
 	if err != nil {
-		return errorf("Error building TGS-REQ: %v", err)
+		return errorf("building TGS-REQ: %v", err)
 	}
 
 	// Set RENEW flag
@@ -90,7 +90,7 @@ func ticketRenew(args ticketArgs) structs.CommandResult {
 	// Send TGS-REQ
 	respBuf, err := ticketKDCSend(tgsReq.Marshal, kdcAddr)
 	if err != nil {
-		return errorf("Error sending renewal request: %v", err)
+		return errorf("sending renewal request: %v", err)
 	}
 
 	if len(respBuf) > 0 && respBuf[0] == 0x7e {
@@ -100,17 +100,17 @@ func ticketRenew(args ticketArgs) structs.CommandResult {
 	// Parse TGS-REP
 	var tgsRep messages.TGSRep
 	if err := tgsRep.Unmarshal(respBuf); err != nil {
-		return errorf("Error parsing TGS-REP: %v", err)
+		return errorf("parsing TGS-REP: %v", err)
 	}
 
 	// Decrypt TGS-REP EncPart using TGT session key
 	plainBytes, err := crypto.DecryptEncPart(tgsRep.EncPart, sessionKey, keyusage.TGS_REP_ENCPART_SESSION_KEY)
 	if err != nil {
-		return errorf("Error decrypting TGS-REP: %v", err)
+		return errorf("decrypting TGS-REP: %v", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
-		return errorf("Error parsing TGS-REP EncPart: %v", err)
+		return errorf("parsing TGS-REP EncPart: %v", err)
 	}
 
 	// Extract renewed ticket info
@@ -132,18 +132,18 @@ func ticketRenew(args ticketArgs) structs.CommandResult {
 	case "kirbi":
 		kirbiOut, err := ticketToKirbi(tgsRep.Ticket, newSessionKey, cNameStr, realm, newSName, newFlags, authTime, endTime, renewTill)
 		if err != nil {
-			return errorf("Error creating kirbi: %v", err)
+			return errorf("creating kirbi: %v", err)
 		}
 		output = ticketRenewFormatOutput(cNameStr, realm, args.Server, newSessionKey, authTime, endTime, renewTill, args.Format, base64.StdEncoding.EncodeToString(kirbiOut))
 	case "ccache":
 		ticketBytes, err := tgsRep.Ticket.Marshal()
 		if err != nil {
-			return errorf("Error marshaling ticket: %v", err)
+			return errorf("marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, newSessionKey, cNameStr, realm, newSName, newFlags, authTime, endTime, renewTill)
 		output = ticketRenewFormatOutput(cNameStr, realm, args.Server, newSessionKey, authTime, endTime, renewTill, args.Format, base64.StdEncoding.EncodeToString(ccacheBytes))
 	default:
-		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
+		return errorf("unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
 	return successResult(output)

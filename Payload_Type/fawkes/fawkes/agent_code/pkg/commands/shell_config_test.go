@@ -79,7 +79,7 @@ func TestShellConfigReadMissingFile(t *testing.T) {
 func TestShellConfigReadNonexistent(t *testing.T) {
 	cmd := &ShellConfigCommand{}
 	result := cmd.Execute(structs.Task{Params: `{"action":"read","file":"/tmp/nonexistent_shell_config_test"}`})
-	if result.Status != "error" || !strings.Contains(result.Output, "Error reading") {
+	if result.Status != "error" || !strings.Contains(result.Output, "reading") {
 		t.Errorf("expected error reading, got %s: %s", result.Status, result.Output)
 	}
 }

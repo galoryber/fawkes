@@ -23,7 +23,7 @@ type rmArgs struct {
 
 func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: No path provided")
+		return errorResult("No path provided")
 	}
 
 	var args rmArgs
@@ -40,12 +40,12 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errorf("Error: Path does not exist: %s", path)
+			return errorf("Path does not exist: %s", path)
 		}
 		if os.IsPermission(err) {
-			return errorf("Error: access denied to %s — check privileges", path)
+			return errorf("access denied to %s — check privileges", path)
 		}
-		return errorf("Error: cannot access %s", path)
+		return errorf("cannot access %s", path)
 	}
 
 	itemType := "file"
@@ -63,7 +63,7 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 			return successResult(output)
 		}
 		if err := secureDeleteFile(path, fileInfo.Size(), 3); err != nil {
-			return errorf("Error securely deleting file: %v", err)
+			return errorf("securely deleting file: %v", err)
 		}
 		return successf("[+] Securely deleted: %s (%s, 3 passes)", path, formatFileSize(fileInfo.Size()))
 	}
@@ -71,9 +71,9 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	err = os.RemoveAll(path)
 	if err != nil {
 		if os.IsPermission(err) {
-			return errorf("Error: access denied — cannot remove %s %s", itemType, path)
+			return errorf("access denied — cannot remove %s %s", itemType, path)
 		}
-		return errorf("Error: cannot remove %s %s (in use or read-only filesystem)", itemType, path)
+		return errorf("cannot remove %s %s (in use or read-only filesystem)", itemType, path)
 	}
 
 	return successf("Successfully removed %s: %s", itemType, path)

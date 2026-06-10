@@ -32,11 +32,11 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Password)
 
 	if args.Command == "" || args.Username == "" {
-		return errorResult("Error: -command and -username are required")
+		return errorResult("-command and -username are required")
 	}
 
 	if args.NetOnly {
-		return errorResult("Error: -netonly is Windows-only (LOGON_NETCREDENTIALS_ONLY). Not applicable on Unix.")
+		return errorResult("-netonly is Windows-only (LOGON_NETCREDENTIALS_ONLY). Not applicable on Unix.")
 	}
 
 	// Strip domain prefix if provided (not meaningful on Unix, but handle gracefully)
@@ -50,16 +50,16 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	// Look up the target user
 	targetUser, err := user.Lookup(username)
 	if err != nil {
-		return errorf("Error: user '%s' not found: %v", username, err)
+		return errorf("user '%s' not found: %v", username, err)
 	}
 
 	uid, err := strconv.ParseUint(targetUser.Uid, 10, 32)
 	if err != nil {
-		return errorf("Error: invalid UID for user '%s': %v", username, err)
+		return errorf("invalid UID for user '%s': %v", username, err)
 	}
 	gid, err := strconv.ParseUint(targetUser.Gid, 10, 32)
 	if err != nil {
-		return errorf("Error: invalid GID for user '%s': %v", username, err)
+		return errorf("invalid GID for user '%s': %v", username, err)
 	}
 
 	if os.Getuid() == 0 {
@@ -69,7 +69,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 		return runasSudo(args.Command, username, args.Password)
 	}
 
-	return errorResult("Error: not running as root and no password provided. Either run agent as root or provide -password for sudo.")
+	return errorResult("not running as root and no password provided. Either run agent as root or provide -password for sudo.")
 }
 
 // runasRoot spawns a process as the target user using setuid/setgid.

@@ -176,13 +176,13 @@ func kdMonitor(args kerbDelegArgs) structs.CommandResult {
 
 	handle, err := lsaConnect()
 	if err != nil {
-		return errorf("Error connecting to LSA (requires elevated privileges): %v", err)
+		return errorf("connecting to LSA (requires elevated privileges): %v", err)
 	}
 	defer lsaClose(handle)
 
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return errorf("Error looking up Kerberos package: %v", err)
+		return errorf("looking up Kerberos package: %v", err)
 	}
 
 	seen := make(map[string]bool)
@@ -192,7 +192,7 @@ func kdMonitor(args kerbDelegArgs) structs.CommandResult {
 	for {
 		luids, err := kdEnumerateLogonSessions()
 		if err != nil {
-			return errorf("Error enumerating logon sessions: %v", err)
+			return errorf("enumerating logon sessions: %v", err)
 		}
 
 		for _, luid := range luids {
@@ -261,7 +261,7 @@ func kdMonitor(args kerbDelegArgs) structs.CommandResult {
 
 	data, err := json.Marshal(result)
 	if err != nil {
-		return errorf("Error marshaling monitor result: %v", err)
+		return errorf("marshaling monitor result: %v", err)
 	}
 	return successResult(string(data))
 }

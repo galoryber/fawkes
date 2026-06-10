@@ -210,20 +210,20 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 	return successResult(string(jsonBytes))
 }
 
 func amcacheSearch(params amcacheParams) structs.CommandResult {
 	if params.Name == "" {
-		return errorResult("Error: -name parameter required for search")
+		return errorResult("-name parameter required for search")
 	}
 
 	recentPath := getRecentlyUsedPath()
 	doc, err := parseRecentlyUsed(recentPath)
 	if err != nil {
-		return errorf("Error reading recently-used.xbel: %v", err)
+		return errorf("reading recently-used.xbel: %v", err)
 	}
 
 	searchLower := strings.ToLower(params.Name)
@@ -246,20 +246,20 @@ func amcacheSearch(params amcacheParams) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 	return successResult(string(jsonBytes))
 }
 
 func amcacheDelete(params amcacheParams) structs.CommandResult {
 	if params.Name == "" {
-		return errorResult("Error: -name parameter required for delete")
+		return errorResult("-name parameter required for delete")
 	}
 
 	recentPath := getRecentlyUsedPath()
 	doc, err := parseRecentlyUsed(recentPath)
 	if err != nil {
-		return errorf("Error reading recently-used.xbel: %v", err)
+		return errorf("reading recently-used.xbel: %v", err)
 	}
 
 	searchLower := strings.ToLower(params.Name)
@@ -281,7 +281,7 @@ func amcacheDelete(params amcacheParams) structs.CommandResult {
 
 	doc.Bookmarks = keepBookmarks
 	if err := writeRecentlyUsed(recentPath, doc); err != nil {
-		return errorf("Error writing recently-used.xbel: %v", err)
+		return errorf("writing recently-used.xbel: %v", err)
 	}
 
 	return successf("Removed %d entries matching \"%s\" from recently-used.xbel (%d remaining)",

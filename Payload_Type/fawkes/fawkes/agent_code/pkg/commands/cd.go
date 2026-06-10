@@ -29,7 +29,7 @@ func (c *CdCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Check if parameters are provided
 	if task.Params == "" {
-		return errorResult("Error: No directory path specified")
+		return errorResult("No directory path specified")
 	}
 
 	// Try to parse as JSON first
@@ -43,12 +43,12 @@ func (c *CdCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Ensure we have a path
 	if args.Path == "" {
-		return errorResult("Error: No directory path specified")
+		return errorResult("No directory path specified")
 	}
 
 	// Change directory
 	if err := os.Chdir(args.Path); err != nil {
-		return errorf("Error changing directory: %v", err)
+		return errorf("changing directory: %v", err)
 	}
 
 	// Get the new current directory to confirm the change

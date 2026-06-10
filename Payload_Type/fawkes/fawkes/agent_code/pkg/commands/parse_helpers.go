@@ -41,7 +41,7 @@ func unmarshalParams[T any](task structs.Task) (T, *structs.CommandResult) {
 		return args, nil
 	}
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		result := errorf("Error parsing parameters: %v%s", err, paramHints[T]())
+		result := errorf("parsing parameters: %v%s", err, paramHints[T]())
 		return args, &result
 	}
 	return args, nil
@@ -51,11 +51,11 @@ func unmarshalParams[T any](task structs.Task) (T, *structs.CommandResult) {
 func requireParams[T any](task structs.Task) (T, *structs.CommandResult) {
 	var args T
 	if task.Params == "" {
-		result := errorf("Error: parameters required%s", paramHints[T]())
+		result := errorf("parameters required%s", paramHints[T]())
 		return args, &result
 	}
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		result := errorf("Error parsing parameters: %v%s", err, paramHints[T]())
+		result := errorf("parsing parameters: %v%s", err, paramHints[T]())
 		return args, &result
 	}
 	return args, nil

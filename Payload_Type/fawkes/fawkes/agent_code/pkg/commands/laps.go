@@ -38,7 +38,7 @@ type lapsV2Password struct {
 
 func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <DC> -username <user@domain> -password <pass> [-filter <computer>]")
+		return errorResult("parameters required. Use -server <DC> -username <user@domain> -password <pass> [-filter <computer>]")
 	}
 
 	args, parseErr := unmarshalParams[lapsArgs](task)
@@ -48,7 +48,7 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password)
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	// Reuse LDAP connection helpers from ldap_query.go
@@ -69,19 +69,19 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := ldapConnect(connArgs)
 	if err != nil {
-		return errorf("Error connecting to LDAP: %v", err)
+		return errorf("connecting to LDAP: %v", err)
 	}
 	defer conn.Close()
 
 	if err := ldapBind(conn, connArgs); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	baseDN := args.BaseDN
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return errorf("Error detecting base DN: %v", err)
+			return errorf("detecting base DN: %v", err)
 		}
 	}
 
@@ -109,7 +109,7 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(searchReq, 500)
 	if err != nil {
-		return errorf("Error searching LDAP: %v", err)
+		return errorf("searching LDAP: %v", err)
 	}
 
 	output, creds := formatLAPSResults(result, baseDN, args.Filter)

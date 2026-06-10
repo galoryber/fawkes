@@ -31,7 +31,7 @@ func (c *TCCCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
+			return errorf("parsing parameters: %v", err)
 		}
 	}
 

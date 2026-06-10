@@ -80,7 +80,7 @@ func screenshotRecordLoop(task structs.Task, capture captureFunc, params screens
 			// Log error but continue — transient failures shouldn't stop recording
 			if frameCount == 0 {
 				// First frame failed — likely a persistent issue
-				return errorf("Error capturing first frame: %v", err)
+				return errorf("capturing first frame: %v", err)
 			}
 			// Skip this frame, continue
 			time.Sleep(interval)
@@ -156,7 +156,7 @@ func screenshotRecordLoop(task structs.Task, capture captureFunc, params screens
 	}
 	output, err := json.Marshal(result)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(output))
 }

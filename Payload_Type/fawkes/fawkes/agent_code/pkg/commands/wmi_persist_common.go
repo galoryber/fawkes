@@ -68,7 +68,7 @@ func buildWQLTrigger(trigger string, intervalSec int, processName string) (strin
 // parseWmiPersistArgs handles common parameter parsing and validation
 func parseWmiPersistArgs(task structs.Task) (wmiPersistArgs, *structs.CommandResult) {
 	if task.Params == "" {
-		r := errorResult("Error: parameters required. Actions: install, remove, list")
+		r := errorResult("parameters required. Actions: install, remove, list")
 		return wmiPersistArgs{}, &r
 	}
 	return unmarshalParams[wmiPersistArgs](task)

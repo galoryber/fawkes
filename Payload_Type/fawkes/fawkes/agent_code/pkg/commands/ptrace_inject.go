@@ -13,7 +13,7 @@ import (
 
 func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: check, inject")
+		return errorResult("parameters required. Actions: check, inject")
 	}
 
 	args, parseErr := unmarshalParams[ptraceInjectArgs](task)
@@ -53,7 +53,7 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	shellcode, restore, timeout, err := ptraceValidateAndDecode(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("%v", err)
 	}
 
 	var sb strings.Builder

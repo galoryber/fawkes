@@ -43,7 +43,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Read /etc/shadow
 	shadowData, err := os.ReadFile("/etc/shadow")
 	if err != nil {
-		return errorf("Error reading /etc/shadow: %v (requires root)", err)
+		return errorf("reading /etc/shadow: %v (requires root)", err)
 	}
 	defer structs.ZeroBytes(shadowData)
 
@@ -100,7 +100,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	if strings.ToLower(args.Format) == "json" {
 		data, err := json.Marshal(entries)
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}

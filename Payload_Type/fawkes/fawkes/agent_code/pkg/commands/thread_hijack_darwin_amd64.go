@@ -20,5 +20,5 @@ type ThreadHijackParams struct {
 }
 
 func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
-	return errorResult("Error: thread hijack on macOS requires ARM64 (Apple Silicon). x86_64 support is not yet implemented.")
+	return errorResult("thread hijack on macOS requires ARM64 (Apple Silicon). x86_64 support is not yet implemented.")
 }

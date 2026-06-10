@@ -146,7 +146,7 @@ func getsystemCheck(currentIdentity string) structs.CommandResult {
 
 	output, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(output))
 }
@@ -300,7 +300,7 @@ func getsystemSudo(oldIdentity string) structs.CommandResult {
 		// Check for NOPASSWD rules
 		rules := checkSudoNopasswd()
 		if len(rules) == 0 {
-			return errorResult("Error: sudo requires a password and no NOPASSWD rules found. Use 'check' technique to enumerate other vectors.")
+			return errorResult("sudo requires a password and no NOPASSWD rules found. Use 'check' technique to enumerate other vectors.")
 		}
 		// Check if we have NOPASSWD: ALL
 		hasAll := false
@@ -311,7 +311,7 @@ func getsystemSudo(oldIdentity string) structs.CommandResult {
 			}
 		}
 		if !hasAll {
-			return errorf("Error: NOPASSWD rules found but not for ALL commands: %s", strings.Join(rules, "; "))
+			return errorf("NOPASSWD rules found but not for ALL commands: %s", strings.Join(rules, "; "))
 		}
 	}
 
@@ -329,7 +329,7 @@ func getsystemSudo(oldIdentity string) structs.CommandResult {
 	cmd := safeCmdContext(ctx, "sudo", "-n", "id")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error: sudo -n id failed: %v\n%s", err, string(output))
+		return errorf("sudo -n id failed: %v\n%s", err, string(output))
 	}
 
 	newIdentity := strings.TrimSpace(string(output))

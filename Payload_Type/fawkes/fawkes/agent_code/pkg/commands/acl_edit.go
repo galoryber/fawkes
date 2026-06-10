@@ -32,7 +32,7 @@ type aclEditArgs struct {
 func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 	allActions := "read, add, remove, grant-dcsync, grant-genericall, grant-writedacl, backup, restore"
 	if task.Params == "" {
-		return errorf("Error: parameters required. Use -action <%s> -server <DC> -target <object>", allActions)
+		return errorf("parameters required. Use -action <%s> -server <DC> -target <object>", allActions)
 	}
 
 	args, parseErr := unmarshalParams[aclEditArgs](task)
@@ -42,11 +42,11 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Target == "" && args.Action != "restore" {
-		return errorResult("Error: target parameter required")
+		return errorResult("target parameter required")
 	}
 
 	if args.Port <= 0 {
@@ -73,13 +73,13 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 		Username: args.Username, Password: args.Password,
 	})
 	if err != nil {
-		return errorf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind
 	if err := ldapBind(conn, ldapQueryArgs{Username: args.Username, Password: args.Password}); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	// Determine base DN
@@ -87,7 +87,7 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
+			return errorf("detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 

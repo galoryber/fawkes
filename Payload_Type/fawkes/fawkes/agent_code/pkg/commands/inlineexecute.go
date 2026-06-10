@@ -42,17 +42,17 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 
 	// Validate BOF data
 	if params.BOFB64 == "" {
-		return errorResult("Error: No BOF data provided")
+		return errorResult("No BOF data provided")
 	}
 
 	// Decode the base64-encoded BOF
 	bofBytes, err := base64.StdEncoding.DecodeString(params.BOFB64)
 	if err != nil {
-		return errorf("Error decoding BOF data: %v", err)
+		return errorf("decoding BOF data: %v", err)
 	}
 
 	if len(bofBytes) == 0 {
-		return errorResult("Error: BOF data is empty")
+		return errorResult("BOF data is empty")
 	}
 
 	// Pack the arguments using our custom PackArgs (fixes GC issues in goffloader)
@@ -60,7 +60,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	if len(params.Arguments) > 0 {
 		argBytes, err = PackArgs(params.Arguments)
 		if err != nil {
-			return errorf("Error packing BOF arguments: %v", err)
+			return errorf("packing BOF arguments: %v", err)
 		}
 	}
 

@@ -48,7 +48,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Host == "" || args.Username == "" {
-		return errorResult("Error: host and username are required")
+		return errorResult("host and username are required")
 	}
 
 	// Default action is exec
@@ -68,13 +68,13 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if action == "tunnel-stop" {
 		if args.TunnelID == "" {
-			return errorResult("Error: tunnel_id required for tunnel-stop")
+			return errorResult("tunnel_id required for tunnel-stop")
 		}
 		return sshTunnelStop(args.TunnelID)
 	}
 
 	if err := validateSSHActionParams(action, args); err != nil {
-		return errorf("Error: %v", err)
+		return errorf("%v", err)
 	}
 
 	// Set defaults for tunnel params
@@ -86,7 +86,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Password == "" && args.KeyPath == "" && args.KeyData == "" {
-		return errorResult("Error: at least one auth method required (password, key_path, or key_data)")
+		return errorResult("at least one auth method required (password, key_path, or key_data)")
 	}
 
 	if args.Port <= 0 {
@@ -119,7 +119,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	// Connect with context-aware dialer
 	client, err := sshDialContext(ctx, "tcp", addr, config)
 	if err != nil {
-		return errorf("Error connecting to %s: %v", addr, err)
+		return errorf("connecting to %s: %v", addr, err)
 	}
 
 	// Tunnel actions take ownership of the client (long-running background job)
@@ -142,7 +142,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create session for exec
 	session, err := client.NewSession()
 	if err != nil {
-		return errorf("Error creating SSH session on %s: %v", addr, err)
+		return errorf("creating SSH session on %s: %v", addr, err)
 	}
 	defer session.Close()
 
@@ -161,7 +161,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	case res := <-resultCh:
 		return formatSSHResult(args, addr, res.output, res.err)
 	case <-ctx.Done():
-		return errorf("Error: command execution on %s timed out after %ds", addr, args.Timeout)
+		return errorf("command execution on %s timed out after %ds", addr, args.Timeout)
 	}
 }
 
@@ -306,13 +306,13 @@ func sshPushFile(ctx context.Context, client *ssh.Client, args sshExecArgs, addr
 	// Read local file
 	data, err := os.ReadFile(args.Source)
 	if err != nil {
-		return errorf("Error reading local file %s: %v", args.Source, err)
+		return errorf("reading local file %s: %v", args.Source, err)
 	}
 	defer structs.ZeroBytes(data) // clear file content from memory
 
 	session, err := client.NewSession()
 	if err != nil {
-		return errorf("Error creating SSH session on %s: %v", addr, err)
+		return errorf("creating SSH session on %s: %v", addr, err)
 	}
 	defer session.Close()
 
@@ -337,7 +337,7 @@ func sshPushFile(ctx context.Context, client *ssh.Client, args sshExecArgs, addr
 	select {
 	case res := <-resultCh:
 		if res.err != nil {
-			return errorf("Error writing to %s:%s: %v\n%s", addr, args.Destination, res.err, string(res.output))
+			return errorf("writing to %s:%s: %v\n%s", addr, args.Destination, res.err, string(res.output))
 		}
 
 		authMethod := "password"
@@ -352,7 +352,7 @@ func sshPushFile(ctx context.Context, client *ssh.Client, args sshExecArgs, addr
 			args.Username, addr, args.Destination, authMethod,
 			strings.TrimSpace(string(res.output)))
 	case <-ctx.Done():
-		return errorf("Error: file transfer to %s timed out after %ds", addr, args.Timeout)
+		return errorf("file transfer to %s timed out after %ds", addr, args.Timeout)
 	}
 }
 

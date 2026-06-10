@@ -43,7 +43,7 @@ func sshTunnelLocal(client *ssh.Client, args sshExecArgs, sshAddr string) struct
 
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
-		return errorf("Error listening on %s: %v", localAddr, err)
+		return errorf("listening on %s: %v", localAddr, err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -126,7 +126,7 @@ func sshTunnelRemote(client *ssh.Client, args sshExecArgs, sshAddr string) struc
 	// Request remote listener via SSH
 	listener, err := client.Listen("tcp", remoteAddr)
 	if err != nil {
-		return errorf("Error requesting remote listener on %s via %s: %v", remoteAddr, sshAddr, err)
+		return errorf("requesting remote listener on %s via %s: %v", remoteAddr, sshAddr, err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -202,7 +202,7 @@ func sshTunnelDynamic(client *ssh.Client, args sshExecArgs, sshAddr string) stru
 
 	listener, err := net.Listen("tcp", localAddr)
 	if err != nil {
-		return errorf("Error listening on %s: %v", localAddr, err)
+		return errorf("listening on %s: %v", localAddr, err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

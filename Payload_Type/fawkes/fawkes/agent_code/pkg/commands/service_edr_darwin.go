@@ -41,7 +41,7 @@ func serviceEdrEnumDarwin() structs.CommandResult {
 // serviceEdrKillDarwin attempts to unload detected EDR/AV services via launchctl.
 func serviceEdrKillDarwin(args serviceArgs) structs.CommandResult {
 	if strings.ToUpper(args.Confirm) != "EDR-KILL" {
-		return errorResult("Error: EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to unload security services.")
+		return errorResult("EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to unload security services.")
 	}
 
 	candidates := edrMatchesForPlatform("darwin")

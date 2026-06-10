@@ -511,7 +511,7 @@ func TestTicketPKINIT_InvalidPEM(t *testing.T) {
 	if result.Status != "error" {
 		t.Fatalf("expected error, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error loading certificate/key") {
+	if !strings.Contains(result.Output, "loading certificate/key") {
 		t.Fatalf("expected cert/key error, got %q", result.Output)
 	}
 }
@@ -528,7 +528,7 @@ func TestTicketPKINIT_InvalidPFX(t *testing.T) {
 	if result.Status != "error" {
 		t.Fatalf("expected error, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error loading PFX") {
+	if !strings.Contains(result.Output, "loading PFX") {
 		t.Fatalf("expected PFX error, got %q", result.Output)
 	}
 }
@@ -544,7 +544,7 @@ func TestTicketPKINIT_PFXTakesPrecedence(t *testing.T) {
 		PFX:         testLegacyPFXNoPass,
 	}
 	result := ticketPKINIT(args)
-	if result.Status == "error" && strings.Contains(result.Output, "Error loading certificate/key") {
+	if result.Status == "error" && strings.Contains(result.Output, "loading certificate/key") {
 		t.Fatal("PFX should take precedence over PEM — got PEM parsing error instead of PFX/KDC error")
 	}
 }

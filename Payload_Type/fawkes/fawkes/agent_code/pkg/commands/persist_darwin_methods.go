@@ -26,7 +26,7 @@ func persistSSHKey(args persistArgs) structs.CommandResult {
 
 func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (SSH public key string) is required")
+		return errorResult("path (SSH public key string) is required")
 	}
 
 	marker := "maintenance"
@@ -108,7 +108,7 @@ func persistCrontab(args persistArgs) structs.CommandResult {
 
 func persistCrontabInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Schedule == "" {
 		args.Schedule = "*/5 * * * *"

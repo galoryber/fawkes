@@ -42,7 +42,7 @@ func TestServiceExecuteInvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error parsing") {
+	if !strings.Contains(result.Output, "parsing") {
 		t.Error("expected parsing error in output")
 	}
 }
@@ -338,7 +338,7 @@ func TestServiceQueryAppendsSuffix(t *testing.T) {
 		return
 	}
 	// Should still report not found, not a suffix error
-	if !strings.Contains(result.Output, "not found") && !strings.Contains(result.Output, "Error querying") {
+	if !strings.Contains(result.Output, "not found") && !strings.Contains(result.Output, "querying") {
 		t.Errorf("unexpected error output: %s", result.Output)
 	}
 }

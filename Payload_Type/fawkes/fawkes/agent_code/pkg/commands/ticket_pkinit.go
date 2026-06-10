@@ -150,10 +150,10 @@ type checksumASN1 struct {
 
 func ticketPKINIT(args ticketArgs) structs.CommandResult {
 	if args.Realm == "" || args.Server == "" {
-		return errorResult("Error: realm and server (KDC) are required for pkinit")
+		return errorResult("realm and server (KDC) are required for pkinit")
 	}
 	if args.Username == "" {
-		return errorResult("Error: username is required (SAN/UPN from certificate or explicit)")
+		return errorResult("username is required (SAN/UPN from certificate or explicit)")
 	}
 
 	realm := strings.ToUpper(args.Realm)
@@ -178,7 +178,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 
 	asReqBytes, err := asReq.Marshal()
 	if err != nil {
-		return errorf("Error marshaling AS-REQ: %v", err)
+		return errorf("marshaling AS-REQ: %v", err)
 	}
 
 	respBuf, err := ticketKDCSendRaw(asReqBytes, kdcAddr)
@@ -199,7 +199,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 
 	var asRep messages.ASRep
 	if err := asRep.Unmarshal(respBuf); err != nil {
-		return errorf("Error parsing AS-REP: %v", err)
+		return errorf("parsing AS-REP: %v", err)
 	}
 
 	sessionKey, err := pkinitDeriveSessionKey(asRep, dhPriv, clientDHNonce, ck)
@@ -209,11 +209,11 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 
 	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)
 	if err != nil {
-		return errorf("Error decrypting AS-REP: %v", err)
+		return errorf("decrypting AS-REP: %v", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
-		return errorf("Error parsing decrypted AS-REP: %v", err)
+		return errorf("parsing decrypted AS-REP: %v", err)
 	}
 
 	return pkinitFormatTicket(args, realm, ck, asRep, decPart)
@@ -390,18 +390,18 @@ func pkinitFormatTicket(args ticketArgs, realm string, ck *pkinitCertKey, asRep 
 	case "kirbi":
 		kirbiBytes, err := ticketToKirbi(asRep.Ticket, realSessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
 		if err != nil {
-			return errorf("Error creating kirbi: %v", err)
+			return errorf("creating kirbi: %v", err)
 		}
 		return successResult(pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "kirbi", base64.StdEncoding.EncodeToString(kirbiBytes)))
 	case "ccache":
 		ticketBytes, err := asRep.Ticket.Marshal()
 		if err != nil {
-			return errorf("Error marshaling ticket: %v", err)
+			return errorf("marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, realSessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
 		return successResult(pkinitFormatOutput(args.Username, realm, ck.Cert, realSessionKey, authTime, endTime, "ccache", base64.StdEncoding.EncodeToString(ccacheBytes)))
 	default:
-		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
+		return errorf("unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 }
 

@@ -58,7 +58,7 @@ func schtaskUnixListCommon(filter string, platformEntries []schtaskListEntry) st
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -256,7 +256,7 @@ func deleteCronEntry(args schtaskArgs) structs.CommandResult {
 	}
 	existing, err := execCmdTimeout("crontab", cronArgs...)
 	if err != nil {
-		return errorf("Error reading crontab: %v", err)
+		return errorf("reading crontab: %v", err)
 	}
 
 	var kept []string
@@ -285,7 +285,7 @@ func deleteCronEntry(args schtaskArgs) structs.CommandResult {
 	cmd.Stdin = strings.NewReader(newCrontab)
 	out, cmdErr := cmd.CombinedOutput()
 	if cmdErr != nil {
-		return errorf("Error updating crontab: %v\n%s", cmdErr, string(out))
+		return errorf("updating crontab: %v\n%s", cmdErr, string(out))
 	}
 
 	return successf("Deleted %d cron entry/entries matching '%s'", removed, args.Name)
@@ -325,7 +325,7 @@ func schtaskCreateCron(args schtaskArgs) structs.CommandResult {
 	cmd.Stdin = strings.NewReader(newCrontab)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error installing crontab: %v\n%s", err, string(out))
+		return errorf("installing crontab: %v\n%s", err, string(out))
 	}
 
 	return successf("Created cron job:\n  Schedule: %s\n  Command:  %s", schedule, command)
@@ -333,7 +333,7 @@ func schtaskCreateCron(args schtaskArgs) structs.CommandResult {
 
 func schtaskCreateAt(args schtaskArgs) structs.CommandResult {
 	if args.Time == "" {
-		return errorResult("Error: time is required for at job creation (HH:MM format)")
+		return errorResult("time is required for at job creation (HH:MM format)")
 	}
 
 	command := args.Program
@@ -346,7 +346,7 @@ func schtaskCreateAt(args schtaskArgs) structs.CommandResult {
 	cmd.Stdin = strings.NewReader(command + "\n")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error creating at job: %v\n%s", err, string(out))
+		return errorf("creating at job: %v\n%s", err, string(out))
 	}
 
 	return successf("Created at job for %s:\n  Command: %s\n%s", args.Time, command, strings.TrimSpace(string(out)))
@@ -356,7 +356,7 @@ func queryAtJob(name string) structs.CommandResult {
 	jobID := strings.TrimPrefix(name, "at-job-")
 	out, err := execCmdTimeout("at", "-c", jobID)
 	if err != nil {
-		return errorf("Error querying at job '%s': %v", jobID, err)
+		return errorf("querying at job '%s': %v", jobID, err)
 	}
 	return successf("At Job %s:\n%s", jobID, string(out))
 }

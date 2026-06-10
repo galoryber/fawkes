@@ -38,7 +38,7 @@ const maxCatBytes = 5 * 1024 * 1024
 // Execute executes the cat command
 func (c *CatCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: No file path specified")
+		return errorResult("No file path specified")
 	}
 
 	args := catParams{}
@@ -48,7 +48,7 @@ func (c *CatCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: No file path specified")
+		return errorResult("No file path specified")
 	}
 
 	// Determine max output size
@@ -70,32 +70,32 @@ func catReadFull(path string, maxBytes int) structs.CommandResult {
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errorf("Error: file not found: %s", path)
+			return errorf("file not found: %s", path)
 		}
 		if os.IsPermission(err) {
-			return errorf("Error: access denied to %s — check privileges", path)
+			return errorf("access denied to %s — check privileges", path)
 		}
-		return errorf("Error: cannot access %s: %v", path, err)
+		return errorf("cannot access %s: %v", path, err)
 	}
 
 	if info.IsDir() {
-		return errorf("Error: %s is a directory", path)
+		return errorf("%s is a directory", path)
 	}
 
 	size := info.Size()
 
 	// Size protection: don't read files larger than maxBytes
 	if size > int64(maxBytes) {
-		return errorf("Error: file is %s (limit: %s). Use 'tail' for large files, or 'cat -max %d' to override.",
+		return errorf("file is %s (limit: %s). Use 'tail' for large files, or 'cat -max %d' to override.",
 			formatFileSize(size), formatFileSize(int64(maxBytes)), (size/1024)+1)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsPermission(err) {
-			return errorf("Error: access denied reading %s — check privileges", path)
+			return errorf("access denied reading %s — check privileges", path)
 		}
-		return errorf("Error: cannot read %s", path)
+		return errorf("cannot read %s", path)
 	}
 
 	result := successResult(string(content))
@@ -108,18 +108,18 @@ func catReadLines(args catParams, maxBytes int) structs.CommandResult {
 	f, err := os.Open(args.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errorf("Error: file not found: %s", args.Path)
+			return errorf("file not found: %s", args.Path)
 		}
 		if os.IsPermission(err) {
-			return errorf("Error: access denied to %s — check privileges", args.Path)
+			return errorf("access denied to %s — check privileges", args.Path)
 		}
-		return errorf("Error: cannot open %s", args.Path)
+		return errorf("cannot open %s", args.Path)
 	}
 	defer f.Close()
 
 	info, _ := f.Stat()
 	if info != nil && info.IsDir() {
-		return errorf("Error: %s is a directory", args.Path)
+		return errorf("%s is a directory", args.Path)
 	}
 
 	scanner := bufio.NewScanner(f)
@@ -160,7 +160,7 @@ func catReadLines(args catParams, maxBytes int) structs.CommandResult {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return errorf("Error reading file: %v", err)
+		return errorf("reading file: %v", err)
 	}
 
 	// Add header for range/numbered output

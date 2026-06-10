@@ -15,10 +15,10 @@ import (
 
 func netUserAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for add action")
+		return errorResult("username is required for add action")
 	}
 	if args.Password == "" {
-		return errorResult("Error: password is required for add action")
+		return errorResult("password is required for add action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -46,7 +46,7 @@ func netUserAdd(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return errorf("Error creating user '%s': NetUserAdd returned %d %s (parm_err=%d)", args.Username, ret, netApiErrorDesc(ret), parmErr)
+		return errorf("creating user '%s': NetUserAdd returned %d %s (parm_err=%d)", args.Username, ret, netApiErrorDesc(ret), parmErr)
 	}
 
 	return successf("Successfully created user '%s'", args.Username)
@@ -54,7 +54,7 @@ func netUserAdd(args netUserArgs) structs.CommandResult {
 
 func netUserDelete(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for delete action")
+		return errorResult("username is required for delete action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -65,7 +65,7 @@ func netUserDelete(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return errorf("Error deleting user '%s': NetUserDel returned %d %s", args.Username, ret, netApiErrorDesc(ret))
+		return errorf("deleting user '%s': NetUserDel returned %d %s", args.Username, ret, netApiErrorDesc(ret))
 	}
 
 	return successf("Successfully deleted user '%s'", args.Username)
@@ -73,7 +73,7 @@ func netUserDelete(args netUserArgs) structs.CommandResult {
 
 func netUserInfo(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for info action")
+		return errorResult("username is required for info action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -87,7 +87,7 @@ func netUserInfo(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return errorf("Error getting info for '%s': NetUserGetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret))
+		return errorf("getting info for '%s': NetUserGetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret))
 	}
 	defer procNetApiBufferFreeNU.Call(buf)
 
@@ -181,10 +181,10 @@ func netUserInfo(args netUserArgs) structs.CommandResult {
 
 func netUserPassword(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for password action")
+		return errorResult("username is required for password action")
 	}
 	if args.Password == "" {
-		return errorResult("Error: password is required for password action")
+		return errorResult("password is required for password action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -203,7 +203,7 @@ func netUserPassword(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return errorf("Error setting password for '%s': NetUserSetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret))
+		return errorf("setting password for '%s': NetUserSetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret))
 	}
 
 	return successf("Successfully changed password for '%s'", args.Username)
@@ -211,10 +211,10 @@ func netUserPassword(args netUserArgs) structs.CommandResult {
 
 func netUserGroupAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for group-add action")
+		return errorResult("username is required for group-add action")
 	}
 	if args.Group == "" {
-		return errorResult("Error: group is required for group-add action")
+		return errorResult("group is required for group-add action")
 	}
 
 	groupPtr, _ := syscall.UTF16PtrFromString(args.Group)
@@ -233,7 +233,7 @@ func netUserGroupAdd(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return errorf("Error adding '%s' to group '%s': NetLocalGroupAddMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret))
+		return errorf("adding '%s' to group '%s': NetLocalGroupAddMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret))
 	}
 
 	return successf("Successfully added '%s' to local group '%s'", args.Username, args.Group)
@@ -241,10 +241,10 @@ func netUserGroupAdd(args netUserArgs) structs.CommandResult {
 
 func netUserGroupRemove(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for group-remove action")
+		return errorResult("username is required for group-remove action")
 	}
 	if args.Group == "" {
-		return errorResult("Error: group is required for group-remove action")
+		return errorResult("group is required for group-remove action")
 	}
 
 	groupPtr, _ := syscall.UTF16PtrFromString(args.Group)
@@ -263,7 +263,7 @@ func netUserGroupRemove(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return errorf("Error removing '%s' from group '%s': NetLocalGroupDelMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret))
+		return errorf("removing '%s' from group '%s': NetLocalGroupDelMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret))
 	}
 
 	return successf("Successfully removed '%s' from local group '%s'", args.Username, args.Group)

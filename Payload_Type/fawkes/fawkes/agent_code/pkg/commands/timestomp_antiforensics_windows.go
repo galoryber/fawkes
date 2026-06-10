@@ -12,12 +12,12 @@ import (
 )
 
 func timestompUsnDisable(target string) structs.CommandResult {
-	return errorResult("Error: use the 'usn-jrnl -action delete' command instead for USN journal management")
+	return errorResult("use the 'usn-jrnl -action delete' command instead for USN journal management")
 }
 
 func timestompCleanPrefetch(target string) structs.CommandResult {
 	if target == "" {
-		return errorResult("Error: specify the executable name to clean prefetch for (e.g., fawkes)")
+		return errorResult("specify the executable name to clean prefetch for (e.g., fawkes)")
 	}
 
 	prefetchDir := `C:\Windows\Prefetch`

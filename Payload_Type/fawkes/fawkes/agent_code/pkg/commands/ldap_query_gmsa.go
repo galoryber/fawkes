@@ -76,7 +76,7 @@ func ldapQueryGMSA(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	result, err := conn.SearchWithPaging(searchRequest, 100)
 	if err != nil {
-		return errorf("Error searching for gMSA accounts: %v", err)
+		return errorf("searching for gMSA accounts: %v", err)
 	}
 
 	if len(result.Entries) == 0 {
@@ -131,7 +131,7 @@ func ldapQueryGMSA(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	outputJSON, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(outputJSON))
 }

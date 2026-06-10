@@ -85,7 +85,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 
 	// Validate required args
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.DomainSID == "" {
-		return errorResult("Error: realm, username, key, and domain_sid are required for forging")
+		return errorResult("realm, username, key, and domain_sid are required for forging")
 	}
 
 	// Defaults
@@ -110,7 +110,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	// Decode the key
 	keyBytes, err := hex.DecodeString(args.Key)
 	if err != nil {
-		return errorf("Error decoding key hex: %v", err)
+		return errorf("decoding key hex: %v", err)
 	}
 	defer structs.ZeroBytes(keyBytes)
 
@@ -128,7 +128,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	// Generate random session key (same etype as service key)
 	sessionKey, err := ticketGenerateSessionKey(etypeID)
 	if err != nil {
-		return errorf("Error generating session key: %v", err)
+		return errorf("generating session key: %v", err)
 	}
 	defer structs.ZeroBytes(sessionKey.KeyValue)
 
@@ -184,13 +184,13 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	// Marshal and encrypt
 	etpBytes, err := asn1.Marshal(etp)
 	if err != nil {
-		return errorf("Error marshaling EncTicketPart: %v", err)
+		return errorf("marshaling EncTicketPart: %v", err)
 	}
 	etpBytes = asn1tools.AddASNAppTag(etpBytes, asnAppTag.EncTicketPart)
 
 	encData, err := crypto.GetEncryptedData(etpBytes, serviceKey, keyusage.KDC_REP_TICKET, args.KVNO)
 	if err != nil {
-		return errorf("Error encrypting ticket: %v", err)
+		return errorf("encrypting ticket: %v", err)
 	}
 
 	ticket := messages.Ticket{
@@ -206,18 +206,18 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	case "kirbi":
 		kirbiBytes, err := ticketToKirbi(ticket, sessionKey, args.Username, realm, sname, ticketFlags, now, endTime, renewTill)
 		if err != nil {
-			return errorf("Error creating kirbi: %v", err)
+			return errorf("creating kirbi: %v", err)
 		}
 		output = ticketFormatOutput(args, realm, isGolden, sessionKey, now, endTime, base64.StdEncoding.EncodeToString(kirbiBytes))
 	case "ccache":
 		ticketBytes, err := ticket.Marshal()
 		if err != nil {
-			return errorf("Error marshaling ticket: %v", err)
+			return errorf("marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, sessionKey, args.Username, realm, sname, ticketFlags, now, endTime, renewTill)
 		output = ticketFormatOutput(args, realm, isGolden, sessionKey, now, endTime, base64.StdEncoding.EncodeToString(ccacheBytes))
 	default:
-		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
+		return errorf("unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
 	return successResult(output)

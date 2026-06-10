@@ -26,13 +26,13 @@ func (c *LnCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Target == "" || args.Link == "" {
-		return errorResult("Error: both -target and -link are required")
+		return errorResult("both -target and -link are required")
 	}
 
 	// Verify target exists (unless symbolic — symlinks can point to non-existent paths)
 	if !args.Symbolic {
 		if _, err := os.Stat(args.Target); err != nil {
-			return errorf("Error: target does not exist: %v", err)
+			return errorf("target does not exist: %v", err)
 		}
 	}
 
@@ -42,7 +42,7 @@ func (c *LnCommand) Execute(task structs.Task) structs.CommandResult {
 			if info.Mode()&os.ModeSymlink != 0 || info.Mode().IsRegular() {
 				os.Remove(args.Link)
 			} else {
-				return errorf("Error: %s exists and is not a regular file or symlink", args.Link)
+				return errorf("%s exists and is not a regular file or symlink", args.Link)
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func (c *LnCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err != nil {
-		return errorf("Error creating %s link: %v", linkType, err)
+		return errorf("creating %s link: %v", linkType, err)
 	}
 
 	return successf("[+] Created %s link: %s -> %s", linkType, args.Link, args.Target)

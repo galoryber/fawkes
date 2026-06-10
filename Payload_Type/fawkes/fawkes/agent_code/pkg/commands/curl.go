@@ -65,7 +65,7 @@ const (
 
 func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -url <URL> [-method GET] [-headers '{\"key\":\"val\"}'] [-body <data>]")
+		return errorResult("parameters required. Use -url <URL> [-method GET] [-headers '{\"key\":\"val\"}'] [-body <data>]")
 	}
 
 	var args curlArgs
@@ -74,7 +74,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.URL == "" {
-		return errorResult("Error: url is required")
+		return errorResult("url is required")
 	}
 
 	if args.Method == "" {
@@ -119,7 +119,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 
 	req, err := http.NewRequestWithContext(ctx, args.Method, args.URL, bodyReader)
 	if err != nil {
-		return errorf("Error creating request: %v", err)
+		return errorf("creating request: %v", err)
 	}
 
 	// Set content type for file uploads (before custom headers so they can override)
@@ -141,14 +141,14 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
-		return errorf("Error executing request: %v", err)
+		return errorf("executing request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	// Read response body with size limit
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(args.MaxSize)+1))
 	if err != nil {
-		return errorf("Error reading response: %v", err)
+		return errorf("reading response: %v", err)
 	}
 
 	truncated := len(body) > args.MaxSize

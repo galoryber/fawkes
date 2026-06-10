@@ -25,10 +25,10 @@ func persistPeriodic(args persistArgs) structs.CommandResult {
 
 func persistPeriodicInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to persist) is required")
+		return errorResult("path (command to persist) is required")
 	}
 	if os.Getuid() != 0 {
-		return errorResult("Error: periodic scripts require root (install to /etc/periodic/)")
+		return errorResult("periodic scripts require root (install to /etc/periodic/)")
 	}
 
 	name := "500.maintenance"
@@ -67,7 +67,7 @@ func persistPeriodicInstall(args persistArgs) structs.CommandResult {
 
 func persistPeriodicRemove(args persistArgs) structs.CommandResult {
 	if os.Getuid() != 0 {
-		return errorResult("Error: periodic scripts require root")
+		return errorResult("periodic scripts require root")
 	}
 
 	name := "500.maintenance"
@@ -111,7 +111,7 @@ func persistFolderAction(args persistArgs) structs.CommandResult {
 
 func persistFolderActionInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute when files are added) is required")
+		return errorResult("path (command to execute when files are added) is required")
 	}
 
 	name := "FolderSync"

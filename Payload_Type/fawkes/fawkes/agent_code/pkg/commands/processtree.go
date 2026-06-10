@@ -27,7 +27,7 @@ func (c *ProcessTreeCommand) Execute(task structs.Task) structs.CommandResult {
 
 	processes, err := getProcessList(PsArgs{})
 	if err != nil {
-		return errorf("Error listing processes: %v", err)
+		return errorf("listing processes: %v", err)
 	}
 
 	// Build parent->children map
@@ -116,7 +116,7 @@ func (c *ProcessTreeCommand) Execute(task structs.Task) structs.CommandResult {
 		if _, ok := byPID[args.PID]; ok {
 			printTree(args.PID, "", true, 0)
 		} else {
-			return errorf("Error: PID %d not found", args.PID)
+			return errorf("PID %d not found", args.PID)
 		}
 	} else {
 		// Find root processes (PPID not in our process list, or PPID=0)

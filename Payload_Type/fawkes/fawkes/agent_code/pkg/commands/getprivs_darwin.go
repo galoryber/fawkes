@@ -129,7 +129,7 @@ func listDarwinPrivileges() structs.CommandResult {
 
 	data, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(data))

@@ -21,7 +21,7 @@ func (c *IfconfigCommand) Description() string {
 func (c *IfconfigCommand) Execute(task structs.Task) structs.CommandResult {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return errorf("Error: cannot enumerate network interfaces (insufficient privileges or restricted environment)")
+		return errorf("cannot enumerate network interfaces (insufficient privileges or restricted environment)")
 	}
 
 	var lines []string

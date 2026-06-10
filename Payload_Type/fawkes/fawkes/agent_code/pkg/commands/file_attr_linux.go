@@ -48,14 +48,14 @@ var linuxAttrDefs = []linuxAttrDef{
 func getFileAttrs(path string) structs.CommandResult {
 	f, err := os.Open(path)
 	if err != nil {
-		return errorf("Error opening file: %v", err)
+		return errorf("opening file: %v", err)
 	}
 	defer f.Close()
 
 	var flags int
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), fsIocGetFlags, uintptr(unsafe.Pointer(&flags)))
 	if errno != 0 {
-		return errorf("Error getting attributes (filesystem may not support it): %v", errno)
+		return errorf("getting attributes (filesystem may not support it): %v", errno)
 	}
 
 	var sb strings.Builder
@@ -80,12 +80,12 @@ func getFileAttrs(path string) structs.CommandResult {
 func setFileAttrs(path string, attrsStr string) structs.CommandResult {
 	add, remove, err := parseAttrChanges(attrsStr)
 	if err != nil {
-		return errorf("Error: failed to parse attribute changes %q: %v", attrsStr, err)
+		return errorf("failed to parse attribute changes %q: %v", attrsStr, err)
 	}
 
 	f, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
-		return errorf("Error opening file: %v", err)
+		return errorf("opening file: %v", err)
 	}
 	defer f.Close()
 
@@ -93,7 +93,7 @@ func setFileAttrs(path string, attrsStr string) structs.CommandResult {
 	var flags int
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), fsIocGetFlags, uintptr(unsafe.Pointer(&flags)))
 	if errno != 0 {
-		return errorf("Error getting current attributes: %v", errno)
+		return errorf("getting current attributes: %v", errno)
 	}
 
 	// Apply changes
@@ -119,7 +119,7 @@ func setFileAttrs(path string, attrsStr string) structs.CommandResult {
 
 	_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), fsIocSetFlags, uintptr(unsafe.Pointer(&flags)))
 	if errno != 0 {
-		return errorf("Error setting attributes (may require root): %v", errno)
+		return errorf("setting attributes (may require root): %v", errno)
 	}
 
 	return successf("[+] Updated attributes on %s: %s", path, strings.Join(changed, ", "))

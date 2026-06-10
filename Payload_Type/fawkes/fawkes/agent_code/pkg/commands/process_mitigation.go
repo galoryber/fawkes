@@ -280,7 +280,7 @@ func queryMitigationPolicies(pid int) structs.CommandResult {
 
 func setMitigationPolicy(policy string) structs.CommandResult {
 	if policy == "" {
-		return errorResult("Error: policy parameter required. Options: cig, acg, child-block, dep, cfg, ext-disable, image-restrict, font-disable")
+		return errorResult("policy parameter required. Options: cig, acg, child-block, dep, cfg, ext-disable, image-restrict, font-disable")
 	}
 
 	switch strings.ToLower(policy) {

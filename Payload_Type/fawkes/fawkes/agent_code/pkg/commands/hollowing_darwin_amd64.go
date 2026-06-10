@@ -14,5 +14,5 @@ func (c *HollowingCommand) Description() string {
 }
 
 func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
-	return errorResult("Error: process hollowing on macOS requires ARM64 (Apple Silicon). x86_64 support is not yet implemented.")
+	return errorResult("process hollowing on macOS requires ARM64 (Apple Silicon). x86_64 support is not yet implemented.")
 }

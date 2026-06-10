@@ -78,7 +78,7 @@ func serviceListLinux() structs.CommandResult {
 	// Use systemctl to list all service units with their status
 	out, err := execCmdTimeoutOutput("systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
 	if err != nil {
-		return errorf("Error listing services: %v\n%s", err, string(out))
+		return errorf("listing services: %v\n%s", err, string(out))
 	}
 
 	var entries []linuxServiceEntry
@@ -141,7 +141,7 @@ func serviceListLinux() structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshalling services: %v", err)
+		return errorf("marshalling services: %v", err)
 	}
 
 	return successResult(string(jsonBytes))
@@ -149,7 +149,7 @@ func serviceListLinux() structs.CommandResult {
 
 func serviceQueryLinux(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for query action")
+		return errorResult("name is required for query action")
 	}
 
 	unitName := args.Name
@@ -160,7 +160,7 @@ func serviceQueryLinux(args serviceArgs) structs.CommandResult {
 	// Use systemctl show for machine-readable properties
 	out, err := execCmdTimeoutOutput("systemctl", "show", unitName, "--no-pager")
 	if err != nil {
-		return errorf("Error querying service %s: %v\n%s", args.Name, err, string(out))
+		return errorf("querying service %s: %v\n%s", args.Name, err, string(out))
 	}
 
 	// Parse key=value pairs, extract the most relevant ones
@@ -257,10 +257,10 @@ func buildSystemdUnit(args serviceArgs) string {
 
 func serviceCreateLinux(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for service creation")
+		return errorResult("name is required for service creation")
 	}
 	if args.BinPath == "" {
-		return errorResult("Error: binpath is required for service creation")
+		return errorResult("binpath is required for service creation")
 	}
 
 	unitName := args.Name
@@ -272,21 +272,21 @@ func serviceCreateLinux(args serviceArgs) structs.CommandResult {
 
 	// Check if service already exists
 	if _, err := os.Stat(unitPath); err == nil {
-		return errorf("Error: service unit file already exists at %s. Delete first or choose a different name.", unitPath)
+		return errorf("service unit file already exists at %s. Delete first or choose a different name.", unitPath)
 	}
 
 	unitContent := buildSystemdUnit(args)
 
 	// Write the unit file
 	if err := os.WriteFile(unitPath, []byte(unitContent), 0644); err != nil {
-		return errorf("Error writing unit file %s: %v", unitPath, err)
+		return errorf("writing unit file %s: %v", unitPath, err)
 	}
 
 	// Reload systemd to pick up the new unit
 	if out, err := execCmdTimeout("systemctl", "daemon-reload"); err != nil {
 		// Clean up the file if daemon-reload fails
 		os.Remove(unitPath)
-		return errorf("Error reloading systemd: %v\n%s", err, string(out))
+		return errorf("reloading systemd: %v\n%s", err, string(out))
 	}
 
 	var sb strings.Builder
@@ -315,7 +315,7 @@ func serviceCreateLinux(args serviceArgs) structs.CommandResult {
 
 func serviceDeleteLinux(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for service deletion")
+		return errorResult("name is required for service deletion")
 	}
 
 	unitName := args.Name
@@ -327,7 +327,7 @@ func serviceDeleteLinux(args serviceArgs) structs.CommandResult {
 
 	// Check if the unit file exists
 	if _, err := os.Stat(unitPath); os.IsNotExist(err) {
-		return errorf("Error: unit file not found at %s", unitPath)
+		return errorf("unit file not found at %s", unitPath)
 	}
 
 	var sb strings.Builder
@@ -348,7 +348,7 @@ func serviceDeleteLinux(args serviceArgs) structs.CommandResult {
 
 	// Remove the unit file
 	if err := os.Remove(unitPath); err != nil {
-		return errorf("Error removing unit file %s: %v", unitPath, err)
+		return errorf("removing unit file %s: %v", unitPath, err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Removed %s\n", unitPath))
 
@@ -363,7 +363,7 @@ func serviceDeleteLinux(args serviceArgs) structs.CommandResult {
 
 func serviceCtl(args serviceArgs, action string) structs.CommandResult {
 	if args.Name == "" {
-		return errorf("Error: name is required for %s action", action)
+		return errorf("name is required for %s action", action)
 	}
 
 	unitName := args.Name
@@ -373,7 +373,7 @@ func serviceCtl(args serviceArgs, action string) structs.CommandResult {
 
 	out, err := execCmdTimeout("systemctl", action, unitName)
 	if err != nil {
-		return errorf("Error: systemctl %s %s failed: %v\n%s", action, args.Name, err, string(out))
+		return errorf("systemctl %s %s failed: %v\n%s", action, args.Name, err, string(out))
 	}
 
 	return successf("Successfully executed: systemctl %s %s\n%s", action, args.Name, strings.TrimSpace(string(out)))

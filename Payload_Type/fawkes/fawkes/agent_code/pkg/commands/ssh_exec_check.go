@@ -25,7 +25,7 @@ type sshCheckResult struct {
 
 func sshExecCheck(args sshExecArgs) structs.CommandResult {
 	if args.Host == "" {
-		return errorResult("Error: host is required for check action")
+		return errorResult("host is required for check action")
 	}
 
 	port := args.Port
@@ -55,7 +55,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.Recommendation = fmt.Sprintf("Port %d is not reachable. SSH requires port %d.", port, port)
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
@@ -80,7 +80,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.Recommendation = "Port reachable. Provide credentials to test authentication."
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return errorf("Error: failed to marshal result: %v", err)
+			return errorf("failed to marshal result: %v", err)
 		}
 		return successResult(string(data))
 	}
@@ -99,7 +99,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 			result.ShellAccess = "skipped"
 			data, marshalErr := json.MarshalIndent(result, "", "  ")
 			if marshalErr != nil {
-				return errorf("Error: failed to marshal result: %v", marshalErr)
+				return errorf("failed to marshal result: %v", marshalErr)
 			}
 			return successResult(string(data))
 		}
@@ -164,7 +164,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(data))
 }

@@ -69,17 +69,17 @@ func (c *TsconCommand) Execute(task structs.Task) structs.CommandResult {
 		return tsconList()
 	case "hijack":
 		if args.SessionID < 0 {
-			return errorResult("Error: -session_id required for hijack")
+			return errorResult("-session_id required for hijack")
 		}
 		return tsconHijack(args.SessionID)
 	case "disconnect":
 		if args.SessionID < 0 {
-			return errorResult("Error: -session_id required for disconnect")
+			return errorResult("-session_id required for disconnect")
 		}
 		return tsconDisconnect(args.SessionID)
 	case "logoff":
 		if args.SessionID < 0 {
-			return errorResult("Error: -session_id required for logoff")
+			return errorResult("-session_id required for logoff")
 		}
 		return tsconLogoff(args.SessionID)
 	default:
@@ -99,7 +99,7 @@ func tsconList() structs.CommandResult {
 		uintptr(unsafe.Pointer(&count)),
 	)
 	if ret == 0 {
-		return errorf("Error: WTSEnumerateSessions failed: %v", err)
+		return errorf("WTSEnumerateSessions failed: %v", err)
 	}
 	defer tsconFreeMem.Call(sessionInfo)
 
@@ -158,7 +158,7 @@ func tsconHijack(targetSession int) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return errorf("Error: WTSConnectSession failed (requires SYSTEM): %v", err)
+		return errorf("WTSConnectSession failed (requires SYSTEM): %v", err)
 	}
 
 	username := tsconQueryInfo(uint32(targetSession), tsconInfoUserName)
@@ -176,7 +176,7 @@ func tsconDisconnect(sessionID int) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return errorf("Error: WTSDisconnectSession failed: %v", err)
+		return errorf("WTSDisconnectSession failed: %v", err)
 	}
 
 	return successf("[+] Disconnected session %d", sessionID)
@@ -193,7 +193,7 @@ func tsconLogoff(sessionID int) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return errorf("Error: WTSLogoffSession failed: %v", err)
+		return errorf("WTSLogoffSession failed: %v", err)
 	}
 
 	msg := fmt.Sprintf("[+] Logged off session %d", sessionID)

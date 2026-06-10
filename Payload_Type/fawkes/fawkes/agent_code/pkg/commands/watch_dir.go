@@ -51,7 +51,7 @@ func (c *WatchDirCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required")
+		return errorResult("'path' is required")
 	}
 	if params.Interval <= 0 {
 		params.Interval = 5
@@ -62,15 +62,15 @@ func (c *WatchDirCommand) Execute(task structs.Task) structs.CommandResult {
 
 	targetPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	info, err := os.Stat(targetPath)
 	if err != nil {
-		return errorf("Error accessing path: %v", err)
+		return errorf("accessing path: %v", err)
 	}
 	if !info.IsDir() {
-		return errorf("Error: %s is not a directory", targetPath)
+		return errorf("%s is not a directory", targetPath)
 	}
 
 	// Take initial snapshot

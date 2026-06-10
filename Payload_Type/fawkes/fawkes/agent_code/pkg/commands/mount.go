@@ -32,7 +32,7 @@ func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := getMountInfo()
 	if err != nil {
-		return errorf("Error: failed to retrieve mount information: %v", err)
+		return errorf("failed to retrieve mount information: %v", err)
 	}
 
 	// Apply filters

@@ -17,7 +17,7 @@ func (c *FirewallCommand) Description() string { return "Manage Linux firewall (
 
 func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, add, delete, status")
+		return errorResult("parameters required. Actions: list, add, delete, status")
 	}
 
 	args, parseErr := unmarshalParams[firewallArgs](task)
@@ -215,7 +215,7 @@ func linuxFirewallAdd(args firewallArgs) structs.CommandResult {
 func linuxIptablesAdd(args firewallArgs) structs.CommandResult {
 	cmdArgs, err := buildIptablesArgs(args, "-A")
 	if err != nil {
-		return errorf("Error: failed to build iptables add rule arguments: %v", err)
+		return errorf("failed to build iptables add rule arguments: %v", err)
 	}
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)
@@ -265,7 +265,7 @@ func linuxFirewallDelete(args firewallArgs) structs.CommandResult {
 func linuxIptablesDelete(args firewallArgs) structs.CommandResult {
 	cmdArgs, err := buildIptablesArgs(args, "-D")
 	if err != nil {
-		return errorf("Error: failed to build iptables delete rule arguments: %v", err)
+		return errorf("failed to build iptables delete rule arguments: %v", err)
 	}
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)
@@ -280,7 +280,7 @@ func linuxIptablesDelete(args firewallArgs) structs.CommandResult {
 func linuxNftDelete(args firewallArgs) structs.CommandResult {
 	// nft delete requires a handle number. If we have a name/comment, search for it.
 	if args.Name == "" {
-		return errorResult("Error: 'name' (rule comment) is required to identify the rule to delete on nftables")
+		return errorResult("'name' (rule comment) is required to identify the rule to delete on nftables")
 	}
 
 	chain := "input"

@@ -16,15 +16,15 @@ import (
 
 func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for task creation")
+		return errorResult("name is required for task creation")
 	}
 	if args.Program == "" {
-		return errorResult("Error: program is required for task creation")
+		return errorResult("program is required for task creation")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return errorf("Error connecting to Task Scheduler: %v", err)
+		return errorf("connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
@@ -53,7 +53,7 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	regResult, err := oleutil.CallMethod(conn.folder, "RegisterTask",
 		args.Name, taskXML, TASK_CREATE_OR_UPDATE, userParam, nil, logonType, nil)
 	if err != nil {
-		return errorf("Error registering task '%s': %v", args.Name, err)
+		return errorf("registering task '%s': %v", args.Name, err)
 	}
 	regResult.Clear()
 
@@ -84,18 +84,18 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 
 func schtaskQuery(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for task query")
+		return errorResult("name is required for task query")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return errorf("Error connecting to Task Scheduler: %v", err)
+		return errorf("connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return errorf("Error querying task '%s': %v", args.Name, err)
+		return errorf("querying task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
@@ -164,18 +164,18 @@ func schtaskQuery(args schtaskArgs) structs.CommandResult {
 
 func schtaskDelete(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for task deletion")
+		return errorResult("name is required for task deletion")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return errorf("Error connecting to Task Scheduler: %v", err)
+		return errorf("connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	_, err = oleutil.CallMethod(conn.folder, "DeleteTask", args.Name, 0)
 	if err != nil {
-		return errorf("Error deleting task '%s': %v", args.Name, err)
+		return errorf("deleting task '%s': %v", args.Name, err)
 	}
 
 	return successf("Deleted scheduled task '%s'", args.Name)
@@ -183,25 +183,25 @@ func schtaskDelete(args schtaskArgs) structs.CommandResult {
 
 func schtaskRun(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to run a task")
+		return errorResult("name is required to run a task")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return errorf("Error connecting to Task Scheduler: %v", err)
+		return errorf("connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return errorf("Error finding task '%s': %v", args.Name, err)
+		return errorf("finding task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
 
 	runResult, err := oleutil.CallMethod(taskDisp, "Run", nil)
 	if err != nil {
-		return errorf("Error running task '%s': %v", args.Name, err)
+		return errorf("running task '%s': %v", args.Name, err)
 	}
 	runResult.Clear()
 
@@ -220,7 +220,7 @@ func schtaskList(filter string) structs.CommandResult {
 	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
 	out, err := execCmdTimeout("schtasks.exe", "/query", "/fo", "CSV", "/nh")
 	if err != nil {
-		return errorf("Error running schtasks.exe: %v\n%s", err, string(out))
+		return errorf("running schtasks.exe: %v\n%s", err, string(out))
 	}
 
 	filterLower := strings.ToLower(filter)
@@ -259,7 +259,7 @@ func schtaskList(filter string) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(data))
@@ -268,25 +268,25 @@ func schtaskList(filter string) structs.CommandResult {
 // schtaskSetEnabled enables or disables a scheduled task via IRegisteredTask.put_Enabled.
 func schtaskSetEnabled(args schtaskArgs, enabled bool) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required")
+		return errorResult("name is required")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return errorf("Error connecting to Task Scheduler: %v", err)
+		return errorf("connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return errorf("Error finding task '%s': %v", args.Name, err)
+		return errorf("finding task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
 
 	_, err = oleutil.PutProperty(taskDisp, "Enabled", enabled)
 	if err != nil {
-		return errorf("Error setting enabled state for '%s': %v", args.Name, err)
+		return errorf("setting enabled state for '%s': %v", args.Name, err)
 	}
 
 	action := "Enabled"
@@ -299,25 +299,25 @@ func schtaskSetEnabled(args schtaskArgs, enabled bool) structs.CommandResult {
 // schtaskStop stops a currently-running scheduled task instance.
 func schtaskStop(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to stop a task")
+		return errorResult("name is required to stop a task")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return errorf("Error connecting to Task Scheduler: %v", err)
+		return errorf("connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return errorf("Error finding task '%s': %v", args.Name, err)
+		return errorf("finding task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
 
 	_, err = oleutil.CallMethod(taskDisp, "Stop", 0)
 	if err != nil {
-		return errorf("Error stopping task '%s': %v", args.Name, err)
+		return errorf("stopping task '%s': %v", args.Name, err)
 	}
 
 	return successf("Stopped running instance of '%s'", args.Name)

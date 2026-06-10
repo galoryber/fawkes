@@ -54,13 +54,13 @@ var oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
 // and returns the issued certificate.
 func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 	if args.CAName == "" {
-		return errorResult("Error: ca_name required (e.g., 'CA-NAME' from 'adcs -action cas')")
+		return errorResult("ca_name required (e.g., 'CA-NAME' from 'adcs -action cas')")
 	}
 	if args.Template == "" {
-		return errorResult("Error: template required (e.g., 'User', 'Machine', or a vulnerable template name)")
+		return errorResult("template required (e.g., 'User', 'Machine', or a vulnerable template name)")
 	}
 	if args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: username and password (or hash) required for DCOM authentication")
+		return errorResult("username and password (or hash) required for DCOM authentication")
 	}
 	if args.Timeout <= 0 {
 		args.Timeout = 30
@@ -79,13 +79,13 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 	// Generate RSA key pair
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return errorf("Error generating RSA key: %v", err)
+		return errorf("generating RSA key: %v", err)
 	}
 
 	// Build CSR
 	csrDER, err := adcsBuildCSR(key, args.Subject, args.AltName)
 	if err != nil {
-		return errorf("Error building CSR: %v", err)
+		return errorf("building CSR: %v", err)
 	}
 
 	// Build NTLM credential
@@ -102,7 +102,7 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 	// Submit CSR via DCOM
 	resp, err := adcsSubmitCSR(ctx, args.Server, args.CAName, args.Template, args.AltName, csrDER, cred)
 	if err != nil {
-		return errorf("Error submitting certificate request: %v", err)
+		return errorf("submitting certificate request: %v", err)
 	}
 
 	// Build output

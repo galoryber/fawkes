@@ -31,7 +31,7 @@ type xattrArgs struct {
 
 func (c *XattrCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <list|get|set|delete> -path <file> [-name <attr>] [-value <data>] [-hex true]")
+		return errorResult("parameters required. Use -action <list|get|set|delete> -path <file> [-name <attr>] [-value <data>] [-hex true]")
 	}
 
 	var args xattrArgs
@@ -54,12 +54,12 @@ func (c *XattrCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	// Verify file exists
 	if _, err := os.Stat(args.Path); err != nil {
-		return errorf("Error: failed to stat path %q: %v", args.Path, err)
+		return errorf("failed to stat path %q: %v", args.Path, err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -72,14 +72,14 @@ func (c *XattrCommand) Execute(task structs.Task) structs.CommandResult {
 	case "delete":
 		return xattrDelete(args)
 	default:
-		return errorf("Error: unknown action '%s'. Use list, get, set, or delete.", args.Action)
+		return errorf("unknown action '%s'. Use list, get, set, or delete.", args.Action)
 	}
 }
 
 func xattrList(args xattrArgs) structs.CommandResult {
 	attrs, err := listXattr(args.Path)
 	if err != nil {
-		return errorf("Error listing xattrs: %v", err)
+		return errorf("listing xattrs: %v", err)
 	}
 
 	if len(attrs) == 0 {
@@ -102,12 +102,12 @@ func xattrList(args xattrArgs) structs.CommandResult {
 
 func xattrGet(args xattrArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for get action")
+		return errorResult("name is required for get action")
 	}
 
 	data, err := getXattr(args.Path, args.Name)
 	if err != nil {
-		return errorf("Error reading xattr '%s': %v", args.Name, err)
+		return errorf("reading xattr '%s': %v", args.Name, err)
 	}
 
 	var sb strings.Builder
@@ -123,7 +123,7 @@ func xattrGet(args xattrArgs) structs.CommandResult {
 
 func xattrSet(args xattrArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for set action")
+		return errorResult("name is required for set action")
 	}
 
 	var data []byte
@@ -131,14 +131,14 @@ func xattrSet(args xattrArgs) structs.CommandResult {
 		var err error
 		data, err = hex.DecodeString(args.Value)
 		if err != nil {
-			return errorf("Error decoding hex value: %v", err)
+			return errorf("decoding hex value: %v", err)
 		}
 	} else {
 		data = []byte(args.Value)
 	}
 
 	if err := setXattr(args.Path, args.Name, data); err != nil {
-		return errorf("Error setting xattr '%s': %v", args.Name, err)
+		return errorf("setting xattr '%s': %v", args.Name, err)
 	}
 
 	return successf("[+] Set xattr '%s' on %s (%d bytes)", args.Name, args.Path, len(data))
@@ -146,11 +146,11 @@ func xattrSet(args xattrArgs) structs.CommandResult {
 
 func xattrDelete(args xattrArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for delete action")
+		return errorResult("name is required for delete action")
 	}
 
 	if err := removeXattr(args.Path, args.Name); err != nil {
-		return errorf("Error removing xattr '%s': %v", args.Name, err)
+		return errorf("removing xattr '%s': %v", args.Name, err)
 	}
 
 	return successf("[+] Removed xattr '%s' from %s", args.Name, args.Path)

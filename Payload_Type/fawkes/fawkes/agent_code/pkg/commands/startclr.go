@@ -57,7 +57,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	// Default patch values for backward compat

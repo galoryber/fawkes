@@ -275,7 +275,7 @@ func procInfoMounts() structs.CommandResult {
 
 	data, err := os.ReadFile("/proc/self/mounts")
 	if err != nil {
-		return errorf("Error reading /proc/self/mounts: %v", err)
+		return errorf("reading /proc/self/mounts: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 
@@ -296,7 +296,7 @@ func procInfoModules() structs.CommandResult {
 
 	data, err := os.ReadFile("/proc/modules")
 	if err != nil {
-		return errorf("Error reading /proc/modules: %v", err)
+		return errorf("reading /proc/modules: %v", err)
 	}
 	defer structs.ZeroBytes(data)
 

@@ -40,7 +40,7 @@ type winrmArgs struct {
 
 func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -host <target> -username <user> -password <pass> -command <cmd>")
+		return errorResult("parameters required. Use -host <target> -username <user> -password <pass> -command <cmd>")
 	}
 
 	args, parseErr := unmarshalParams[winrmArgs](task)
@@ -55,11 +55,11 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: host, username, and password (or hash) are required")
+		return errorResult("host, username, and password (or hash) are required")
 	}
 
 	if args.Command == "" {
-		return errorResult("Error: command is required")
+		return errorResult("command is required")
 	}
 
 	if args.Port <= 0 {
@@ -114,7 +114,7 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 
 	client, err := winrm.NewClientWithParameters(endpoint, args.Username, authCred, params)
 	if err != nil {
-		return errorf("Error creating WinRM client: %v", err)
+		return errorf("creating WinRM client: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(args.Timeout)*time.Second)
@@ -131,7 +131,7 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err != nil {
-		return errorf("Error executing command on %s: %v", args.Host, err)
+		return errorf("executing command on %s: %v", args.Host, err)
 	}
 
 	var sb strings.Builder

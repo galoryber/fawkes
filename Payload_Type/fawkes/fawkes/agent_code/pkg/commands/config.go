@@ -54,7 +54,7 @@ func (c *ConfigCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent
 
 // Execute implements Command (fallback — should not be called since we use AgentCommand).
 func (c *ConfigCommand) Execute(task structs.Task) structs.CommandResult {
-	return errorResult("Error: config command requires agent context")
+	return errorResult("config command requires agent context")
 }
 
 func configShow(agent *structs.Agent) structs.CommandResult {
@@ -131,14 +131,14 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 	value = strings.TrimSpace(value)
 
 	if key == "" {
-		return errorResult("Error: key is required. Settable keys: sleep, jitter, killdate, working_hours_start, working_hours_end, working_days, default_ppid")
+		return errorResult("key is required. Settable keys: sleep, jitter, killdate, working_hours_start, working_hours_end, working_days, default_ppid")
 	}
 
 	switch key {
 	case "sleep":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
-			return errorf("Error: invalid sleep value '%s' (must be non-negative integer seconds)", value)
+			return errorf("invalid sleep value '%s' (must be non-negative integer seconds)", value)
 		}
 		old := agent.SleepInterval
 		agent.SleepInterval = n
@@ -147,7 +147,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 	case "jitter":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 || n > 100 {
-			return errorf("Error: invalid jitter value '%s' (must be 0-100)", value)
+			return errorf("invalid jitter value '%s' (must be 0-100)", value)
 		}
 		old := agent.Jitter
 		agent.Jitter = n
@@ -171,7 +171,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 				return successf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), agent.KillDate)
 			}
 		}
-		return errorf("Error: invalid killdate '%s'. Use unix timestamp, YYYY-MM-DD, or 'disable'.", value)
+		return errorf("invalid killdate '%s'. Use unix timestamp, YYYY-MM-DD, or 'disable'.", value)
 
 	case "working_hours_start", "wh_start":
 		if value == "" || value == "disable" || value == "off" {
@@ -180,7 +180,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		}
 		minutes, err := structs.ParseWorkingHoursTime(value)
 		if err != nil {
-			return errorf("Error: failed to parse working hours start time '%s': %v", value, err)
+			return errorf("failed to parse working hours start time '%s': %v", value, err)
 		}
 		old := structs.FormatWorkingHoursTime(agent.WorkingHoursStart)
 		agent.WorkingHoursStart = minutes
@@ -193,7 +193,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		}
 		minutes, err := structs.ParseWorkingHoursTime(value)
 		if err != nil {
-			return errorf("Error: failed to parse working hours end time '%s': %v", value, err)
+			return errorf("failed to parse working hours end time '%s': %v", value, err)
 		}
 		old := structs.FormatWorkingHoursTime(agent.WorkingHoursEnd)
 		agent.WorkingHoursEnd = minutes
@@ -206,7 +206,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		}
 		days, err := structs.ParseWorkingDays(value)
 		if err != nil {
-			return errorf("Error: failed to parse working days '%s': %v", value, err)
+			return errorf("failed to parse working days '%s': %v", value, err)
 		}
 		agent.WorkingDays = days
 		dayNames := []string{"", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
@@ -230,7 +230,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		}
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
-			return errorf("Error: invalid PPID value '%s' (must be non-negative integer)", value)
+			return errorf("invalid PPID value '%s' (must be non-negative integer)", value)
 		}
 		old := agent.DefaultPPID
 		agent.DefaultPPID = n
@@ -241,6 +241,6 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		return successf("[+] Default PPID set: %d (run/powershell child processes will appear under PID %d)", n, n)
 
 	default:
-		return errorf("Error: unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days), default_ppid (ppid)", key)
+		return errorf("unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days), default_ppid (ppid)", key)
 	}
 }

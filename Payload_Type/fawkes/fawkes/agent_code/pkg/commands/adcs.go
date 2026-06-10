@@ -65,7 +65,7 @@ var lowPrivRIDMap = map[uint32]string{
 
 func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <cas|templates|find|request> -server <DC>")
+		return errorResult("parameters required. Use -action <cas|templates|find|request> -server <DC>")
 	}
 
 	args, parseErr := unmarshalParams[adcsArgs](task)
@@ -75,7 +75,7 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller or CA server IP/hostname)")
+		return errorResult("server parameter required (domain controller or CA server IP/hostname)")
 	}
 
 	if strings.ToLower(args.Action) == "request" {
@@ -103,17 +103,17 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := adcsConnect(args)
 	if err != nil {
-		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := adcsBind(conn, args); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	configDN, baseDN, err := adcsGetConfigDN(conn)
 	if err != nil {
-		return errorf("Error detecting configuration DN: %v", err)
+		return errorf("detecting configuration DN: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -124,7 +124,7 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "find":
 		return adcsFindVulnerable(conn, configDN, baseDN, args)
 	default:
-		return errorResult("Error: action must be one of: cas, templates, find, request")
+		return errorResult("action must be one of: cas, templates, find, request")
 	}
 }
 

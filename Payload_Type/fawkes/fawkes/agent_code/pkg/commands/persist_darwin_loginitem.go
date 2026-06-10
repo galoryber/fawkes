@@ -25,7 +25,7 @@ func persistLoginItem(args persistArgs) structs.CommandResult {
 
 func persistLoginItemInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to add as login item) is required")
+		return errorResult("path (executable to add as login item) is required")
 	}
 
 	name := "CoreServicesHelper"
@@ -78,10 +78,10 @@ func persistAuthPlugin(args persistArgs) structs.CommandResult {
 
 func persistAuthPluginInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if os.Getuid() != 0 {
-		return errorResult("Error: authorization plugins require root")
+		return errorResult("authorization plugins require root")
 	}
 
 	name := "DirectoryServicesAuth"
@@ -135,7 +135,7 @@ func persistAuthPluginInstall(args persistArgs) structs.CommandResult {
 
 func persistAuthPluginRemove(args persistArgs) structs.CommandResult {
 	if os.Getuid() != 0 {
-		return errorResult("Error: authorization plugin removal requires root")
+		return errorResult("authorization plugin removal requires root")
 	}
 
 	name := "DirectoryServicesAuth"

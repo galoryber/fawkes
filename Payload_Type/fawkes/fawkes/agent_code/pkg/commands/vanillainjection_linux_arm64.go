@@ -34,16 +34,16 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: No shellcode data provided")
+		return errorResult("No shellcode data provided")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: Shellcode data is empty")
+		return errorResult("Shellcode data is empty")
 	}
 
 	if strings.EqualFold(params.Action, "ldpreload") {
@@ -59,7 +59,7 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
+		return errorResult("Invalid PID specified")
 	}
 
 	if isMigrateAction(params.Action) {

