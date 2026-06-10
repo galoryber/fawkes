@@ -24,7 +24,6 @@ func (c *ArgueCommand) Description() string {
 // RTL_USER_PROCESS_PARAMETERS offsets (x64)
 const (
 	ruppCommandLineOffset = 0x70 // CommandLine UNICODE_STRING
-	ruppImagePathOffset   = 0x60 // ImagePathName UNICODE_STRING
 )
 
 var (
