@@ -168,10 +168,17 @@ func containerDetectLinux() ([]containerEvidence, string) {
 		}
 	}
 
-	// Check capabilities (reduced caps = likely container)
+	evidence = append(evidence, containerDetectSecurityState()...)
+
+	return evidence, detected
+}
+
+func containerDetectSecurityState() []containerEvidence {
+	var evidence []containerEvidence
+
 	if data, err := os.ReadFile("/proc/self/status"); err == nil {
 		content := string(data)
-		structs.ZeroBytes(data) // opsec
+		structs.ZeroBytes(data)
 		for _, line := range strings.Split(content, "\n") {
 			if strings.HasPrefix(line, "CapEff:") {
 				cap := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
@@ -183,33 +190,25 @@ func containerDetectLinux() ([]containerEvidence, string) {
 				break
 			}
 		}
-
-		// Identify dangerous capabilities for escape assessment
-		dangerousCaps := identifyDangerousCaps(content)
-		if len(dangerousCaps) > 0 {
+		if dangerousCaps := identifyDangerousCaps(content); len(dangerousCaps) > 0 {
 			evidence = append(evidence, containerEvidence{"Dangerous Capabilities", "ESCAPE", strings.Join(dangerousCaps, ", ")})
 		}
-
-		// Check Seccomp status
-		seccompStatus := parseSeccompStatus(content)
-		if seccompStatus != "" {
+		if seccompStatus := parseSeccompStatus(content); seccompStatus != "" {
 			evidence = append(evidence, containerEvidence{"Seccomp", "info", seccompStatus})
 		}
 	}
 
-	// Check for mounted host paths (escape vectors)
 	if data, err := os.ReadFile("/proc/1/mounts"); err == nil {
 		hostMounts := findHostMounts(string(data))
-		structs.ZeroBytes(data) // opsec: mount info may reveal infrastructure
+		structs.ZeroBytes(data)
 		for _, m := range hostMounts {
 			evidence = append(evidence, containerEvidence{"Host Mount", "ESCAPE", fmt.Sprintf("%s at %s", m.Device, m.MountPoint)})
 		}
 	}
 
-	// Check AppArmor profile
 	if data, err := os.ReadFile("/proc/self/attr/current"); err == nil {
 		profile := strings.TrimSpace(string(data))
-		structs.ZeroBytes(data) // opsec
+		structs.ZeroBytes(data)
 		if profile == "unconfined" || profile == "" {
 			evidence = append(evidence, containerEvidence{"AppArmor", "unconfined", "no AppArmor restrictions"})
 		} else {
@@ -217,7 +216,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 		}
 	}
 
-	return evidence, detected
+	return evidence
 }
 
 // dangerousCapBits maps bit positions to capability names that enable container escapes.

