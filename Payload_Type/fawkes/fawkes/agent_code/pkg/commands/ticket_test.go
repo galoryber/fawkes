@@ -491,7 +491,7 @@ func TestTicketRequestConnectionRefused(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error for connection refused, got: %s — %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Error connecting to KDC") && !strings.Contains(result.Output, "Error") {
+	if !strings.Contains(result.Output, "connecting to KDC") {
 		t.Errorf("expected connection error, got: %s", result.Output)
 	}
 }

@@ -230,7 +230,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 		sb.WriteString(fmt.Sprintf("Found %d vulnerable template(s)\n", vulnCount))
 	}
 
-	vulnCount += adcsCheckESC6(&sb, caResult, args)
+	adcsCheckESC6(&sb, caResult, args)
 
 	return successResult(sb.String())
 }

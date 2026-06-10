@@ -205,10 +205,8 @@ func TestCheckKernelHardening_DmesgRestrictValues(t *testing.T) {
 		if !strings.Contains(c.Details, "CAP_SYSLOG") {
 			t.Errorf("enabled details should mention CAP_SYSLOG, got: %s", c.Details)
 		}
-	} else {
-		if c.Status != "disabled" {
-			t.Errorf("dmesg_restrict=%s should be disabled, got %q", val, c.Status)
-		}
+	} else if c.Status != "disabled" {
+		t.Errorf("dmesg_restrict=%s should be disabled, got %q", val, c.Status)
 	}
 }
 
