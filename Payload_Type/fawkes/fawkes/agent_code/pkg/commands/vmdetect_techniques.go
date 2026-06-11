@@ -124,7 +124,7 @@ func vmCheckDMIFile(path, label, cleanLevel string, matchers []vmMatcher) ([]vmE
 
 	for _, m := range matchers {
 		if strings.Contains(lower, m.substr) {
-			detail := value
+			var detail string
 			if label != "SCSI devices" {
 				detail = fmt.Sprintf("%s → %s", value, m.vm)
 			} else {
