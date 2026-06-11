@@ -21,6 +21,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce"
 
@@ -29,39 +30,32 @@ import (
 )
 
 // adcsSubmitCSR connects to the CA via DCOM and submits the CSR.
-// Must run in subprocess isolation (--rpc-helper) due to go-msrpc NTLM global state corruption.
-// Follows the same DCOM connection pattern as go-msrpc's wmic.go example.
+// Must run in subprocess isolation (--rpc-helper) due to go-msrpc NTLM global state.
+// Mirrors go-msrpc's wmic.go example exactly: context-level auth, single connection,
+// WithSign on both ObjectExporter and Activation.
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte, cred sspcred.Credential) (*icertrequestd.RequestResponse, error) {
+	gssapi.AddCredential(cred)
+	gssapi.AddMechanism(ssp.NTLM)
+	ctx = gssapi.NewSecurityContext(ctx)
+
 	epmAddr := net.JoinHostPort(server, "135")
 
-	// Use a clean base context for ObjectExporter (no auth)
-	oxConn, err := dcerpc.Dial(ctx, epmAddr)
+	cc, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return nil, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
+	defer cc.Close(ctx)
+
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
-		oxConn.Close(ctx)
 		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
-	oxConn.Close(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// Activation with option-level credentials (bypasses context-level auth)
-	actConn, err := dcerpc.Dial(ctx, epmAddr)
-	if err != nil {
-		return nil, fmt.Errorf("dial EPM for activation: %w", err)
-	}
-	defer actConn.Close(ctx)
-
-	iact, err := iactivation.NewActivationClient(ctx, actConn,
-		dcerpc.WithSeal(),
-		dcerpc.WithTargetName(server),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.NTLM))
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
 	}
@@ -80,23 +74,18 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
-	// OXID endpoint with option-level credentials
 	conn, err := dcerpc.Dial(ctx, server,
 		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
-			dcerpc.WithSeal(),
-			dcerpc.WithTargetName(server),
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.NTLM))...)
+			dcerpc.WithSign(),
+			dcerpc.WithTargetName(server))...)
 	if err != nil {
 		return nil, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
 	wcceCli, err := wcce_client.NewClient(ctx, conn,
-		dcerpc.WithSeal(),
-		dcerpc.WithTargetName(server),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.NTLM))
+		dcerpc.WithSign(),
+		dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %w", err)
 	}
@@ -133,34 +122,28 @@ const editfAttributeSubjectAltName2 = 0x00040000
 // the EditFlags from the policy module configuration. This is used to detect
 // ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2).
 func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred.Credential) (uint32, error) {
+	gssapi.AddCredential(cred)
+	gssapi.AddMechanism(ssp.NTLM)
+	ctx = gssapi.NewSecurityContext(ctx)
+
 	epmAddr := net.JoinHostPort(server, "135")
 
-	oxConn, err := dcerpc.Dial(ctx, epmAddr)
+	cc, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return 0, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
+	defer cc.Close(ctx)
+
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
-		oxConn.Close(ctx)
 		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
-	oxConn.Close(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	actConn, err := dcerpc.Dial(ctx, epmAddr)
-	if err != nil {
-		return 0, fmt.Errorf("dial EPM for activation: %w", err)
-	}
-	defer actConn.Close(ctx)
-
-	iact, err := iactivation.NewActivationClient(ctx, actConn,
-		dcerpc.WithSeal(),
-		dcerpc.WithTargetName(server),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.NTLM))
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
 	}
@@ -181,20 +164,16 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 
 	conn, err := dcerpc.Dial(ctx, server,
 		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
-			dcerpc.WithSeal(),
-			dcerpc.WithTargetName(server),
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.NTLM))...)
+			dcerpc.WithSign(),
+			dcerpc.WithTargetName(server))...)
 	if err != nil {
 		return 0, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
 	csraCli, err := csra_client.NewClient(ctx, conn,
-		dcerpc.WithSeal(),
-		dcerpc.WithTargetName(server),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.NTLM))
+		dcerpc.WithSign(),
+		dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("CSRA client: %w", err)
 	}
