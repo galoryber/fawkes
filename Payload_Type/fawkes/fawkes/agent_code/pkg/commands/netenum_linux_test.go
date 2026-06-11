@@ -13,8 +13,6 @@ func TestParseUtmp_ValidRecords(t *testing.T) {
 	dir := t.TempDir()
 	utmpPath := filepath.Join(dir, "utmp")
 
-	const utmpSize = 384
-
 	f, err := os.Create(utmpPath)
 	if err != nil {
 		t.Fatal(err)
