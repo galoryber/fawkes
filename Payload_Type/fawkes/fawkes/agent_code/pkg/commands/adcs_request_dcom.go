@@ -35,13 +35,7 @@ import (
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte, cred sspcred.Credential) (*icertrequestd.RequestResponse, error) {
 	epmAddr := net.JoinHostPort(server, "135")
 
-	ctx = gssapi.NewSecurityContext(ctx,
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	)
-
-	// ServerAlive2 is unauthenticated — just gets COM version
+	// Use a clean base context for ObjectExporter (no auth)
 	oxConn, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return nil, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
@@ -57,21 +51,26 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// Activation uses WithSign (not WithSeal) — RPCSS expects integrity, not privacy
-	actConn, err := dcerpc.Dial(ctx, epmAddr)
+	// Activation with context-level auth
+	actCtx := gssapi.NewSecurityContext(ctx,
+		gssapi.WithCredential(cred),
+		gssapi.WithMechanismFactory(ssp.SPNEGO),
+		gssapi.WithMechanismFactory(ssp.NTLM),
+	)
+	actConn, err := dcerpc.Dial(actCtx, epmAddr)
 	if err != nil {
 		return nil, fmt.Errorf("dial EPM for activation: %w", err)
 	}
-	defer actConn.Close(ctx)
+	defer actConn.Close(actCtx)
 
-	iact, err := iactivation.NewActivationClient(ctx, actConn,
-		dcerpc.WithSign(), dcerpc.WithTargetName(server))
+	iact, err := iactivation.NewActivationClient(actCtx, actConn,
+		dcerpc.WithSeal(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
 	}
 
 	certServerClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e74-fc88-11d0-b498-00a0c90312f3"))
-	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
+	act, err := iact.RemoteActivation(actCtx, &iactivation.RemoteActivationRequest{
 		ORPCThis:                   &dcom.ORPCThis{Version: srv.COMVersion},
 		ClassID:                    certServerClassID,
 		IIDs:                       []*dcom.IID{icertrequestd.CertRequestDIID},
@@ -84,26 +83,26 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
-	// OXID dial includes auth options (from wmic.go pattern)
-	conn, err := dcerpc.Dial(ctx, server,
-		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
-			dcerpc.WithSign(), dcerpc.WithTargetName(server))...)
-	if err != nil {
-		return nil, fmt.Errorf("dial OXID endpoint: %w", err)
-	}
-	defer conn.Close(ctx)
-
-	ctx = gssapi.NewSecurityContext(ctx,
+	// OXID endpoint with fresh security context
+	oxidCtx := gssapi.NewSecurityContext(ctx,
 		gssapi.WithCredential(cred),
 		gssapi.WithMechanismFactory(ssp.SPNEGO),
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
-	wcceCli, err := wcce_client.NewClient(ctx, conn,
+	conn, err := dcerpc.Dial(oxidCtx, server,
+		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
+			dcerpc.WithSeal(), dcerpc.WithTargetName(server))...)
+	if err != nil {
+		return nil, fmt.Errorf("dial OXID endpoint: %w", err)
+	}
+	defer conn.Close(oxidCtx)
+
+	wcceCli, err := wcce_client.NewClient(oxidCtx, conn,
 		dcerpc.WithSeal(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %w", err)
 	}
-	wcceCli = wcceCli.IPID(ctx, act.InterfaceData[0].IPID())
+	wcceCli = wcceCli.IPID(oxidCtx, act.InterfaceData[0].IPID())
 
 	attrs := fmt.Sprintf("CertificateTemplate:%s\n", template)
 	if altName != "" {
@@ -138,12 +137,6 @@ const editfAttributeSubjectAltName2 = 0x00040000
 func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred.Credential) (uint32, error) {
 	epmAddr := net.JoinHostPort(server, "135")
 
-	ctx = gssapi.NewSecurityContext(ctx,
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	)
-
 	oxConn, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return 0, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
@@ -159,20 +152,25 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	actConn, err := dcerpc.Dial(ctx, epmAddr)
+	actCtx := gssapi.NewSecurityContext(ctx,
+		gssapi.WithCredential(cred),
+		gssapi.WithMechanismFactory(ssp.SPNEGO),
+		gssapi.WithMechanismFactory(ssp.NTLM),
+	)
+	actConn, err := dcerpc.Dial(actCtx, epmAddr)
 	if err != nil {
 		return 0, fmt.Errorf("dial EPM for activation: %w", err)
 	}
-	defer actConn.Close(ctx)
+	defer actConn.Close(actCtx)
 
-	iact, err := iactivation.NewActivationClient(ctx, actConn,
-		dcerpc.WithSign(), dcerpc.WithTargetName(server))
+	iact, err := iactivation.NewActivationClient(actCtx, actConn,
+		dcerpc.WithSeal(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
 	}
 
 	certAdminClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e73-fc88-11d0-b498-00a0c90312f3"))
-	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
+	act, err := iact.RemoteActivation(actCtx, &iactivation.RemoteActivationRequest{
 		ORPCThis:                   &dcom.ORPCThis{Version: srv.COMVersion},
 		ClassID:                    certAdminClassID,
 		IIDs:                       []*dcom.IID{icertadmind2.CertAdminD2IID},
@@ -185,28 +183,27 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		return 0, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
-	conn, err := dcerpc.Dial(ctx, server,
-		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
-			dcerpc.WithSign(), dcerpc.WithTargetName(server))...)
-	if err != nil {
-		return 0, fmt.Errorf("dial OXID endpoint: %w", err)
-	}
-	defer conn.Close(ctx)
-
-	ctx = gssapi.NewSecurityContext(ctx,
+	oxidCtx := gssapi.NewSecurityContext(ctx,
 		gssapi.WithCredential(cred),
 		gssapi.WithMechanismFactory(ssp.SPNEGO),
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
-	csraCli, err := csra_client.NewClient(ctx, conn,
+	conn, err := dcerpc.Dial(oxidCtx, server,
+		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
+			dcerpc.WithSeal(), dcerpc.WithTargetName(server))...)
+	if err != nil {
+		return 0, fmt.Errorf("dial OXID endpoint: %w", err)
+	}
+	defer conn.Close(oxidCtx)
+
+	csraCli, err := csra_client.NewClient(oxidCtx, conn,
 		dcerpc.WithSeal(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("CSRA client: %w", err)
 	}
-	csraCli = csraCli.IPID(ctx, act.InterfaceData[0].IPID())
+	csraCli = csraCli.IPID(oxidCtx, act.InterfaceData[0].IPID())
 
-	// Query EditFlags via GetConfigEntry
-	resp, err := csraCli.CertAdminD2().GetConfigEntry(ctx, &icertadmind2.GetConfigEntryRequest{
+	resp, err := csraCli.CertAdminD2().GetConfigEntry(oxidCtx, &icertadmind2.GetConfigEntryRequest{
 		This:      &dcom.ORPCThis{Version: srv.COMVersion},
 		Authority: caName,
 		NodePath:  `PolicyModules\CertificateAuthority_MicrosoftDefault.Policy`,
