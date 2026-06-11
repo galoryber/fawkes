@@ -41,23 +41,30 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
 
-	cc, err := dcerpc.Dial(ctx, epmAddr)
+	// ServerAlive2 is unauthenticated — just gets COM version
+	oxConn, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return nil, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
-	defer cc.Close(ctx)
-
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc,
-		dcerpc.WithSign(), dcerpc.WithTargetName(server))
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
 	if err != nil {
+		oxConn.Close(ctx)
 		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
+	oxConn.Close(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	iact, err := iactivation.NewActivationClient(ctx, cc,
+	// Activation uses WithSign (not WithSeal) — RPCSS expects integrity, not privacy
+	actConn, err := dcerpc.Dial(ctx, epmAddr)
+	if err != nil {
+		return nil, fmt.Errorf("dial EPM for activation: %w", err)
+	}
+	defer actConn.Close(ctx)
+
+	iact, err := iactivation.NewActivationClient(ctx, actConn,
 		dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
@@ -77,6 +84,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
+	// OXID dial includes auth options (from wmic.go pattern)
 	conn, err := dcerpc.Dial(ctx, server,
 		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
 			dcerpc.WithSign(), dcerpc.WithTargetName(server))...)
@@ -136,23 +144,28 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
 
-	cc, err := dcerpc.Dial(ctx, epmAddr)
+	oxConn, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
 		return 0, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
-	defer cc.Close(ctx)
-
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc,
-		dcerpc.WithSign(), dcerpc.WithTargetName(server))
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
 	if err != nil {
+		oxConn.Close(ctx)
 		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
+	oxConn.Close(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	iact, err := iactivation.NewActivationClient(ctx, cc,
+	actConn, err := dcerpc.Dial(ctx, epmAddr)
+	if err != nil {
+		return 0, fmt.Errorf("dial EPM for activation: %w", err)
+	}
+	defer actConn.Close(ctx)
+
+	iact, err := iactivation.NewActivationClient(ctx, actConn,
 		dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
