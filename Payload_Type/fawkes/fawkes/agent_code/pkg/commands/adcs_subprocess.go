@@ -1,9 +1,13 @@
 package commands
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"time"
+
+	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 )
 
 type adcsRequestSubprocessParams struct {
@@ -39,10 +43,13 @@ func rpcHelperAdcsRequest(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("decode CSR: %v", err)
 	}
 
-	ctx, cancel, cred, credErr := rpcHelperCredAndContext(req)
-	if credErr != nil {
-		return nil, fmt.Errorf("credential setup: %v", credErr)
+	cred := adcsSubCred(req)
+
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = 30
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	resp, err := adcsSubmitCSR(ctx, req.Server, p.CAName, p.Template, p.AltName, csrDER, cred)
@@ -76,10 +83,13 @@ func rpcHelperAdcsEditFlags(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("invalid adcs-editflags params: %v", err)
 	}
 
-	ctx, cancel, cred, credErr := rpcHelperCredAndContext(req)
-	if credErr != nil {
-		return nil, fmt.Errorf("credential setup: %v", credErr)
+	cred := adcsSubCred(req)
+
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = 30
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	flags, err := adcsQueryEditFlags(ctx, req.Server, p.CAName, cred)
@@ -92,4 +102,15 @@ func rpcHelperAdcsEditFlags(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("marshal result: %v", err)
 	}
 	return out, nil
+}
+
+func adcsSubCred(req rpcHelperRequest) sspcred.Credential {
+	credUser := req.Username
+	if req.Domain != "" {
+		credUser = req.Domain + `\` + req.Username
+	}
+	if req.Hash != "" {
+		return sspcred.NewFromNTHash(credUser, stripLMPrefix(req.Hash))
+	}
+	return sspcred.NewFromPassword(credUser, req.Password)
 }
