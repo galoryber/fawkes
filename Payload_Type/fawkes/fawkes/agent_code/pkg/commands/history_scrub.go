@@ -252,14 +252,8 @@ func historyClear(user string, clearAll bool) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n[%d files cleared, %d failed]\n", cleared, failed))
 
-	status := "success"
 	if failed > 0 && cleared == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

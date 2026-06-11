@@ -268,11 +268,7 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 		args.Server, args.Target)
 	structs.ZeroBytes(keyPEM)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // ldapClearShadowCred removes all KEY_CREDENTIAL values from msDS-KeyCredentialLink

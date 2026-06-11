@@ -136,15 +136,10 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 				sb.WriteString("\n")
 			}
 		}
-		status := "success"
 		if !allSuccess {
-			status = "error"
+			return errorResult(sb.String())
 		}
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    status,
-			Completed: true,
-		}
+		return successResult(sb.String())
 
 	case "check":
 		var sb strings.Builder

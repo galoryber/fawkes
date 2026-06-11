@@ -198,16 +198,10 @@ func auditPolDisable(category string) structs.CommandResult {
 		}
 	}
 
-	status := "success"
 	if len(modified) == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func auditPolEnable(category string) structs.CommandResult {
@@ -246,16 +240,10 @@ func auditPolEnable(category string) structs.CommandResult {
 		}
 	}
 
-	status := "success"
 	if len(modified) == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // auditPolStealth disables the most operationally dangerous audit subcategories
@@ -319,16 +307,10 @@ func auditPolStealth() structs.CommandResult {
 		}
 	}
 
-	status := "success"
 	if len(modified) == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func matchSubcategories(category string) []struct {

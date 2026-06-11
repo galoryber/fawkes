@@ -311,11 +311,7 @@ func hijackTriggerRestart(args privescCheckArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("[!] Service start failed: %v\n", err))
 		sb.WriteString("[*] This may be expected if the proxy DLL caused an error during load\n")
 		sb.WriteString("[*] Check if the shellcode executed despite the service start failure\n")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 
 	sb.WriteString("[+] Service started — proxy DLL should have been loaded\n")

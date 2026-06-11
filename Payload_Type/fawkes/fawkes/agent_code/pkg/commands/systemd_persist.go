@@ -211,16 +211,10 @@ func systemdRemove(args systemdPersistArgs) structs.CommandResult {
 	}
 	sb.WriteString("daemon-reload")
 
-	status := "success"
 	if errors > 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func systemdList(args systemdPersistArgs) structs.CommandResult {

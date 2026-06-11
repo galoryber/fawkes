@@ -201,10 +201,7 @@ func certstoreListLinux(store, filter string) structs.CommandResult {
 			e.Thumbprint, e.Store, e.Path))
 	}
 
-	return structs.CommandResult{
-		Output: sb.String() + "\n" + string(jsonBytes),
-		Status: "success",
-	}
+	return successResult(sb.String() + "\n" + string(jsonBytes))
 }
 
 // certstoreExportLinux exports a certificate matching the filter as PEM.

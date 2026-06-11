@@ -76,11 +76,10 @@ func (c *ContainerEscapeCommand) Execute(task structs.Task) structs.CommandResul
 		status = "error"
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    status,
-		Completed: true,
+	if status == "error" {
+		return errorResult(output)
 	}
+	return successResult(output)
 }
 
 // escapeCheck enumerates all available escape vectors without exploiting them.

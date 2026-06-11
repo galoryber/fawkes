@@ -110,11 +110,7 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 		return errorf("failed to marshal result: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(metadataJSON),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(metadataJSON))
 }
 
 // compressStageCollectFiles walks srcPath, collects matching files into a temp zip, and

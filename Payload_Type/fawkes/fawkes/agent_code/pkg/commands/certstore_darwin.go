@@ -206,10 +206,7 @@ func certstoreListDarwin(store, filter string) structs.CommandResult {
 			e.Thumbprint, privKeyFlag, e.Store))
 	}
 
-	return structs.CommandResult{
-		Output: sb.String() + "\n" + string(jsonBytes),
-		Status: "success",
-	}
+	return successResult(sb.String() + "\n" + string(jsonBytes))
 }
 
 // certstoreExportDarwin exports a certificate from the Keychain as PEM.

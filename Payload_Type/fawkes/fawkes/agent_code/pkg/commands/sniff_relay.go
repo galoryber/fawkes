@@ -171,10 +171,7 @@ func executeRelayCore(task structs.Task) structs.CommandResult {
 		return errorf("marshal result: %v", err)
 	}
 
-	return structs.CommandResult{
-		Completed: true,
-		Output:    string(jsonBytes),
-	}
+	return successResult(string(jsonBytes))
 }
 
 // handleRelayConn handles a single victim HTTP connection, performing the

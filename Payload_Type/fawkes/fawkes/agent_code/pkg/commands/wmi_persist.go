@@ -338,16 +338,10 @@ func wmiPersistRemove(args wmiPersistArgs) structs.CommandResult {
 
 	deleteWMIObjectByPath(services, `__IntervalTimerInstruction.TimerID="PerfDataTimer"`)
 
-	status := "success"
 	if errors > 0 {
-		status = "error"
+		return errorResult(fmt.Sprintf("WMI Event Subscription removal for '%s':\n%s", args.Name, sb.String()))
 	}
-
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("WMI Event Subscription removal for '%s':\n%s", args.Name, sb.String()),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(fmt.Sprintf("WMI Event Subscription removal for '%s':\n%s", args.Name, sb.String()))
 }
 
 func wmiPersistList(args wmiPersistArgs) structs.CommandResult {

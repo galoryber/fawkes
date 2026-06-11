@@ -158,17 +158,11 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output := curlFormatResponse(args, resp, body, fileSize, truncated)
 
-	status := "success"
-	if resp.StatusCode >= 400 {
-		status = "error"
-	}
-
 	structs.ZeroBytes(body)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    status,
-		Completed: true,
+	if resp.StatusCode >= 400 {
+		return errorResult(output)
 	}
+	return successResult(output)
 }
 
 func curlBuildRequestBody(args *curlArgs) (io.Reader, string, int64, io.Closer, error) {

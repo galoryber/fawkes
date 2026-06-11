@@ -265,16 +265,10 @@ func prefetchDelete(name string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("No prefetch files matching '%s'", name))
 	}
 
-	status := "success"
 	if len(deleted) == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func prefetchClear() structs.CommandResult {

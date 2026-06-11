@@ -187,10 +187,7 @@ func executeLDAPRelayCore(task structs.Task) structs.CommandResult {
 		return errorf("marshal result: %v", err)
 	}
 
-	return structs.CommandResult{
-		Completed: true,
-		Output:    string(jsonBytes),
-	}
+	return successResult(string(jsonBytes))
 }
 
 func handleLDAPRelayConn(ctx context.Context, conn net.Conn, ops ldapRelayOps, mu *sync.Mutex, result *ldapRelayResult) {

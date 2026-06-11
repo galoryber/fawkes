@@ -40,12 +40,8 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	case result := <-resultCh:
 		return result
 	case <-time.After(25 * time.Second):
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Potato technique timed out (25s watchdog).\nLast phase: %d\nhookCalled: %v\nparamCount: %d\npipe: %s",
-				atomic.LoadInt32(&phase), potatoGlobal.hookCalled, potatoGlobal.paramCount, potatoGlobal.pipeName),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(fmt.Sprintf("Potato technique timed out (25s watchdog).\nLast phase: %d\nhookCalled: %v\nparamCount: %d\npipe: %s",
+			atomic.LoadInt32(&phase), potatoGlobal.hookCalled, potatoGlobal.paramCount, potatoGlobal.pipeName))
 	}
 }
 

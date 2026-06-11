@@ -171,16 +171,10 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 		sb.WriteString("\nCertificate request was DENIED or failed.\n")
 	}
 
-	status := "success"
 	if result.Disposition != crDispIssued && result.Disposition != crDispIssuedOutOfBand && result.Disposition != crDispUnderSubmission {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // adcsBuildCSR creates a PKCS#10 certificate signing request.

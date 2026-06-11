@@ -282,21 +282,15 @@ func formatSSHResult(args sshExecArgs, addr string, output []byte, cmdErr error)
 	}
 
 	// Non-zero exit still returns output — mark as success if we got output
-	status := "success"
 	if cmdErr != nil {
 		if _, ok := cmdErr.(*ssh.ExitError); !ok {
 			// Real connection/session error, not just non-zero exit
 			if _, ok2 := cmdErr.(*ssh.ExitMissingError); !ok2 {
-				status = "error"
+				return errorResult(sb.String())
 			}
 		}
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // sshPushFile transfers a local file to the remote host via SSH session stdin.

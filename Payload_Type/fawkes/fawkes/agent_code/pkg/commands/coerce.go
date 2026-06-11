@@ -110,16 +110,10 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("[*] Check your listener for incoming NTLM authentication\n")
 	}
 
-	status := "success"
 	if successCount == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func coerceViaSubprocess(args coerceArgs, method string) coerceResult {
