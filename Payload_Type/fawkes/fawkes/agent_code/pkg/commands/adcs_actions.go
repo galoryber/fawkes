@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -11,7 +10,6 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/go-ldap/ldap/v3"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 )
 
 // adcsEnumerateCAs lists all Certificate Authorities and their published templates
@@ -285,9 +283,7 @@ func adcsCheckESC6(sb *strings.Builder, caResult *ldap.SearchResult, args adcsAr
 			dcomTarget = args.Server
 		}
 
-		ctx, cancel := context.WithTimeout(
-			gssapi.NewSecurityContext(context.Background()),
-			time.Duration(timeout)*time.Second)
+		ctx, cancel := rpcSecurityContext(cred, time.Duration(timeout)*time.Second)
 		editFlags, err := adcsQueryEditFlags(ctx, dcomTarget, caName, cred)
 		cancel()
 

@@ -33,6 +33,8 @@ import (
 // Credentials are passed via dcerpc.WithCredentials() matching the go-msrpc config pattern.
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte, cred sspcred.Credential) (*icertrequestd.RequestResponse, error) {
 	credOpt := dcerpc.WithCredentials(cred)
+	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
+	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
 
 	// Step 1: Connect to EPM well-known endpoint (port 135) on the CA server
 	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
@@ -42,7 +44,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	defer cc.Close(ctx)
 
 	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
@@ -53,7 +55,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 
 	// Step 3: RemoteActivation — activate ICertRequestD via DCOM
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
 	}
@@ -82,10 +84,8 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 	defer conn.Close(ctx)
 
-	// Step 5: Create WCCE client — fresh security context, credentials + mechanisms via options
+	// Step 5: Create WCCE client — fresh security context for the new connection
 	ctx = gssapi.NewSecurityContext(ctx)
-	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
-	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
 	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %w", err)
@@ -127,6 +127,8 @@ const editfAttributeSubjectAltName2 = 0x00040000
 // ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2).
 func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred.Credential) (uint32, error) {
 	credOpt := dcerpc.WithCredentials(cred)
+	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
+	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
 
 	// Connect to EPM on port 135
 	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
@@ -136,7 +138,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	defer cc.Close(ctx)
 
 	// ObjectExporter — ServerAlive2
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
@@ -146,7 +148,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	}
 
 	// RemoteActivation — activate CertAdminD class (d99e6e73) with ICertAdminD2 IID
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
 	}
@@ -173,9 +175,9 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	}
 	defer conn.Close(ctx)
 
-	// Create CSRA client (CertAdminD + CertAdminD2) — mechanisms required for TCP bind
+	// Create CSRA client (CertAdminD + CertAdminD2) — fresh security context for new connection
 	ctx = gssapi.NewSecurityContext(ctx)
-	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, dcerpc.WithMechanism(ssp.SPNEGO), dcerpc.WithMechanism(ssp.NTLM))
+	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return 0, fmt.Errorf("CSRA client: %w", err)
 	}

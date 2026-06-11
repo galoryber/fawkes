@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -16,8 +15,6 @@ import (
 	"time"
 
 	"fawkes/pkg/structs"
-
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 )
 
 // adcsRequestArgs extends the base adcs args for the request action
@@ -95,8 +92,7 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 		return errorf("NTLM credential setup failed for %s\\%s (CSR submission via DCOM to %s): %v", args.Domain, args.Username, args.Server, credErr)
 	}
 
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()),
-		time.Duration(args.Timeout)*time.Second)
+	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
 	defer cancel()
 
 	// Submit CSR via DCOM
