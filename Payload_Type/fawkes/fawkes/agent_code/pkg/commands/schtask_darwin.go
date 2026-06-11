@@ -300,31 +300,6 @@ func schtaskDarwinStop(args schtaskArgs) structs.CommandResult {
 	return successf("Stopped '%s'", args.Name)
 }
 
-func parseLaunchdListOutput(output string) []struct {
-	PID    string
-	Status string
-	Label  string
-} {
-	var results []struct {
-		PID    string
-		Status string
-		Label  string
-	}
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 3 || fields[2] == "Label" {
-			continue
-		}
-		results = append(results, struct {
-			PID    string
-			Status string
-			Label  string
-		}{fields[0], fields[1], fields[2]})
-	}
-	return results
-}
-
 // schtaskDarwinListJSON returns the list as JSON for testing
 func schtaskDarwinListJSON() string {
 	entries := enumerateLaunchdJobs()

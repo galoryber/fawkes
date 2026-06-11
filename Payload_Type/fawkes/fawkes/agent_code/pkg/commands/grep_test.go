@@ -286,3 +286,87 @@ func TestSearchFile(t *testing.T) {
 		t.Errorf("match 1: expected line 4 'delta', got line %d %q", matches[1].Line, matches[1].Content)
 	}
 }
+
+func TestGrepParseExtFilter(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  map[string]bool
+	}{
+		{"empty returns nil", "", nil},
+		{"single ext with dot", ".go", map[string]bool{".go": true}},
+		{"single ext without dot", "go", map[string]bool{".go": true}},
+		{"multiple exts", ".go,.py,.rs", map[string]bool{".go": true, ".py": true, ".rs": true}},
+		{"with spaces", " .go , .py , .rs ", map[string]bool{".go": true, ".py": true, ".rs": true}},
+		{"mixed dots", "go,.py,rs", map[string]bool{".go": true, ".py": true, ".rs": true}},
+		{"uppercase normalized", ".GO,.Py", map[string]bool{".go": true, ".py": true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := grepParseExtFilter(tt.input)
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("expected nil, got %v", got)
+				}
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("expected %d entries, got %d: %v", len(tt.want), len(got), got)
+				return
+			}
+			for k := range tt.want {
+				if !got[k] {
+					t.Errorf("missing key %q in result %v", k, got)
+				}
+			}
+		})
+	}
+}
+
+func TestGrepFormatResults_NoMatches(t *testing.T) {
+	result := grepFormatResults(nil, "test", "/tmp", 100, 500)
+	if result.Status != "success" {
+		t.Errorf("expected success status, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "No matches found") {
+		t.Errorf("expected 'No matches found', got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "100 files searched") {
+		t.Errorf("expected file count in output")
+	}
+}
+
+func TestGrepFormatResults_WithMatches(t *testing.T) {
+	matches := []grepMatch{
+		{File: "/a/foo.go", Line: 10, Content: "func main()"},
+		{File: "/a/foo.go", Line: 20, Content: "func helper()"},
+		{File: "/a/bar.go", Line: 5, Content: "func init()"},
+	}
+	result := grepFormatResults(matches, "func", "/a", 50, 500)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "Found 3 matches") {
+		t.Errorf("expected match count in output")
+	}
+	if !strings.Contains(result.Output, "=== /a/foo.go ===") {
+		t.Errorf("expected file header for foo.go")
+	}
+	if !strings.Contains(result.Output, "=== /a/bar.go ===") {
+		t.Errorf("expected file header for bar.go")
+	}
+	if !strings.Contains(result.Output, "10: func main()") {
+		t.Errorf("expected line number and content")
+	}
+}
+
+func TestGrepFormatResults_Truncated(t *testing.T) {
+	matches := make([]grepMatch, 100)
+	for i := range matches {
+		matches[i] = grepMatch{File: "/test.go", Line: i + 1, Content: "line"}
+	}
+	result := grepFormatResults(matches, "line", "/", 1, 100)
+	if !strings.Contains(result.Output, "[Results truncated at 100 matches]") {
+		t.Errorf("expected truncation message when matches == maxResults")
+	}
+}
