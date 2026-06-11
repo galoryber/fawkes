@@ -2,9 +2,12 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"time"
+
+	"fawkes/pkg/structs"
 )
 
 // checkTCPPort tests if a TCP port is reachable within the given timeout.
@@ -26,6 +29,14 @@ func checkTCPPort(ctx context.Context, host, port string, timeout time.Duration)
 	}
 	conn.Close()
 	return "open"
+}
+
+func checkResult(v any) structs.CommandResult {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
+	return successResult(string(data))
 }
 
 func isTimeout(err error) bool {

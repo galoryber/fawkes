@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -53,11 +52,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.Authentication = "skipped"
 		result.ShellAccess = "skipped"
 		result.Recommendation = fmt.Sprintf("Port %d is not reachable. SSH requires port %d.", port, port)
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errorf("failed to marshal result: %v", err)
-		}
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Check 1b: Grab SSH banner
@@ -78,11 +73,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.ShellAccess = "skipped"
 		result.OverallStatus = "partial"
 		result.Recommendation = "Port reachable. Provide credentials to test authentication."
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errorf("failed to marshal result: %v", err)
-		}
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Build SSH auth methods
@@ -97,11 +88,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		} else {
 			result.Authentication = fmt.Sprintf("fail: invalid key data: %v", err)
 			result.ShellAccess = "skipped"
-			data, marshalErr := json.MarshalIndent(result, "", "  ")
-			if marshalErr != nil {
-				return errorf("failed to marshal result: %v", marshalErr)
-			}
-			return successResult(string(data))
+			return checkResult(result)
 		}
 	}
 
@@ -162,9 +149,5 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.Recommendation = "SSH authentication timed out."
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return errorf("failed to marshal result: %v", err)
-	}
-	return successResult(string(data))
+	return checkResult(result)
 }

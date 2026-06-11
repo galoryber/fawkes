@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -50,11 +49,7 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.Authentication = "skipped"
 		result.ShellCreate = "skipped"
 		result.Recommendation = "Neither WinRM port (5985/5986) is reachable. WinRM may be disabled."
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errorf("failed to marshal result: %v", err)
-		}
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Check 3: Authentication (if credentials provided)
@@ -63,11 +58,7 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.ShellCreate = "skipped"
 		result.OverallStatus = "partial"
 		result.Recommendation = "Ports reachable. Provide credentials to test authentication."
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errorf("failed to marshal result: %v", err)
-		}
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	port := args.Port
@@ -110,11 +101,7 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.Authentication = fmt.Sprintf("fail: %v", err)
 		result.ShellCreate = "skipped"
 		result.Recommendation = fmt.Sprintf("WinRM client creation failed: %v", err)
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errorf("failed to marshal result: %v", err)
-		}
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Try a lightweight command to test auth + shell creation
@@ -158,9 +145,5 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 		result.Recommendation = "WinRM authentication timed out."
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return errorf("failed to marshal result: %v", err)
-	}
-	return successResult(string(data))
+	return checkResult(result)
 }
