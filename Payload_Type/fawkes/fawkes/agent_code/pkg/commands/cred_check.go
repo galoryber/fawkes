@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -191,7 +192,7 @@ func credCheckSMB(host string, args credCheckArgs, timeout time.Duration) credCh
 func credCheckWinRM(host string, args credCheckArgs, timeout time.Duration) credCheckResult {
 	result := credCheckResult{Host: host, Protocol: "WinRM"}
 
-	if checkTCPPort(nil, host, "5985", timeout) != "open" {
+	if checkTCPPort(context.TODO(), host, "5985", timeout) != "open" {
 		result.Detail = "port 5985 closed/unreachable"
 		return result
 	}
@@ -241,7 +242,7 @@ func credCheckWinRM(host string, args credCheckArgs, timeout time.Duration) cred
 func credCheckLDAP(host string, args credCheckArgs, timeout time.Duration) credCheckResult {
 	result := credCheckResult{Host: host, Protocol: "LDAP"}
 
-	if checkTCPPort(nil, host, "389", timeout) != "open" {
+	if checkTCPPort(context.TODO(), host, "389", timeout) != "open" {
 		result.Detail = "port 389 closed/unreachable"
 		return result
 	}

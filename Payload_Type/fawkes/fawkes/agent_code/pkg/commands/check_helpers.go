@@ -13,11 +13,6 @@ import (
 // checkTCPPort tests if a TCP port is reachable within the given timeout.
 // Returns "open", "timeout", or "closed: <reason>".
 func checkTCPPort(ctx context.Context, host, port string, timeout time.Duration) string {
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-	}
 	dialCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", net.JoinHostPort(host, port))

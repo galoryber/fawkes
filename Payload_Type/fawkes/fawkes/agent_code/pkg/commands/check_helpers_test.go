@@ -16,14 +16,14 @@ func TestCheckTCPPort_Open(t *testing.T) {
 	defer ln.Close()
 
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
-	result := checkTCPPort(nil, "127.0.0.1", port, 2*time.Second)
+	result := checkTCPPort(context.TODO(), "127.0.0.1", port, 2*time.Second)
 	if result != "open" {
 		t.Errorf("expected 'open', got %q", result)
 	}
 }
 
 func TestCheckTCPPort_Closed(t *testing.T) {
-	result := checkTCPPort(nil, "127.0.0.1", "1", 1*time.Second)
+	result := checkTCPPort(context.TODO(), "127.0.0.1", "1", 1*time.Second)
 	if result == "open" {
 		t.Error("expected closed/error, got 'open'")
 	}
