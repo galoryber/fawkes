@@ -14,18 +14,11 @@ func pkgListLinux(filter string) string {
 
 	// Try dpkg (Debian/Ubuntu) — native file parsing first, then subprocess fallback
 	if pkgs := parseDpkgStatus(); len(pkgs) > 0 {
-		filtered := filterPkgPairs(pkgs, filter)
-		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed", len(pkgs)))
-		if filter != "" {
-			sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
-		}
-		sb.WriteString(")\n")
-		writePkgPairs(&sb, filtered, 100)
+		writePkgManagerSection(&sb, "dpkg", pkgs, filter)
 		found = true
 	} else if output := runQuietCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Status}\n"); output != "" {
-		lines := strings.Split(strings.TrimSpace(output), "\n")
 		var pkgs [][2]string
-		for _, line := range lines {
+		for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 			if !strings.Contains(line, "install ok installed") {
 				continue
 			}
@@ -34,43 +27,24 @@ func pkgListLinux(filter string) string {
 				pkgs = append(pkgs, [2]string{parts[0], parts[1]})
 			}
 		}
-		filtered := filterPkgPairs(pkgs, filter)
-		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed", len(pkgs)))
-		if filter != "" {
-			sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
-		}
-		sb.WriteString(")\n")
-		writePkgPairs(&sb, filtered, 100)
+		writePkgManagerSection(&sb, "dpkg", pkgs, filter)
 		found = true
 	}
 
 	// Try rpm (RHEL/CentOS/Fedora) — native SQLite first, then subprocess fallback
 	if !found {
 		if pkgs := parseRpmDB(); len(pkgs) > 0 {
-			filtered := filterPkgPairs(pkgs, filter)
-			sb.WriteString(fmt.Sprintf("  Package Manager: rpm (%d installed", len(pkgs)))
-			if filter != "" {
-				sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
-			}
-			sb.WriteString(")\n")
-			writePkgPairs(&sb, filtered, 100)
+			writePkgManagerSection(&sb, "rpm", pkgs, filter)
 			found = true
 		} else if output := runQuietCommand("rpm", "-qa", "--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\n"); output != "" {
-			lines := strings.Split(strings.TrimSpace(output), "\n")
 			var pkgs [][2]string
-			for _, line := range lines {
+			for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 				parts := strings.SplitN(line, "\t", 2)
 				if len(parts) >= 2 {
 					pkgs = append(pkgs, [2]string{parts[0], parts[1]})
 				}
 			}
-			filtered := filterPkgPairs(pkgs, filter)
-			sb.WriteString(fmt.Sprintf("  Package Manager: rpm (%d installed", len(pkgs)))
-			if filter != "" {
-				sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
-			}
-			sb.WriteString(")\n")
-			writePkgPairs(&sb, filtered, 100)
+			writePkgManagerSection(&sb, "rpm", pkgs, filter)
 			found = true
 		}
 	}
@@ -78,13 +52,7 @@ func pkgListLinux(filter string) string {
 	// Try apk (Alpine) — native file parsing first, then subprocess fallback
 	if !found {
 		if pkgs := parseApkInstalled(); len(pkgs) > 0 {
-			filtered := filterPkgPairs(pkgs, filter)
-			sb.WriteString(fmt.Sprintf("  Package Manager: apk (%d installed", len(pkgs)))
-			if filter != "" {
-				sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
-			}
-			sb.WriteString(")\n")
-			writePkgPairs(&sb, filtered, 100)
+			writePkgManagerSection(&sb, "apk", pkgs, filter)
 			found = true
 		} else if output := runQuietCommand("apk", "list", "--installed"); output != "" {
 			lines := strings.Split(strings.TrimSpace(output), "\n")
@@ -163,6 +131,16 @@ func pkgListLinux(filter string) string {
 	}
 
 	return sb.String()
+}
+
+func writePkgManagerSection(sb *strings.Builder, manager string, pkgs [][2]string, filter string) {
+	filtered := filterPkgPairs(pkgs, filter)
+	sb.WriteString(fmt.Sprintf("  Package Manager: %s (%d installed", manager, len(pkgs)))
+	if filter != "" {
+		sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
+	}
+	sb.WriteString(")\n")
+	writePkgPairs(sb, filtered, 100)
 }
 
 func pkgListDarwin(filter string) string {
