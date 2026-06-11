@@ -75,18 +75,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("invalid regex pattern: %v", err)
 	}
 
-	// Parse extension filter
-	var extFilter map[string]bool
-	if args.Extensions != "" {
-		extFilter = make(map[string]bool)
-		for _, ext := range strings.Split(args.Extensions, ",") {
-			ext = strings.TrimSpace(ext)
-			if !strings.HasPrefix(ext, ".") {
-				ext = "." + ext
-			}
-			extFilter[strings.ToLower(ext)] = true
-		}
-	}
+	extFilter := grepParseExtFilter(args.Extensions)
 
 	// Resolve start path
 	startPath, err := filepath.Abs(args.Path)
@@ -175,11 +164,29 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	return grepFormatResults(matches, args.Pattern, startPath, filesSearched, args.MaxResults)
+}
+
+func grepParseExtFilter(extensions string) map[string]bool {
+	if extensions == "" {
+		return nil
+	}
+	extFilter := make(map[string]bool)
+	for _, ext := range strings.Split(extensions, ",") {
+		ext = strings.TrimSpace(ext)
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		extFilter[strings.ToLower(ext)] = true
+	}
+	return extFilter
+}
+
+func grepFormatResults(matches []grepMatch, pattern, startPath string, filesSearched, maxResults int) structs.CommandResult {
 	if len(matches) == 0 {
-		return successf("No matches found for pattern %q in %s (%d files searched)", args.Pattern, startPath, filesSearched)
+		return successf("No matches found for pattern %q in %s (%d files searched)", pattern, startPath, filesSearched)
 	}
 
-	// Format output
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Found %d matches in %s (%d files searched):\n\n", len(matches), startPath, filesSearched))
 
@@ -195,8 +202,8 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("%d: %s\n", m.Line, m.Content))
 	}
 
-	if len(matches) >= args.MaxResults {
-		sb.WriteString(fmt.Sprintf("\n[Results truncated at %d matches]", args.MaxResults))
+	if len(matches) >= maxResults {
+		sb.WriteString(fmt.Sprintf("\n[Results truncated at %d matches]", maxResults))
 	}
 
 	return successResult(sb.String())

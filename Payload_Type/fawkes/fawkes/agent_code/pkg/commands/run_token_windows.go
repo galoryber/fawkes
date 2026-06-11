@@ -51,78 +51,23 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 	// Prevent read handle from being inherited by child
 	windows.SetHandleInformation(stdoutRead, windows.HANDLE_FLAG_INHERIT, 0)
 
-	// Count attributes needed
-	attrCount := 0
-	if ppid > 0 {
-		attrCount++
-	}
-	if blockDLLs {
-		attrCount++
-	}
-	if attrCount == 0 {
-		attrCount = 1 // shouldn't happen but safety
-	}
-
-	// Set up proc thread attribute list
-	var attrListSize uintptr
-	procInitializeProcThreadAttributeList.Call(0, uintptr(attrCount), 0, uintptr(unsafe.Pointer(&attrListSize)))
-
-	attrListBuf := make([]byte, attrListSize)
-	attrList := (*PROC_THREAD_ATTRIBUTE_LIST)(unsafe.Pointer(&attrListBuf[0]))
-
-	ret, _, err := procInitializeProcThreadAttributeList.Call(
-		uintptr(unsafe.Pointer(attrList)), uintptr(attrCount), 0,
-		uintptr(unsafe.Pointer(&attrListSize)),
-	)
-	if ret == 0 {
-		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("InitializeProcThreadAttributeList: %w", err)
-	}
-	defer procDeleteProcThreadAttributeList.Call(uintptr(unsafe.Pointer(attrList)))
-
-	// PPID spoofing
-	var parentHandle windows.Handle
-	if ppid > 0 {
-		hParent, errOpen := windows.OpenProcess(windows.PROCESS_CREATE_PROCESS, false, uint32(ppid))
-		if errOpen != nil {
-			// Fall back to normal execution without PPID spoofing
+	attrList, parentHandle, attrCleanup, attrErr := initProcAttrList(ppid, blockDLLs)
+	if attrErr != nil {
+		// If PPID spoofing failed, try fallback
+		if ppid > 0 {
 			windows.CloseHandle(stdoutWrite)
 			if blockDLLs {
-				// Retry with only BlockDLLs
 				return runWithExtendedAttrs(cmdLine, 0, true)
 			}
-			// No attributes needed, fall back to exec with timeout
 			output, execErr := execCmdTimeout("cmd.exe", "/c", cmdLine)
 			return string(output), execErr
 		}
-		parentHandle = hParent
-		defer windows.CloseHandle(parentHandle)
-
-		ret, _, err = procUpdateProcThreadAttribute.Call(
-			uintptr(unsafe.Pointer(attrList)), 0,
-			uintptr(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS),
-			uintptr(unsafe.Pointer(&parentHandle)),
-			unsafe.Sizeof(parentHandle), 0, 0,
-		)
-		if ret == 0 {
-			windows.CloseHandle(stdoutWrite)
-			return "", fmt.Errorf("UpdateProcThreadAttribute (PPID): %w", err)
-		}
+		windows.CloseHandle(stdoutWrite)
+		return "", attrErr
 	}
-
-	// BlockDLLs mitigation
-	if blockDLLs {
-		mitigationPolicy := uint64(PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON)
-		ret, _, err = procUpdateProcThreadAttribute.Call(
-			uintptr(unsafe.Pointer(attrList)), 0,
-			uintptr(PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY),
-			uintptr(unsafe.Pointer(&mitigationPolicy)),
-			unsafe.Sizeof(mitigationPolicy), 0, 0,
-		)
-		if ret == 0 {
-			windows.CloseHandle(stdoutWrite)
-			return "", fmt.Errorf("UpdateProcThreadAttribute (BlockDLLs): %w", err)
-		}
+	defer attrCleanup()
+	if parentHandle != 0 {
+		defer windows.CloseHandle(parentHandle)
 	}
 
 	var siEx STARTUPINFOEX
@@ -142,7 +87,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 	}
 
 	creationFlags := uint32(CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT)
-	ret, _, err = procCreateProcessW.Call(
+	ret, _, lastErr := procCreateProcessW.Call(
 		0,
 		uintptr(unsafe.Pointer(cmdUTF16)),
 		0, 0,
@@ -157,7 +102,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 	windows.CloseHandle(stdoutWrite)
 
 	if ret == 0 {
-		return "", fmt.Errorf("CreateProcessW: %w", err)
+		return "", fmt.Errorf("CreateProcessW: %w", lastErr)
 	}
 
 	defer windows.CloseHandle(pi.Process)

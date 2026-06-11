@@ -179,6 +179,10 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		accessErrors = append(accessErrors, fmt.Sprintf("walk error: %v", walkErr))
 	}
 
+	return findFormatResults(matches, accessErrors, params, startPath, maxResults)
+}
+
+func findFormatResults(matches, accessErrors []string, params FindParams, startPath string, maxResults int) structs.CommandResult {
 	if len(matches) == 0 {
 		output := fmt.Sprintf("No files matching '%s' found in %s", params.Pattern, startPath)
 		output += findFilterSummary(params)
