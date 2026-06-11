@@ -43,8 +43,8 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 	defer cc.Close(ctx)
 
-	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
+	// Step 2: ObjectExporter — ServerAlive2 (unauthenticated, just gets COM version)
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithInsecure())
 	if err != nil {
 		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
@@ -54,7 +54,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// Step 3: RemoteActivation — activate ICertRequestD via DCOM
+	// Step 3: RemoteActivation — activate ICertRequestD via DCOM (needs auth)
 	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
@@ -137,8 +137,8 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	}
 	defer cc.Close(ctx)
 
-	// ObjectExporter — ServerAlive2
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
+	// ObjectExporter — ServerAlive2 (unauthenticated)
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithInsecure())
 	if err != nil {
 		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
@@ -147,7 +147,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// RemoteActivation — activate CertAdminD class (d99e6e73) with ICertAdminD2 IID
+	// RemoteActivation — activate CertAdminD class (needs auth)
 	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
