@@ -36,26 +36,32 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
 	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
 
-	// Step 1: Connect to EPM well-known endpoint (port 135) on the CA server
-	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
-	if err != nil {
-		return nil, fmt.Errorf("dial EPM on %s:135: %w", server, err)
-	}
-	defer cc.Close(ctx)
+	epmAddr := net.JoinHostPort(server, "135")
 
-	// Step 2: ObjectExporter — ServerAlive2 (unauthenticated, just gets COM version)
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithInsecure())
+	// Step 1: ObjectExporter — ServerAlive2 (unauthenticated, just gets COM version)
+	oxConn, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
+		return nil, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
+	}
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
+	if err != nil {
+		oxConn.Close(ctx)
 		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
-
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
+	oxConn.Close(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// Step 3: RemoteActivation — activate ICertRequestD via DCOM (needs auth)
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
+	// Step 2: RemoteActivation on a fresh connection (auth requires clean bind)
+	actConn, err := dcerpc.Dial(ctx, epmAddr)
+	if err != nil {
+		return nil, fmt.Errorf("dial EPM for activation: %w", err)
+	}
+	defer actConn.Close(ctx)
+
+	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
 	}
@@ -130,25 +136,32 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
 	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
 
-	// Connect to EPM on port 135
-	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
-	if err != nil {
-		return 0, fmt.Errorf("dial EPM on %s:135: %w", server, err)
-	}
-	defer cc.Close(ctx)
+	epmAddr := net.JoinHostPort(server, "135")
 
-	// ObjectExporter — ServerAlive2 (unauthenticated)
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithInsecure())
+	// ObjectExporter — ServerAlive2 (unauthenticated, separate connection)
+	oxConn, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
+		return 0, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
+	}
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, oxConn, dcerpc.WithInsecure())
+	if err != nil {
+		oxConn.Close(ctx)
 		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
+	oxConn.Close(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// RemoteActivation — activate CertAdminD class (needs auth)
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt, mechSPNEGO, mechNTLM)
+	// RemoteActivation on a fresh connection (auth requires clean bind)
+	actConn, err := dcerpc.Dial(ctx, epmAddr)
+	if err != nil {
+		return 0, fmt.Errorf("dial EPM for activation: %w", err)
+	}
+	defer actConn.Close(ctx)
+
+	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
 	}
