@@ -253,13 +253,13 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 	}
 
 	if err := setProp("Name", args.Name); err != nil {
-		return errorf("%v", err)
+		return errorf("setting firewall rule name: %v", err)
 	}
 	if err := setProp("Enabled", true); err != nil {
-		return errorf("%v", err)
+		return errorf("enabling firewall rule: %v", err)
 	}
 	if err := setProp("Profiles", fwProfileAll); err != nil {
-		return errorf("%v", err)
+		return errorf("setting firewall rule profiles: %v", err)
 	}
 
 	// Direction (default: inbound)
@@ -268,7 +268,7 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 		dir = fwRuleDirectionOut
 	}
 	if err := setProp("Direction", dir); err != nil {
-		return errorf("%v", err)
+		return errorf("setting firewall rule direction: %v", err)
 	}
 
 	// Action (default: allow)
@@ -277,7 +277,7 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 		action = fwActionBlock
 	}
 	if err := setProp("Action", action); err != nil {
-		return errorf("%v", err)
+		return errorf("setting firewall rule action: %v", err)
 	}
 
 	// Protocol
@@ -289,20 +289,20 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 		proto = fwIPProtocolUDP
 	}
 	if err := setProp("Protocol", proto); err != nil {
-		return errorf("%v", err)
+		return errorf("setting firewall rule protocol: %v", err)
 	}
 
 	// Ports (only for TCP/UDP)
 	if args.Port != "" && (proto == fwIPProtocolTCP || proto == fwIPProtocolUDP) {
 		if err := setProp("LocalPorts", args.Port); err != nil {
-			return errorf("%v", err)
+			return errorf("setting firewall rule local ports: %v", err)
 		}
 	}
 
 	// Program path
 	if args.Program != "" {
 		if err := setProp("ApplicationName", args.Program); err != nil {
-			return errorf("%v", err)
+			return errorf("setting firewall rule application path: %v", err)
 		}
 	}
 

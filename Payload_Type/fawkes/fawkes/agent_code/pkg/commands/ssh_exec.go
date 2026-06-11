@@ -74,7 +74,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err := validateSSHActionParams(action, args); err != nil {
-		return errorf("%v", err)
+		return errorf("validating SSH action parameters: %v", err)
 	}
 
 	// Set defaults for tunnel params
@@ -101,7 +101,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 
 	authMethods, authErr := buildSSHAuthMethods(args)
 	if authErr != nil {
-		return errorf("%v", authErr)
+		return errorf("building SSH auth methods: %v", authErr)
 	}
 
 	config := &ssh.ClientConfig{

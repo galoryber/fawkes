@@ -54,7 +54,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	oldIdentity, _ := GetCurrentIdentity()
 	hostnames, err := spooferHostnames()
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("resolving spoofer hostnames: %v", err)
 	}
 
 	var randBuf [4]byte

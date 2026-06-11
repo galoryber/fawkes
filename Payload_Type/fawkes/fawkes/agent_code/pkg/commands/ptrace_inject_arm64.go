@@ -54,7 +54,7 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 func ptraceInjectArm64(args ptraceInjectArgs) structs.CommandResult {
 	shellcode, restore, timeout, err := ptraceValidateAndDecode(args)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("validating injection arguments: %v", err)
 	}
 
 	var sb strings.Builder

@@ -270,7 +270,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 
 	pipes, pipeErr := potatoCreatePipes(pipeName)
 	if pipeErr != nil {
-		return errorf("%v", pipeErr)
+		return errorf("creating named pipes: %v", pipeErr)
 	}
 	defer pipes.close()
 

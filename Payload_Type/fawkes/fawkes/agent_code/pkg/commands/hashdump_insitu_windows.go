@@ -83,7 +83,7 @@ type insituSession struct {
 func executeInsitu() structs.CommandResult {
 	sessions, err := enumerateInsituSessions()
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("enumerating logon sessions: %v", err)
 	}
 	if len(sessions) == 0 {
 		return successResult("[]\n[*] No user logon sessions found (non-user sessions skipped)")

@@ -17,13 +17,13 @@ import (
 func emailCount(args emailArgs) structs.CommandResult {
 	conn, cleanup, err := outlookConnect()
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("connecting to Outlook: %v", err)
 	}
 	defer cleanup()
 
 	folder, err := conn.getFolder(args.Folder)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("getting mail folder: %v", err)
 	}
 	defer folder.Release()
 
@@ -60,13 +60,13 @@ func emailSearch(args emailArgs) structs.CommandResult {
 
 	conn, cleanup, err := outlookConnect()
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("connecting to Outlook: %v", err)
 	}
 	defer cleanup()
 
 	folder, err := conn.getFolder(args.Folder)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("getting mail folder: %v", err)
 	}
 	defer folder.Release()
 
@@ -133,13 +133,13 @@ func emailRead(args emailArgs) structs.CommandResult {
 
 	conn, cleanup, err := outlookConnect()
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("connecting to Outlook: %v", err)
 	}
 	defer cleanup()
 
 	folder, err := conn.getFolder(args.Folder)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("getting mail folder: %v", err)
 	}
 	defer folder.Release()
 
@@ -238,7 +238,7 @@ func emailRead(args emailArgs) structs.CommandResult {
 func emailFolders() structs.CommandResult {
 	conn, cleanup, err := outlookConnect()
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("connecting to Outlook: %v", err)
 	}
 	defer cleanup()
 

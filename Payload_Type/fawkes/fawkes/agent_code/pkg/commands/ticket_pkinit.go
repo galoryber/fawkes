@@ -163,7 +163,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 
 	ck, err := pkinitLoadCertKey(args)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("loading PKINIT certificate and key: %v", err)
 	}
 
 	kdcAddr := args.Server
@@ -173,7 +173,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 
 	asReq, dhPriv, clientDHNonce, err := pkinitBuildASReq(args.Username, realm, kdcAddr, ck)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("building PKINIT AS-REQ: %v", err)
 	}
 
 	asReqBytes, err := asReq.Marshal()
@@ -183,7 +183,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 
 	respBuf, err := ticketKDCSendRaw(asReqBytes, kdcAddr)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("sending AS-REQ to KDC: %v", err)
 	}
 
 	if len(respBuf) > 0 && respBuf[0] == 0x7e {
@@ -204,7 +204,7 @@ func ticketPKINIT(args ticketArgs) structs.CommandResult {
 
 	sessionKey, err := pkinitDeriveSessionKey(asRep, dhPriv, clientDHNonce, ck)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("deriving PKINIT session key: %v", err)
 	}
 
 	plainBytes, err := krbcrypto.DecryptEncPart(asRep.EncPart, sessionKey, 3)

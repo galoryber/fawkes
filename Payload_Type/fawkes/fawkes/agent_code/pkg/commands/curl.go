@@ -108,7 +108,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 
 	bodyReader, contentType, fileSize, closer, bodyErr := curlBuildRequestBody(&args)
 	if bodyErr != nil {
-		return errorf("%v", bodyErr)
+		return errorf("building request body: %v", bodyErr)
 	}
 	if closer != nil {
 		defer closer.Close()

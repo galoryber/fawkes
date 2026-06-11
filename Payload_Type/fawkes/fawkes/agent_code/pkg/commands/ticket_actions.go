@@ -116,7 +116,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	// Exchange AS-REQ with KDC
 	respBuf, err := ticketExchangeKDC(reqBytes, kdcAddr)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("exchanging AS-REQ with KDC: %v", err)
 	}
 
 	// Check if response is KRB-ERROR ([APPLICATION 30] = 0x7e)

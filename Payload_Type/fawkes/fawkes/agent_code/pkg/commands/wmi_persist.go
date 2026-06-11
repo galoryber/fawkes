@@ -166,7 +166,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	consumerName := args.Name + "_Consumer"
 
 	if err := wmiInstallFilter(services, filterName, wqlQuery, args.Trigger, args.IntervalSec); err != nil {
-		return errorf("%v", err)
+		return errorf("installing WMI event filter: %v", err)
 	}
 
 	// Step 2: Create event consumer
