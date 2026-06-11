@@ -33,6 +33,7 @@ import (
 // Credentials are passed via dcerpc.WithCredentials() matching the go-msrpc config pattern.
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte, cred sspcred.Credential) (*icertrequestd.RequestResponse, error) {
 	credOpt := dcerpc.WithCredentials(cred)
+	targetSPN := dcerpc.WithTargetName("host/" + server)
 	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
 	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
 
@@ -61,7 +62,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 	defer actConn.Close(ctx)
 
-	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
+	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), credOpt, targetSPN, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
 	}
@@ -92,7 +93,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 
 	// Step 5: Create WCCE client — fresh security context for the new connection
 	ctx = gssapi.NewSecurityContext(ctx)
-	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
+	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, targetSPN, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %w", err)
 	}
@@ -133,6 +134,7 @@ const editfAttributeSubjectAltName2 = 0x00040000
 // ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2).
 func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred.Credential) (uint32, error) {
 	credOpt := dcerpc.WithCredentials(cred)
+	targetSPN := dcerpc.WithTargetName("host/" + server)
 	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
 	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
 
@@ -161,7 +163,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	}
 	defer actConn.Close(ctx)
 
-	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
+	iact, err := iactivation.NewActivationClient(ctx, actConn, dcerpc.WithSeal(), credOpt, targetSPN, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
 	}
@@ -190,7 +192,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 
 	// Create CSRA client (CertAdminD + CertAdminD2) — fresh security context for new connection
 	ctx = gssapi.NewSecurityContext(ctx)
-	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
+	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, targetSPN, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return 0, fmt.Errorf("CSRA client: %w", err)
 	}
