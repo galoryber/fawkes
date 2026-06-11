@@ -1,11 +1,11 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
@@ -256,13 +256,6 @@ func adcsCheckESC6(sb *strings.Builder, caResult *ldap.SearchResult, args adcsAr
 			username = parts[0]
 		}
 	}
-	cred, credErr := rpcCredential(username, domain, args.Password, args.Hash)
-	structs.ZeroString(&args.Password)
-	structs.ZeroString(&args.Hash)
-	if credErr != nil {
-		sb.WriteString(fmt.Sprintf("  ESC6: credential setup failed: %v\n", credErr))
-		return 0
-	}
 
 	timeout := args.Timeout
 	if timeout <= 0 {
@@ -283,23 +276,39 @@ func adcsCheckESC6(sb *strings.Builder, caResult *ldap.SearchResult, args adcsAr
 			dcomTarget = args.Server
 		}
 
-		ctx, cancel := rpcSecurityContext(cred, time.Duration(timeout)*time.Second)
-		editFlags, err := adcsQueryEditFlags(ctx, dcomTarget, caName, cred)
-		cancel()
-
+		subParams, _ := json.Marshal(adcsEditFlagsSubprocessParams{CAName: caName})
+		rpcReq := rpcHelperRequest{
+			Operation: "adcs-editflags",
+			Server:    dcomTarget,
+			Username:  username,
+			Password:  args.Password,
+			Hash:      args.Hash,
+			Domain:    domain,
+			Timeout:   timeout,
+			Params:    subParams,
+		}
+		rawResult, err := rpcViaSubprocess(rpcReq)
 		if err != nil {
 			sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — %v\n", caName, dcomTarget, err))
 			continue
 		}
 
-		if editFlags&editfAttributeSubjectAltName2 != 0 {
+		var result adcsEditFlagsSubprocessResult
+		if err := json.Unmarshal(rawResult, &result); err != nil {
+			sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — parse result: %v\n", caName, dcomTarget, err))
+			continue
+		}
+
+		if result.EditFlags&editfAttributeSubjectAltName2 != 0 {
 			vulns++
 			sb.WriteString(fmt.Sprintf("[!] %s (%s): ESC6 VULNERABLE\n", caName, dcomTarget))
-			sb.WriteString(fmt.Sprintf("    EditFlags: 0x%08x (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)\n", editFlags))
+			sb.WriteString(fmt.Sprintf("    EditFlags: 0x%08x (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)\n", result.EditFlags))
 			sb.WriteString("    Any template with enrollment rights can be used for impersonation\n")
 		} else {
-			sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, dcomTarget, editFlags))
+			sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, dcomTarget, result.EditFlags))
 		}
 	}
+	structs.ZeroString(&args.Password)
+	structs.ZeroString(&args.Hash)
 	return vulns
 }

@@ -72,6 +72,10 @@ func RunRPCHelper(args []string) {
 		output, err = rpcHelperSvcctlDelete(req)
 	case "coerce":
 		output, err = rpcHelperCoerce(req)
+	case "adcs-request":
+		output, err = rpcHelperAdcsRequest(req)
+	case "adcs-editflags":
+		output, err = rpcHelperAdcsEditFlags(req)
 	default:
 		writeRPCError(fmt.Sprintf("unknown operation: %s", req.Operation))
 		os.Exit(1)
