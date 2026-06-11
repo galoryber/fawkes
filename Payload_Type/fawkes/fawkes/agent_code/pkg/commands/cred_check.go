@@ -191,13 +191,10 @@ func credCheckSMB(host string, args credCheckArgs, timeout time.Duration) credCh
 func credCheckWinRM(host string, args credCheckArgs, timeout time.Duration) credCheckResult {
 	result := credCheckResult{Host: host, Protocol: "WinRM"}
 
-	// Check if WinRM port is open first
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "5985"), timeout)
-	if err != nil {
+	if checkTCPPort(nil, host, "5985", timeout) != "open" {
 		result.Detail = "port 5985 closed/unreachable"
 		return result
 	}
-	_ = conn.Close()
 
 	// Attempt HTTP Basic auth (WinRM accepts NTLM but Basic is simpler to test)
 	client := &http.Client{
@@ -244,12 +241,10 @@ func credCheckWinRM(host string, args credCheckArgs, timeout time.Duration) cred
 func credCheckLDAP(host string, args credCheckArgs, timeout time.Duration) credCheckResult {
 	result := credCheckResult{Host: host, Protocol: "LDAP"}
 
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "389"), timeout)
-	if err != nil {
+	if checkTCPPort(nil, host, "389", timeout) != "open" {
 		result.Detail = "port 389 closed/unreachable"
 		return result
 	}
-	_ = conn.Close()
 
 	// LDAP simple bind test — construct a minimal bind request
 	bindDN := args.Username
