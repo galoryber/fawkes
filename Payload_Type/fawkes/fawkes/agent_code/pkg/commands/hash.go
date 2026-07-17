@@ -43,7 +43,7 @@ type hashResult struct {
 
 func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -path <file_or_dir> [-algorithm md5|sha1|sha256|sha512] [-recursive true] [-pattern *.exe]")
+		return errorResult("parameters required. Use -path <file_or_dir> [-algorithm md5|sha1|sha256|sha512] [-recursive true] [-pattern *.exe]")
 	}
 
 	var args hashArgs
@@ -52,7 +52,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path parameter is required")
+		return errorResult("path parameter is required")
 	}
 
 	if args.Algorithm == "" {
@@ -66,7 +66,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Validate algorithm
 	if !hashValidAlgorithm(args.Algorithm) {
-		return errorf("Error: unsupported algorithm '%s'. Use md5, sha1, sha256, or sha512", args.Algorithm)
+		return errorf("unsupported algorithm '%s'. Use md5, sha1, sha256, or sha512", args.Algorithm)
 	}
 
 	// Resolve path
@@ -80,12 +80,12 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errorf("Error: path not found: %s", path)
+			return errorf("path not found: %s", path)
 		}
 		if os.IsPermission(err) {
-			return errorf("Error: access denied to %s — check privileges", path)
+			return errorf("access denied to %s — check privileges", path)
 		}
-		return errorf("Error: cannot access %s: %v", path, err)
+		return errorf("cannot access %s: %v", path, err)
 	}
 
 	var results []hashResult
@@ -216,7 +216,9 @@ func hashDirectory(task structs.Task, root string, args hashArgs) []hashResult {
 		return nil
 	}
 
-	_ = filepath.WalkDir(root, walkFn)
+	if walkErr := filepath.WalkDir(root, walkFn); walkErr != nil && len(results) == 0 {
+		return []hashResult{{Path: root, Err: fmt.Sprintf("walk error: %v", walkErr)}}
+	}
 
 	// Sort by path
 	sort.Slice(results, func(i, j int) bool {

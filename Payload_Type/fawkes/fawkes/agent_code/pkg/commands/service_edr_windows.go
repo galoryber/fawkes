@@ -16,7 +16,7 @@ import (
 func serviceEdrEnumWindows() structs.CommandResult {
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
@@ -62,12 +62,12 @@ func serviceEdrEnumWindows() structs.CommandResult {
 // serviceEdrKillWindows attempts to stop and disable detected EDR/AV services.
 func serviceEdrKillWindows(args serviceArgs) structs.CommandResult {
 	if strings.ToUpper(args.Confirm) != "EDR-KILL" {
-		return errorResult("Error: EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to stop and disable security services.")
+		return errorResult("EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to stop and disable security services.")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 

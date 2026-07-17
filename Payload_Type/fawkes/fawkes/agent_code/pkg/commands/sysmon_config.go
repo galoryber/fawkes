@@ -240,7 +240,10 @@ func sysmonCheckResult(info sysmonInfo) structs.CommandResult {
 				sb.WriteString(fmt.Sprintf("  %s: %s\n", ch, state))
 			}
 		}
-		data, _ := json.Marshal(info)
+		data, err := json.Marshal(info)
+		if err != nil {
+			return errorf("failed to marshal result: %v", err)
+		}
 		return successResult(sb.String() + "\n" + string(data))
 	}
 
@@ -283,7 +286,10 @@ func sysmonCheckResult(info sysmonInfo) structs.CommandResult {
 		}
 	}
 
-	data, _ := json.Marshal(info)
+	data, err := json.Marshal(info)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(sb.String() + "\n" + string(data))
 }
 

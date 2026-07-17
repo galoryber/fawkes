@@ -5,7 +5,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"os/user"
 	"strings"
 	"time"
@@ -71,7 +70,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	ctx, cancel := context.WithTimeout(context.Background(), credPromptTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
+	out, err := safeCmdContext(ctx, "osascript", "-e", script).CombinedOutput()
 	defer structs.ZeroBytes(out)
 	if err != nil {
 		output := strings.TrimSpace(string(out))
@@ -146,7 +145,7 @@ func credPromptMFAPhishDarwin(task structs.Task) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), credPromptTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
+	out, err := safeCmdContext(ctx, "osascript", "-e", script).CombinedOutput()
 	defer structs.ZeroBytes(out)
 	if err != nil {
 		output := strings.TrimSpace(string(out))

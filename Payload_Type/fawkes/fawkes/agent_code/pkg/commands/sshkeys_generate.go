@@ -28,7 +28,7 @@ func sshKeysGenerate(args sshKeysArgs) structs.CommandResult {
 		var err error
 		sshDir, err = getSSHDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("failed to resolve SSH directory for user %q: %v", args.User, err)
 		}
 		privKeyPath = filepath.Join(sshDir, "id_ed25519")
 	}
@@ -36,37 +36,37 @@ func sshKeysGenerate(args sshKeysArgs) structs.CommandResult {
 
 	// Create .ssh dir if needed
 	if err := os.MkdirAll(sshDir, 0700); err != nil {
-		return errorf("Error creating %s: %v", sshDir, err)
+		return errorf("creating %s: %v", sshDir, err)
 	}
 
 	// Generate ed25519 key pair
 	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return errorf("Error generating key pair: %v", err)
+		return errorf("generating key pair: %v", err)
 	}
 
 	// Marshal private key to OpenSSH PEM format
 	privPEM, err := ssh.MarshalPrivateKey(privKey, "")
 	if err != nil {
-		return errorf("Error marshaling private key: %v", err)
+		return errorf("marshaling private key: %v", err)
 	}
 	privPEMBytes := pem.EncodeToMemory(privPEM)
 
 	// Marshal public key to authorized_keys format
 	sshPubKey, err := ssh.NewPublicKey(pubKey)
 	if err != nil {
-		return errorf("Error creating SSH public key: %v", err)
+		return errorf("creating SSH public key: %v", err)
 	}
 	pubKeyLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPubKey)))
 
 	// Write private key (0600)
 	if err := os.WriteFile(privKeyPath, privPEMBytes, 0600); err != nil {
-		return errorf("Error writing private key to %s: %v", privKeyPath, err)
+		return errorf("writing private key to %s: %v", privKeyPath, err)
 	}
 
 	// Write public key (0644)
 	if err := os.WriteFile(pubKeyPath, []byte(pubKeyLine+"\n"), 0644); err != nil {
-		return errorf("Error writing public key to %s: %v", pubKeyPath, err)
+		return errorf("writing public key to %s: %v", pubKeyPath, err)
 	}
 
 	var sb strings.Builder

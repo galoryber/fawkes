@@ -17,13 +17,13 @@ import (
 func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.CommandResult {
 	target := args.Filter
 	if target == "" {
-		return errorResult("Error: -filter parameter required — specify the target object (sAMAccountName, CN, or full DN)")
+		return errorResult("-filter parameter required — specify the target object (sAMAccountName, CN, or full DN)")
 	}
 
 	// Resolve target to DN
 	targetDN, err := ldapResolveDN(conn, target, baseDN)
 	if err != nil {
-		return errorf("Error resolving target '%s': %v", target, err)
+		return errorf("resolving target '%s': %v", target, err)
 	}
 
 	// Query nTSecurityDescriptor (binary attribute)
@@ -39,16 +39,16 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	result, err := conn.Search(searchReq)
 	if err != nil {
-		return errorf("Error querying nTSecurityDescriptor: %v", err)
+		return errorf("querying nTSecurityDescriptor: %v", err)
 	}
 
 	if len(result.Entries) == 0 {
-		return errorf("Error: object not found: %s", targetDN)
+		return errorf("object not found: %s", targetDN)
 	}
 
 	sd := result.Entries[0].GetRawAttributeValue("nTSecurityDescriptor")
 	if len(sd) < 20 {
-		return errorf("Error: nTSecurityDescriptor too short or not returned (length %d). May need elevated privileges.", len(sd))
+		return errorf("nTSecurityDescriptor too short or not returned (length %d). May need elevated privileges.", len(sd))
 	}
 
 	objClass := result.Entries[0].GetAttributeValues("objectClass")
@@ -120,7 +120,7 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	data, err := json.Marshal(out)
 	if err != nil {
-		return errorf("Error marshaling DACL JSON: %v", err)
+		return errorf("marshaling DACL JSON: %v", err)
 	}
 
 	return successResult(string(data))

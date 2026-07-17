@@ -194,6 +194,8 @@ func init() {
 				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			createArtifact(processResponse.TaskData.Task.ID, "Credential Access",
+				fmt.Sprintf("macOS Keychain extraction (%s): %d credentials (T1555.001)", action, len(creds)))
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {

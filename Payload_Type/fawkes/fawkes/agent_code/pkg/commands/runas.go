@@ -36,7 +36,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password)
 
 	if args.Command == "" || args.Username == "" || args.Password == "" {
-		return errorResult("Error: -command, -username, and -password are required")
+		return errorResult("-command, -username, and -password are required")
 	}
 
 	// Parse domain from username if DOMAIN\user format
@@ -82,7 +82,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return errorf("Error: CreateProcessWithLogonW failed: %v", err)
+		return errorf("CreateProcessWithLogonW failed: %v", err)
 	}
 
 	// Close handles

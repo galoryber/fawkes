@@ -30,7 +30,7 @@ func netEnumLocalShares() structs.CommandResult {
 	)
 
 	if ret != NERR_Success && ret != ERROR_MORE_DATA {
-		return errorf("Error enumerating local shares: NetShareEnum returned %d %s", ret, netApiErrorDesc(ret))
+		return errorf("enumerating local shares: NetShareEnum returned %d %s", ret, netApiErrorDesc(ret))
 	}
 
 	if buf == 0 || entriesRead == 0 {
@@ -56,7 +56,10 @@ func netEnumLocalShares() structs.CommandResult {
 		out = append(out, e)
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -85,7 +88,7 @@ func netEnumRemoteShares(target string) structs.CommandResult {
 	)
 
 	if ret != NERR_Success && ret != ERROR_MORE_DATA {
-		return errorf("Error enumerating shares on %s: NetShareEnum returned %d %s", target, ret, netApiErrorDesc(ret))
+		return errorf("enumerating shares on %s: NetShareEnum returned %d %s", target, ret, netApiErrorDesc(ret))
 	}
 
 	if buf == 0 || entriesRead == 0 {
@@ -108,7 +111,10 @@ func netEnumRemoteShares(target string) structs.CommandResult {
 		out = append(out, e)
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -124,7 +130,7 @@ func netEnumMappedDrives() structs.CommandResult {
 		uintptr(unsafe.Pointer(&handle)),
 	)
 	if ret != NERR_Success {
-		return errorf("Error opening network drive enumeration: WNetOpenEnum returned %d %s", ret, netApiErrorDesc(ret))
+		return errorf("opening network drive enumeration: WNetOpenEnum returned %d %s", ret, netApiErrorDesc(ret))
 	}
 	defer procWNetCloseEnum.Call(uintptr(handle))
 
@@ -172,6 +178,9 @@ func netEnumMappedDrives() structs.CommandResult {
 		return successResult("[]")
 	}
 
-	data, _ := json.Marshal(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

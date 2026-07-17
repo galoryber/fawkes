@@ -195,6 +195,41 @@ func (t *TCPProfile) UpdateCallbackUUID(uuid string) {
 	}
 }
 
+// RotateVaultKey generates a new encryption key, re-encrypts the vault blob,
+// and zeros the old key. No-op if vault is not active.
+func (t *TCPProfile) RotateVaultKey() error {
+	if t.vault == nil {
+		return nil
+	}
+
+	plaintext := vaultDecrypt(t.vault.key, t.vault.blob)
+	if plaintext == nil {
+		return fmt.Errorf("vault decryption failed during key rotation")
+	}
+
+	newKey := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, newKey); err != nil {
+		vaultZeroBytes(plaintext)
+		return fmt.Errorf("new key generation failed: %w", err)
+	}
+
+	newBlob := vaultEncrypt(newKey, plaintext)
+	vaultZeroBytes(plaintext)
+	if newBlob == nil {
+		vaultZeroBytes(newKey)
+		return fmt.Errorf("vault re-encryption failed")
+	}
+
+	oldKey := t.vault.key
+	oldBlob := t.vault.blob
+	t.vault.key = newKey
+	t.vault.blob = newBlob
+	vaultZeroBytes(oldKey)
+	vaultZeroBytes(oldBlob)
+
+	return nil
+}
+
 // getEncryptionKey returns the encryption key from the vault or struct field.
 func (t *TCPProfile) getEncryptionKey() string {
 	if t.vault != nil {

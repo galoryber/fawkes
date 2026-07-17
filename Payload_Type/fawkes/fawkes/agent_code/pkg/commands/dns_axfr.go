@@ -17,7 +17,7 @@ import (
 // Requires a DNS server parameter — zone transfers use TCP, not the system resolver.
 func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 	if args.Server == "" {
-		return errorResult("Error: -server is required for zone transfers (e.g., -server 192.168.1.1)")
+		return errorResult("-server is required for zone transfers (e.g., -server 192.168.1.1)")
 	}
 
 	server := args.Server
@@ -38,14 +38,14 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 	d := net.Dialer{Timeout: time.Duration(args.Timeout) * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", server)
 	if err != nil {
-		return errorf("Error connecting to %s: %v", server, err)
+		return errorf("connecting to %s: %v", server, err)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(time.Duration(args.Timeout) * time.Second))
 
 	// Send query
 	if _, err := conn.Write(tcpMsg); err != nil {
-		return errorf("Error sending AXFR query: %v", err)
+		return errorf("sending AXFR query: %v", err)
 	}
 
 	// Read all response messages (AXFR may span multiple TCP messages)

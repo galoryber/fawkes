@@ -25,7 +25,7 @@ type chmodArgs struct {
 
 func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -path <file> -mode <permissions> [-recursive true]")
+		return errorResult("parameters required. Use -path <file> -mode <permissions> [-recursive true]")
 	}
 
 	args, parseErr := unmarshalParams[chmodArgs](task)
@@ -34,11 +34,11 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path parameter is required")
+		return errorResult("path parameter is required")
 	}
 
 	if args.Mode == "" {
-		return errorResult("Error: mode parameter is required (e.g., '755', '644', '+x', 'u+rw')")
+		return errorResult("mode parameter is required (e.g., '755', '644', '+x', 'u+rw')")
 	}
 
 	// Resolve path
@@ -51,20 +51,20 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to stat %s: %v", path, err)
 	}
 
 	// Parse the mode
 	mode, err := chmodParseMode(args.Mode, info.Mode())
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to parse mode '%s': %v", args.Mode, err)
 	}
 
 	if !args.Recursive || !info.IsDir() {
 		// Single file or non-recursive
 		before := info.Mode()
 		if err := os.Chmod(path, mode); err != nil {
-			return errorf("Error: %v", err)
+			return errorf("failed to chmod %s to %s: %v", path, args.Mode, err)
 		}
 		return successResult(chmodFormatResult(path, before, mode))
 	}

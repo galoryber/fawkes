@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -44,7 +45,7 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Hosts == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: -hosts, -username, and -password (or -hash) are required")
+		return errorResult("-hosts, -username, and -password (or -hash) are required")
 	}
 
 	if args.Timeout <= 0 {
@@ -59,10 +60,10 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	hosts := lateralParseHosts(args.Hosts)
 	if len(hosts) == 0 {
-		return errorResult("Error: no valid hosts parsed")
+		return errorResult("no valid hosts parsed")
 	}
 	if len(hosts) > 256 {
-		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
+		return errorf("too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Test each host concurrently
@@ -191,13 +192,10 @@ func credCheckSMB(host string, args credCheckArgs, timeout time.Duration) credCh
 func credCheckWinRM(host string, args credCheckArgs, timeout time.Duration) credCheckResult {
 	result := credCheckResult{Host: host, Protocol: "WinRM"}
 
-	// Check if WinRM port is open first
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "5985"), timeout)
-	if err != nil {
+	if checkTCPPort(context.TODO(), host, "5985", timeout) != "open" {
 		result.Detail = "port 5985 closed/unreachable"
 		return result
 	}
-	_ = conn.Close()
 
 	// Attempt HTTP Basic auth (WinRM accepts NTLM but Basic is simpler to test)
 	client := &http.Client{
@@ -244,12 +242,10 @@ func credCheckWinRM(host string, args credCheckArgs, timeout time.Duration) cred
 func credCheckLDAP(host string, args credCheckArgs, timeout time.Duration) credCheckResult {
 	result := credCheckResult{Host: host, Protocol: "LDAP"}
 
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "389"), timeout)
-	if err != nil {
+	if checkTCPPort(context.TODO(), host, "389", timeout) != "open" {
 		result.Detail = "port 389 closed/unreachable"
 		return result
 	}
-	_ = conn.Close()
 
 	// LDAP simple bind test — construct a minimal bind request
 	bindDN := args.Username

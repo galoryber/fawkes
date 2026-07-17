@@ -190,7 +190,7 @@ func defenderWMIQueryWithTimeout(wql string, timeout time.Duration) (string, err
 	case r := <-ch:
 		return r.output, r.err
 	case <-time.After(timeout):
-		return "", fmt.Errorf("WMI query timed out after %w", timeout)
+		return "", fmt.Errorf("WMI query timed out after %v", timeout)
 	}
 }
 

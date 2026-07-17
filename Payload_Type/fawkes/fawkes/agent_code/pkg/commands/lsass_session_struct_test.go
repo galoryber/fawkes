@@ -27,15 +27,15 @@ func stampUnicodeStringHeader(raw []byte, at int, lengthBytes uint16, bufferAddr
 	binary.LittleEndian.PutUint64(raw[at+8:at+16], uint64(bufferAddr))
 }
 
-// makeFullNode builds a 0x180-byte node sized for LayoutWin10W8. Optional
+// makeFullNode builds a 0x180-byte node sized for LayoutWin10New. Optional
 // fillers populate just the fields parseLogonSessionFields reads.
 func makeFullNode(flink, blink uintptr, luid uint64, logonType uint32, credsPtr uintptr) []byte {
-	n := make([]byte, LayoutWin10W8.NodeReadSize)
+	n := make([]byte, LayoutWin10New.NodeReadSize)
 	binary.LittleEndian.PutUint64(n[0:8], uint64(flink))
 	binary.LittleEndian.PutUint64(n[8:16], uint64(blink))
-	binary.LittleEndian.PutUint64(n[LayoutWin10W8.LUIDOffset:LayoutWin10W8.LUIDOffset+8], luid)
-	binary.LittleEndian.PutUint32(n[LayoutWin10W8.LogonTypeOffset:LayoutWin10W8.LogonTypeOffset+4], logonType)
-	binary.LittleEndian.PutUint64(n[LayoutWin10W8.CredentialsOff:LayoutWin10W8.CredentialsOff+8], uint64(credsPtr))
+	binary.LittleEndian.PutUint64(n[LayoutWin10New.LUIDOffset:LayoutWin10New.LUIDOffset+8], luid)
+	binary.LittleEndian.PutUint32(n[LayoutWin10New.LogonTypeOffset:LayoutWin10New.LogonTypeOffset+4], logonType)
+	binary.LittleEndian.PutUint64(n[LayoutWin10New.CredentialsOff:LayoutWin10New.CredentialsOff+8], uint64(credsPtr))
 	return n
 }
 
@@ -165,12 +165,12 @@ func TestParseLogonSessionFields_FullNode(t *testing.T) {
 	r.put(serverBufAddr, utf16LEBytes("DC01"))
 
 	node := makeFullNode(0xFEED1, 0xFEED2, luid, 2 /* Interactive */, credsListAddr)
-	stampUnicodeStringHeader(node, LayoutWin10W8.UserNameOffset, uint16(len("alice")*2), userBufAddr)
-	stampUnicodeStringHeader(node, LayoutWin10W8.DomainOffset, uint16(len("CORP")*2), domainBufAddr)
-	stampUnicodeStringHeader(node, LayoutWin10W8.TypeOffset, uint16(len("NTLM")*2), typeBufAddr)
-	stampUnicodeStringHeader(node, LayoutWin10W8.LogonServerOff, uint16(len("DC01")*2), serverBufAddr)
+	stampUnicodeStringHeader(node, LayoutWin10New.UserNameOffset, uint16(len("alice")*2), userBufAddr)
+	stampUnicodeStringHeader(node, LayoutWin10New.DomainOffset, uint16(len("CORP")*2), domainBufAddr)
+	stampUnicodeStringHeader(node, LayoutWin10New.TypeOffset, uint16(len("NTLM")*2), typeBufAddr)
+	stampUnicodeStringHeader(node, LayoutWin10New.LogonServerOff, uint16(len("DC01")*2), serverBufAddr)
 
-	got := parseLogonSessionFields(r, node, LayoutWin10W8)
+	got := parseLogonSessionFields(r, node, LayoutWin10New)
 	if len(got.ParseErrors) != 0 {
 		t.Errorf("unexpected ParseErrors: %v", got.ParseErrors)
 	}
@@ -207,11 +207,11 @@ func TestParseLogonSessionFields_PartialFailure(t *testing.T) {
 	r.put(userBufAddr, utf16LEBytes("bob"))
 
 	node := makeFullNode(0, 0, luid, 3, 0xDEADBEEF)
-	stampUnicodeStringHeader(node, LayoutWin10W8.UserNameOffset, uint16(len("bob")*2), userBufAddr)
-	stampUnicodeStringHeader(node, LayoutWin10W8.DomainOffset, 8, domainBufAddr) // unregistered page
+	stampUnicodeStringHeader(node, LayoutWin10New.UserNameOffset, uint16(len("bob")*2), userBufAddr)
+	stampUnicodeStringHeader(node, LayoutWin10New.DomainOffset, 8, domainBufAddr) // unregistered page
 	// Type and LogonServer left zero (Length=0, Buffer=0) → empty strings, no error
 
-	got := parseLogonSessionFields(r, node, LayoutWin10W8)
+	got := parseLogonSessionFields(r, node, LayoutWin10New)
 	if got.LUID != luid {
 		t.Errorf("LUID = 0x%X, want 0x%X (parse should not be derailed by Domain failure)", got.LUID, luid)
 	}
@@ -238,7 +238,7 @@ func TestParseLogonSessionFields_ShortNodeBuffer(t *testing.T) {
 	// panic.
 	r := newBufferReader()
 	short := make([]byte, 0x80) // smaller than LUIDOffset+8 (0x70+8=0x78), so LUID parses but UserName at +0x90 doesn't
-	got := parseLogonSessionFields(r, short, LayoutWin10W8)
+	got := parseLogonSessionFields(r, short, LayoutWin10New)
 	if got.LUID == 0 {
 		// LUID at +0x70 would be readable in 0x80-byte buffer, parsed value
 		// is whatever zero-fill is there → still 0 here, but check no panic.
@@ -262,5 +262,50 @@ func TestLogonSessionTypeName(t *testing.T) {
 		if got := logonSessionTypeName(in); got != want {
 			t.Errorf("logonSessionTypeName(%d) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestReadAnsiString_Normal(t *testing.T) {
+	br := &bufferReader{pages: make(map[uintptr][]byte)}
+	data := []byte("Primary")
+	br.pages[0x5000] = data
+	raw := make([]byte, 16)
+	binary.LittleEndian.PutUint16(raw[0:2], 7)   // Length
+	binary.LittleEndian.PutUint16(raw[2:4], 8)    // MaxLength
+	binary.LittleEndian.PutUint64(raw[8:16], 0x5000)
+	s, err := readAnsiString(br, raw, 0, 1024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != "Primary" {
+		t.Errorf("got %q, want %q", s, "Primary")
+	}
+}
+
+func TestReadAnsiString_OddLength(t *testing.T) {
+	br := &bufferReader{pages: make(map[uintptr][]byte)}
+	br.pages[0x6000] = []byte("WDigest")
+	raw := make([]byte, 16)
+	binary.LittleEndian.PutUint16(raw[0:2], 7)   // Odd length = valid for ANSI
+	binary.LittleEndian.PutUint16(raw[2:4], 8)
+	binary.LittleEndian.PutUint64(raw[8:16], 0x6000)
+	s, err := readAnsiString(br, raw, 0, 1024)
+	if err != nil {
+		t.Fatalf("odd length should be accepted for ANSI: %v", err)
+	}
+	if s != "WDigest" {
+		t.Errorf("got %q, want %q", s, "WDigest")
+	}
+}
+
+func TestReadAnsiString_Empty(t *testing.T) {
+	br := &bufferReader{pages: make(map[uintptr][]byte)}
+	raw := make([]byte, 16) // All zeros → Length=0
+	s, err := readAnsiString(br, raw, 0, 1024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s != "" {
+		t.Errorf("got %q, want empty", s)
 	}
 }

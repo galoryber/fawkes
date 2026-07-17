@@ -32,19 +32,31 @@ type insituFullNodeReport struct {
 // KIWI_MSV1_0_CREDENTIAL_LIST entry walked from a session's credentials_ptr
 // (Phase 2C-ii-a).
 type insituFullCredentialReport struct {
-	Address             string                       `json:"address"`
-	AuthPackageId       uint32                       `json:"auth_package_id"`
-	AuthPackage         string                       `json:"auth_package"`
-	PrimaryCredsAddr    string                       `json:"primary_credentials_address,omitempty"`
-	ParsedUserName      string                       `json:"parsed_username,omitempty"`
-	ParsedDomain        string                       `json:"parsed_domain,omitempty"`
-	EncryptedAddress    string                       `json:"encrypted_address,omitempty"`
-	EncryptedLength     uint16                       `json:"encrypted_length,omitempty"`
-	EncryptedHexPreview string                       `json:"encrypted_hex_preview,omitempty"`
-	ParseErrors         []string                     `json:"parse_errors,omitempty"`
-	PrimaryReadErr      string                       `json:"primary_read_err,omitempty"`
-	Decrypted           *insituFullDecryptedReport   `json:"decrypted,omitempty"`
-	DecryptErr          string                       `json:"decrypt_err,omitempty"`
+	Address             string                             `json:"address"`
+	AuthPackageId       uint32                             `json:"auth_package_id"`
+	AuthPackage         string                             `json:"auth_package"`
+	RawHex              string                             `json:"raw_hex,omitempty"`
+	PrimaryCredsAddr    string                             `json:"primary_credentials_address,omitempty"`
+	ParsedUserName      string                             `json:"parsed_username,omitempty"`
+	ParsedDomain        string                             `json:"parsed_domain,omitempty"`
+	EncryptedAddress    string                             `json:"encrypted_address,omitempty"`
+	EncryptedLength     uint16                             `json:"encrypted_length,omitempty"`
+	EncryptedHexPreview string                             `json:"encrypted_hex_preview,omitempty"`
+	ParseErrors         []string                           `json:"parse_errors,omitempty"`
+	PrimaryReadErr      string                             `json:"primary_read_err,omitempty"`
+	Decrypted           *insituFullDecryptedReport         `json:"decrypted,omitempty"`
+	DecryptErr          string                             `json:"decrypt_err,omitempty"`
+	AdditionalEntries   []insituFullPrimaryCredEntryReport `json:"additional_entries,omitempty"`
+}
+
+// insituFullPrimaryCredEntryReport is a single entry from the inner
+// PRIMARY_CREDENTIALS chain (entries beyond the first are reported here).
+type insituFullPrimaryCredEntryReport struct {
+	CredentialName      string                     `json:"credential_name"`
+	EncryptedAddress    string                     `json:"encrypted_address,omitempty"`
+	EncryptedLength     uint16                     `json:"encrypted_length,omitempty"`
+	Decrypted           *insituFullDecryptedReport `json:"decrypted,omitempty"`
+	DecryptErr          string                     `json:"decrypt_err,omitempty"`
 }
 
 // insituFullDecryptedReport is the JSON projection of a successfully
@@ -52,20 +64,32 @@ type insituFullCredentialReport struct {
 type insituFullDecryptedReport struct {
 	Algorithm        string `json:"algorithm"`
 	PlaintextLength  int    `json:"plaintext_length"`
-	Layout           string `json:"layout"`
-	IsIso            bool   `json:"is_iso"`
-	IsNtOwfPassword  bool   `json:"is_nt_owf_password"`
-	IsLmOwfPassword  bool   `json:"is_lm_owf_password"`
-	IsShaOwPassword  bool   `json:"is_sha_owf_password"`
+	CredentialName   string `json:"credential_name,omitempty"`
+	Layout           string `json:"layout,omitempty"`
+	IsIso            bool   `json:"is_iso,omitempty"`
+	IsNtOwfPassword  bool   `json:"is_nt_owf_password,omitempty"`
+	IsLmOwfPassword  bool   `json:"is_lm_owf_password,omitempty"`
+	IsShaOwPassword  bool   `json:"is_sha_owf_password,omitempty"`
 	NtHashHex        string `json:"nt_hash_hex,omitempty"`
 	LmHashHex        string `json:"lm_hash_hex,omitempty"`
 	ShaHashHex       string `json:"sha_hash_hex,omitempty"`
 	DumpLine         string `json:"dump_line,omitempty"`
-	HeaderUserNameLength    uint16 `json:"header_username_length"`
-	HeaderUserNameMaxLen    uint16 `json:"header_username_max_length"`
-	HeaderLogonDomainLength uint16 `json:"header_logon_domain_length"`
-	HeaderLogonDomainMaxLen uint16 `json:"header_logon_domain_max_length"`
+	HeaderUserNameLength    uint16 `json:"header_username_length,omitempty"`
+	HeaderUserNameMaxLen    uint16 `json:"header_username_max_length,omitempty"`
+	HeaderLogonDomainLength uint16 `json:"header_logon_domain_length,omitempty"`
+	HeaderLogonDomainMaxLen uint16 `json:"header_logon_domain_max_length,omitempty"`
 	ParseErr                string `json:"parse_err,omitempty"`
+
+	KerberosKeys      []insituFullKerbKeyReport `json:"kerberos_keys,omitempty"`
+	PlaintextPassword string                    `json:"plaintext_password,omitempty"`
+	PlaintextDomain   string                    `json:"plaintext_domain,omitempty"`
+	PlaintextUser     string                    `json:"plaintext_user,omitempty"`
+}
+
+// insituFullKerbKeyReport is a single extracted Kerberos key.
+type insituFullKerbKeyReport struct {
+	EncType string `json:"enc_type"`
+	KeyHex  string `json:"key_hex"`
 }
 
 // insituFullSummary captures the top-level metadata of a hashdump in-situ
@@ -89,6 +113,8 @@ type insituFullSummary struct {
 	CredentialBlobsCaptured  int                    `json:"credential_blobs_captured"`
 	CredentialBlobsDecrypted int                    `json:"credential_blobs_decrypted"`
 	HashesExtracted          int                    `json:"hashes_extracted"`
+	KerberosKeysExtracted    int                    `json:"kerberos_keys_extracted,omitempty"`
+	PlaintextCredsExtracted  int                    `json:"plaintext_creds_extracted,omitempty"`
 	UnmatchedLUIDs           []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
 	Nodes                    []insituFullNodeReport `json:"nodes"`
 }

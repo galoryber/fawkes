@@ -72,7 +72,7 @@ func parseRanges(spec string, maxVal int) []int {
 
 func (c *CutCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	args, parseErr := unmarshalParams[cutArgs](task)
@@ -80,15 +80,15 @@ func (c *CutCommand) Execute(task structs.Task) structs.CommandResult {
 		return *parseErr
 	}
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 	if args.Fields == "" && args.Chars == "" {
-		return errorResult("Error: fields or chars is required")
+		return errorResult("fields or chars is required")
 	}
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to read file %q: %v", args.Path, err)
 	}
 
 	delim := args.Delimiter

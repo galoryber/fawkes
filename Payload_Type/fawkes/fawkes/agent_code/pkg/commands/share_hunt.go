@@ -77,7 +77,7 @@ func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Hosts == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: -hosts, -username, and -password (or -hash) are required")
+		return errorResult("-hosts, -username, and -password (or -hash) are required")
 	}
 
 	if args.Depth <= 0 {
@@ -98,10 +98,10 @@ func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse hosts
 	hosts := lateralParseHosts(args.Hosts)
 	if len(hosts) == 0 {
-		return errorResult("Error: no valid hosts parsed")
+		return errorResult("no valid hosts parsed")
 	}
 	if len(hosts) > 256 {
-		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
+		return errorf("too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Build extension set for matching

@@ -11,8 +11,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "wmi-persist",
-		Description:         "Install, remove, or list WMI Event Subscription persistence. Creates persistent event filter + command-line consumer that survives reboots.",
-		HelpString:          "wmi-persist -action install -name backdoor -trigger logon -command \"C:\\payload.exe\"\nwmi-persist -action list\nwmi-persist -action remove -name backdoor",
+		Description:         "Install, remove, or list WMI Event Subscription persistence. Creates persistent event filter + consumer (command-line or active script) that survives reboots.",
+		HelpString:          "wmi-persist -action install -name backdoor -trigger logon -command \"C:\\payload.exe\"\nwmi-persist -action install -name scriptback -trigger logon -consumer_type script -command \"CreateObject(\"\"Wscript.Shell\"\").Run \"\"payload.exe\"\"\"\nwmi-persist -action list\nwmi-persist -action remove -name backdoor",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1546.003"},
@@ -96,6 +96,30 @@ func init() {
 				},
 			},
 			{
+				Name:             "consumer_type",
+				CLIName:          "consumer_type",
+				ModalDisplayName: "Consumer Type",
+				Description:      "command: execute a command line (default), script: run VBScript/JScript in-memory (fileless)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"command", "script"},
+				DefaultValue:     "command",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "script_engine",
+				CLIName:          "script_engine",
+				ModalDisplayName: "Script Engine",
+				Description:      "Scripting engine for script consumer type (VBScript or JScript)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"VBScript", "JScript"},
+				DefaultValue:     "VBScript",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
 				Name:             "target",
 				CLIName:          "target",
 				ModalDisplayName: "Remote Host",
@@ -116,10 +140,18 @@ func init() {
 				msg += fmt.Sprintf(", name: %s", name)
 			}
 			msg += "). "
+			consumerType, _ := taskData.Args.GetStringArg("consumer_type")
 			switch action {
 			case "install":
-				msg += "Creates WMI EventFilter, CommandLineEventConsumer, and FilterToConsumerBinding. " +
-					"Detectable by monitoring WMI repository changes and Sysmon Event ID 19/20/21."
+				if consumerType == "script" {
+					msg += "Creates WMI EventFilter, ActiveScriptEventConsumer, and FilterToConsumerBinding. " +
+						"Script executes in-memory (fileless) via WMI scripting host. " +
+						"Detectable by Sysmon Event ID 19/20/21 and WMI activity monitoring. " +
+						"NOTE: ActiveScriptEventConsumer may be disabled on modern Windows (requires scrcons.exe)."
+				} else {
+					msg += "Creates WMI EventFilter, CommandLineEventConsumer, and FilterToConsumerBinding. " +
+						"Detectable by monitoring WMI repository changes and Sysmon Event ID 19/20/21."
+				}
 			case "remove":
 				msg += "Removes WMI event subscription — cleanup operation."
 			default:
@@ -208,11 +240,17 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
 			trigger, _ := taskData.Args.GetStringArg("trigger")
+			cType, _ := taskData.Args.GetStringArg("consumer_type")
 
 			var displayMsg string
 			switch action {
 			case "install":
-				displayMsg = fmt.Sprintf("wmi-persist install '%s' (trigger: %s)", name, trigger)
+				if cType == "script" {
+					engine, _ := taskData.Args.GetStringArg("script_engine")
+					displayMsg = fmt.Sprintf("wmi-persist install '%s' (trigger: %s, consumer: %s script)", name, trigger, engine)
+				} else {
+					displayMsg = fmt.Sprintf("wmi-persist install '%s' (trigger: %s)", name, trigger)
+				}
 			case "remove":
 				displayMsg = fmt.Sprintf("wmi-persist remove '%s'", name)
 			default:

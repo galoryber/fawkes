@@ -278,8 +278,8 @@ func TestFindLogonSessionListAnchor_NegativeDisplacement(t *testing.T) {
 func TestFindLogonSessionListAnchor_NotFound(t *testing.T) {
 	buf := make([]byte, 0x1000) // all zeros; no signature
 	_, err := findLogonSessionListAnchor(buf, 0x180000000)
-	if err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("expected 'not found' error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no variant matched") {
+		t.Fatalf("expected 'no variant matched' error, got %v", err)
 	}
 }
 
@@ -298,8 +298,8 @@ func TestFindLogonSessionListAnchor_TargetOutsideBuffer(t *testing.T) {
 	dispBufOffset := sigOffset + 9 + 3
 	binary.LittleEndian.PutUint32(buf[dispBufOffset:dispBufOffset+4], 0x00100000) // way past EOF
 	_, err := findLogonSessionListAnchor(buf, 0x180000000)
-	if err == nil || !strings.Contains(err.Error(), "outside captured") {
-		t.Fatalf("expected 'outside captured' error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no variant matched") {
+		t.Fatalf("expected 'no variant matched' error, got %v", err)
 	}
 }
 

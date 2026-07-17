@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"syscall"
@@ -27,10 +26,10 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.Command == "" {
-		return errorResult("Error: command parameter is required")
+		return errorResult("command parameter is required")
 	}
 	if params.Spoof == "" {
-		return errorResult("Error: spoof parameter is required")
+		return errorResult("spoof parameter is required")
 	}
 
 	return argueLinux(params)
@@ -44,21 +43,21 @@ func argueLinux(params argueParams) structs.CommandResult {
 
 	realParts := strings.Fields(params.Command)
 	if len(realParts) == 0 {
-		return errorResult("Error: command is empty")
+		return errorResult("command is empty")
 	}
 
 	spoofParts := strings.Fields(params.Spoof)
 	if len(spoofParts) == 0 {
-		return errorResult("Error: spoof is empty")
+		return errorResult("spoof is empty")
 	}
 
-	cmd := exec.Command(spoofParts[0], spoofParts[1:]...)
+	cmd := safeCmd(spoofParts[0], spoofParts[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Ptrace: true,
 	}
 
 	if err := cmd.Start(); err != nil {
-		return errorf("Error starting process: %v", err)
+		return errorf("starting process: %v", err)
 	}
 
 	pid := cmd.Process.Pid

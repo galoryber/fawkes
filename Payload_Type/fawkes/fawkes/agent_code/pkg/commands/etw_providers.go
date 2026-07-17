@@ -81,12 +81,12 @@ var kernelFlagDisplayNames = map[uint32]string{
 // Only applies to kernel trace sessions (NT Kernel Logger, SystemTraceControl, etc.).
 func etwProviderDisable(sessionName, flagName string) structs.CommandResult {
 	if sessionName == "" {
-		return errorResult("Error: session_name is required for provider-disable action\n" +
+		return errorResult("session_name is required for provider-disable action\n" +
 			"Usage: etw -action provider-disable -session_name \"NT Kernel Logger\" -provider process\n" +
 			"Kernel flags: process, thread, image-load, disk-io, network, registry, handle, file-io, driver, alpc")
 	}
 	if flagName == "" {
-		return errorResult("Error: provider is required (kernel flag name to disable)\n" +
+		return errorResult("provider is required (kernel flag name to disable)\n" +
 			"Available flags: process, thread, image-load, disk-io, disk-fileio, network, registry, handle, job, alpc, driver, file-io, file-ioinit, page-fault, hard-fault, split-io\n" +
 			"For disabling user-mode ETW providers, use '-action blind' instead.")
 	}
@@ -110,7 +110,7 @@ func etwProviderDisable(sessionName, flagName string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return errorf("Error converting session name: %v", err)
+		return errorf("converting session name: %v", err)
 	}
 
 	r1, _, sysErr := procControlTraceW.Call(
@@ -184,10 +184,10 @@ func etwProviderDisable(sessionName, flagName string) structs.CommandResult {
 // etwProviderEnable re-enables a kernel trace flag on a session.
 func etwProviderEnable(sessionName, flagName string) structs.CommandResult {
 	if sessionName == "" {
-		return errorResult("Error: session_name is required for provider-enable action")
+		return errorResult("session_name is required for provider-enable action")
 	}
 	if flagName == "" {
-		return errorResult("Error: provider is required (kernel flag name to enable)")
+		return errorResult("provider is required (kernel flag name to enable)")
 	}
 
 	flagValue, ok := kernelFlagNames[strings.ToLower(flagName)]
@@ -203,7 +203,7 @@ func etwProviderEnable(sessionName, flagName string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return errorf("Error converting session name: %v", err)
+		return errorf("converting session name: %v", err)
 	}
 
 	r1, _, _ := procControlTraceW.Call(

@@ -57,7 +57,7 @@ func peLoaderExec(peData []byte, cmdLine string, timeout int, exportName string)
 		rlPageReadWrite,
 	)
 	if allocBase == 0 {
-		return "", fmt.Errorf("VirtualAlloc failed: %w", err)
+		return "", fmt.Errorf("memory allocation failed: %w", err)
 	}
 
 	// Ensure cleanup on failure

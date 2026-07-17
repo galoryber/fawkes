@@ -146,6 +146,10 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
+			dll, _ := processResponse.TaskData.Args.GetStringArg("dll")
+			if dll == "" {
+				dll = "ntdll.dll"
+			}
 			if strings.Contains(responseText, "No hooks detected") {
 				createArtifact(processResponse.TaskData.Task.ID, "Security Product",
 					"[NTDLL] No hooks detected — ntdll.dll .text section clean")
@@ -160,6 +164,8 @@ func init() {
 				if strings.Contains(responseText, "Bytes restored") {
 					createArtifact(processResponse.TaskData.Task.ID, "Security Product",
 						fmt.Sprintf("[NTDLL Unhook] Restored .text section — %d hooked regions patched", hookCount))
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DEFENSE EVASION] Unhooked %s (%d regions restored) on %s", dll, hookCount, processResponse.TaskData.Callback.Host), true)
 				} else {
 					createArtifact(processResponse.TaskData.Task.ID, "Security Product",
 						fmt.Sprintf("[NTDLL Check] %d hooked regions detected in ntdll.dll", hookCount))

@@ -14,21 +14,21 @@ import (
 // browserDownloads extracts download history from Chromium-based browsers and Firefox.
 // Chromium: reads the downloads table from History SQLite database.
 // Firefox: reads downloads.json from each profile directory.
+type downloadEntry struct {
+	Browser   string
+	URL       string
+	FilePath  string
+	Size      int64
+	State     string
+	MimeType  string
+	StartTime string
+}
+
 // No decryption needed — works on all platforms.
 func browserDownloads(args browserArgs) structs.CommandResult {
 	paths := browserPaths(args.Browser)
 	if paths == nil {
 		return errorResult("Could not determine browser data paths")
-	}
-
-	type downloadEntry struct {
-		Browser   string
-		URL       string
-		FilePath  string
-		Size      int64
-		State     string
-		MimeType  string
-		StartTime string
 	}
 
 	var allEntries []downloadEntry
@@ -40,67 +40,9 @@ func browserDownloads(args browserArgs) structs.CommandResult {
 		}
 
 		if isFirefoxBrowser(browserName) {
-			// Firefox: parse downloads.json from each profile
-			profiles := findFirefoxProfiles(userDataDir)
-			for _, profileDir := range profiles {
-				dlPath := filepath.Join(profileDir, "downloads.json")
-				profileName := filepath.Base(profileDir)
-
-				data, err := os.ReadFile(dlPath)
-				if err != nil {
-					// downloads.json may not exist if no downloads have occurred
-					continue
-				}
-				defer structs.ZeroBytes(data)
-
-				var dlFile struct {
-					List []struct {
-						Source      string `json:"source"`
-						Target      string `json:"target"`
-						StartTime   int64  `json:"startTime"` // milliseconds since epoch
-						TotalBytes  int64  `json:"totalBytes"`
-						State       int    `json:"state"` // 0=downloading, 1=succeeded, 2=failed, 3=canceled, 4=paused, 5=blocked
-						ContentType string `json:"contentType"`
-					} `json:"list"`
-				}
-				if err := json.Unmarshal(data, &dlFile); err != nil {
-					errors = append(errors, fmt.Sprintf("%s (%s): parse downloads.json: %v", browserName, profileName, err))
-					continue
-				}
-
-				label := browserName
-				if profileName != "Default" {
-					label = fmt.Sprintf("%s (%s)", browserName, profileName)
-				}
-
-				for _, dl := range dlFile.List {
-					// Convert file:// URI to path
-					filePath := dl.Target
-					if strings.HasPrefix(filePath, "file:///") {
-						filePath = filePath[len("file://"):]
-					} else if strings.HasPrefix(filePath, "file://") {
-						filePath = filePath[len("file://"):]
-					}
-
-					state := firefoxDownloadState(dl.State)
-					startTime := "unknown"
-					if dl.StartTime > 0 {
-						// StartTime is milliseconds since epoch
-						t := time.Unix(dl.StartTime/1000, (dl.StartTime%1000)*1000000)
-						startTime = t.UTC().Format("2006-01-02 15:04:05")
-					}
-
-					allEntries = append(allEntries, downloadEntry{
-						Browser:   label,
-						URL:       dl.Source,
-						FilePath:  filePath,
-						Size:      dl.TotalBytes,
-						State:     state,
-						MimeType:  dl.ContentType,
-						StartTime: startTime,
-					})
-				}
-			}
+			entries, errs := browserDownloadsFirefox(browserName, userDataDir)
+			allEntries = append(allEntries, entries...)
+			errors = append(errors, errs...)
 			continue
 		}
 
@@ -188,6 +130,70 @@ func browserDownloads(args browserArgs) structs.CommandResult {
 	}
 
 	return successResult(sb.String())
+}
+
+// browserDownloadsFirefox extracts download history from Firefox profiles.
+func browserDownloadsFirefox(browserName, userDataDir string) ([]downloadEntry, []string) {
+	var entries []downloadEntry
+	var errors []string
+
+	profiles := findFirefoxProfiles(userDataDir)
+	for _, profileDir := range profiles {
+		dlPath := filepath.Join(profileDir, "downloads.json")
+		profileName := filepath.Base(profileDir)
+
+		data, err := os.ReadFile(dlPath)
+		if err != nil {
+			continue
+		}
+		defer structs.ZeroBytes(data)
+
+		var dlFile struct {
+			List []struct {
+				Source      string `json:"source"`
+				Target      string `json:"target"`
+				StartTime   int64  `json:"startTime"`
+				TotalBytes  int64  `json:"totalBytes"`
+				State       int    `json:"state"`
+				ContentType string `json:"contentType"`
+			} `json:"list"`
+		}
+		if err := json.Unmarshal(data, &dlFile); err != nil {
+			errors = append(errors, fmt.Sprintf("%s (%s): parse downloads.json: %v", browserName, profileName, err))
+			continue
+		}
+
+		label := browserName
+		if profileName != "Default" {
+			label = fmt.Sprintf("%s (%s)", browserName, profileName)
+		}
+
+		for _, dl := range dlFile.List {
+			filePath := dl.Target
+			if strings.HasPrefix(filePath, "file:///") {
+				filePath = filePath[len("file://"):]
+			} else if strings.HasPrefix(filePath, "file://") {
+				filePath = filePath[len("file://"):]
+			}
+
+			startTime := "unknown"
+			if dl.StartTime > 0 {
+				t := time.Unix(dl.StartTime/1000, (dl.StartTime%1000)*1000000)
+				startTime = t.UTC().Format("2006-01-02 15:04:05")
+			}
+
+			entries = append(entries, downloadEntry{
+				Browser:   label,
+				URL:       dl.Source,
+				FilePath:  filePath,
+				Size:      dl.TotalBytes,
+				State:     firefoxDownloadState(dl.State),
+				MimeType:  dl.ContentType,
+				StartTime: startTime,
+			})
+		}
+	}
+	return entries, errors
 }
 
 // chromeDownloadState converts a Chrome download state int to a human-readable string.

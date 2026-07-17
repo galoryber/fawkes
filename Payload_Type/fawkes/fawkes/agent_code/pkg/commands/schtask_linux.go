@@ -127,7 +127,7 @@ func parseSystemctlTimerOutput(output, scope string) []schtaskListEntry {
 
 func schtaskLinuxQuery(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for query (systemd timer unit name or at job ID)")
+		return errorResult("name is required for query (systemd timer unit name or at job ID)")
 	}
 
 	if strings.HasPrefix(args.Name, "at-job-") || isNumeric(args.Name) {
@@ -146,7 +146,7 @@ func querySystemdTimer(timerName string) structs.CommandResult {
 	if err != nil {
 		userOut, userErr := execCmdTimeout("systemctl", "--user", "show", timerName, "--no-pager")
 		if userErr != nil {
-			return errorf("Error querying timer '%s': %v", timerName, err)
+			return errorf("querying timer '%s': %v", timerName, err)
 		}
 		out = userOut
 	}
@@ -185,7 +185,7 @@ func parseSystemctlShow(output string) map[string]string {
 
 func schtaskLinuxCreate(args schtaskArgs) structs.CommandResult {
 	if args.Program == "" {
-		return errorResult("Error: program is required for task creation")
+		return errorResult("program is required for task creation")
 	}
 
 	trigger := strings.ToLower(args.Trigger)
@@ -200,7 +200,7 @@ func schtaskLinuxCreate(args schtaskArgs) structs.CommandResult {
 
 func schtaskLinuxCreateSystemdTimer(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for systemd timer creation")
+		return errorResult("name is required for systemd timer creation")
 	}
 
 	unitName := args.Name
@@ -249,10 +249,10 @@ func schtaskLinuxCreateSystemdTimer(args schtaskArgs) structs.CommandResult {
 	timerPath := filepath.Join(unitDir, unitName+".timer")
 
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
-		return errorf("Error writing service file: %v", err)
+		return errorf("writing service file: %v", err)
 	}
 	if err := os.WriteFile(timerPath, []byte(timerContent), 0644); err != nil {
-		return errorf("Error writing timer file: %v", err)
+		return errorf("writing timer file: %v", err)
 	}
 
 	scopeArgs := []string{}
@@ -271,14 +271,14 @@ func schtaskLinuxCreateSystemdTimer(args schtaskArgs) structs.CommandResult {
 
 func schtaskLinuxDelete(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for deletion")
+		return errorResult("name is required for deletion")
 	}
 
 	if strings.HasPrefix(args.Name, "at-job-") || isNumeric(args.Name) {
 		jobID := strings.TrimPrefix(args.Name, "at-job-")
 		out, err := execCmdTimeout("atrm", jobID)
 		if err != nil {
-			return errorf("Error deleting at job '%s': %v\n%s", jobID, err, string(out))
+			return errorf("deleting at job '%s': %v\n%s", jobID, err, string(out))
 		}
 		return successf("Deleted at job '%s'", jobID)
 	}
@@ -332,7 +332,7 @@ func deleteSystemdTimer(name string) structs.CommandResult {
 
 func schtaskLinuxRun(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to run a task (systemd timer/service unit name)")
+		return errorResult("name is required to run a task (systemd timer/service unit name)")
 	}
 
 	unitName := args.Name
@@ -352,7 +352,7 @@ func schtaskLinuxRun(args schtaskArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("systemctl", runArgs...)
 	if err != nil {
-		return errorf("Error starting '%s': %v\n%s", unitName, err, string(out))
+		return errorf("starting '%s': %v\n%s", unitName, err, string(out))
 	}
 
 	return successf("Triggered execution of '%s'", unitName)
@@ -360,7 +360,7 @@ func schtaskLinuxRun(args schtaskArgs) structs.CommandResult {
 
 func schtaskLinuxSetEnabled(args schtaskArgs, enabled bool) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required (systemd timer unit name)")
+		return errorResult("name is required (systemd timer unit name)")
 	}
 
 	timerName := args.Name
@@ -381,7 +381,7 @@ func schtaskLinuxSetEnabled(args schtaskArgs, enabled bool) structs.CommandResul
 
 	out, err := execCmdTimeout("systemctl", append(scopeArgs, action, timerName)...)
 	if err != nil {
-		return errorf("Error %s timer '%s': %v\n%s", action, timerName, err, string(out))
+		return errorf("%s timer '%s': %v\n%s", action, timerName, err, string(out))
 	}
 
 	label := "Enabled"
@@ -393,7 +393,7 @@ func schtaskLinuxSetEnabled(args schtaskArgs, enabled bool) structs.CommandResul
 
 func schtaskLinuxStop(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to stop a task (systemd service/timer unit name)")
+		return errorResult("name is required to stop a task (systemd service/timer unit name)")
 	}
 
 	unitName := args.Name
@@ -410,7 +410,7 @@ func schtaskLinuxStop(args schtaskArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("systemctl", stopArgs...)
 	if err != nil {
-		return errorf("Error stopping '%s': %v\n%s", unitName, err, string(out))
+		return errorf("stopping '%s': %v\n%s", unitName, err, string(out))
 	}
 
 	return successf("Stopped '%s'", unitName)

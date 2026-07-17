@@ -64,7 +64,7 @@ func securityInfoEDR() structs.CommandResult {
 
 	jsonOut, err := json.MarshalIndent(detections, "", "  ")
 	if err != nil {
-		return errorf("Error marshaling EDR results: %v", err)
+		return errorf("marshaling EDR results: %v", err)
 	}
 
 	var sb strings.Builder

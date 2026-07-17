@@ -78,6 +78,47 @@ var PrimaryCredential10NewLayout = primaryCredential10Layout{
 	ShaHashOff:     0x6A,
 }
 
+// PrimaryCredential10Layout is the layout for Win10 1511-1606
+// (mimikatz `_10`). Same as _10_NEW but without isoSize and DPAPIProtected
+// fields, so hashes are at lower offsets.
+var PrimaryCredential10Layout = primaryCredential10Layout{
+	Name:           "PrimaryCredential_10",
+	FixedSize:      0x68,
+	LogonDomainOff: 0x00,
+	UserNameOff:    0x10,
+	IsIsoOff:       0x28,
+	IsNtOff:        0x29,
+	IsLmOff:        0x2A,
+	IsShaOff:       0x2B,
+	NtHashOff:      0x34,
+	LmHashOff:      0x44,
+	ShaHashOff:     0x54,
+}
+
+// PrimaryCredential10OldLayout is the layout for Win10 1507 RTM
+// (mimikatz `_10_OLD`). No pNtlmCredIsoInProc pointer, no ISO fields.
+var PrimaryCredential10OldLayout = primaryCredential10Layout{
+	Name:           "PrimaryCredential_10_OLD",
+	FixedSize:      0x60,
+	LogonDomainOff: 0x00,
+	UserNameOff:    0x10,
+	IsIsoOff:       -1, // Not present in this layout
+	IsNtOff:        0x20,
+	IsLmOff:        0x21,
+	IsShaOff:       0x22,
+	NtHashOff:      0x2C,
+	LmHashOff:      0x3C,
+	ShaHashOff:     0x4C,
+}
+
+// primaryCredentialLayouts lists all known layouts in preference order.
+// Auto-detection tries each and picks the first with plausible header fields.
+var primaryCredentialLayouts = []primaryCredential10Layout{
+	PrimaryCredential10NewLayout,
+	PrimaryCredential10Layout,
+	PrimaryCredential10OldLayout,
+}
+
 const (
 	primaryCredHashLenNT  = 16
 	primaryCredHashLenLM  = 16
@@ -136,7 +177,9 @@ func parsePrimaryCredential10(plaintext []byte, layout primaryCredential10Layout
 			layout.Name, len(plaintext), layout.FixedSize)
 	}
 	p.Layout = layout.Name
-	p.IsIso = plaintext[layout.IsIsoOff] != 0
+	if layout.IsIsoOff >= 0 {
+		p.IsIso = plaintext[layout.IsIsoOff] != 0
+	}
 	p.IsNtOwfPassword = plaintext[layout.IsNtOff] != 0
 	p.IsLmOwfPassword = plaintext[layout.IsLmOff] != 0
 	p.IsShaOwPassword = plaintext[layout.IsShaOff] != 0
@@ -189,6 +232,44 @@ func hashdumpDumpLine(username string, ntHash, lmHash [16]byte, hasLm bool) stri
 		lmHex = hexLower(lmHash[:])
 	}
 	return fmt.Sprintf("%s:0:%s:%s:::", username, lmHex, hexLower(ntHash[:]))
+}
+
+// detectPrimaryCredentialLayout tries each known layout against the decrypted
+// plaintext and returns the first one whose LSA_UNICODE_STRING header fields
+// look plausible (even lengths, MaxLength >= Length, reasonable bounds). Falls
+// back to PrimaryCredential10NewLayout if no layout passes the heuristic.
+func detectPrimaryCredentialLayout(plaintext []byte) primaryCredential10Layout {
+	for _, layout := range primaryCredentialLayouts {
+		if len(plaintext) < layout.FixedSize {
+			continue
+		}
+		if isPlausibleCredLayout(plaintext, layout) {
+			return layout
+		}
+	}
+	return PrimaryCredential10NewLayout
+}
+
+func isPlausibleCredLayout(plaintext []byte, layout primaryCredential10Layout) bool {
+	domainLen := binary.LittleEndian.Uint16(plaintext[layout.LogonDomainOff : layout.LogonDomainOff+2])
+	domainMax := binary.LittleEndian.Uint16(plaintext[layout.LogonDomainOff+2 : layout.LogonDomainOff+4])
+	userLen := binary.LittleEndian.Uint16(plaintext[layout.UserNameOff : layout.UserNameOff+2])
+	userMax := binary.LittleEndian.Uint16(plaintext[layout.UserNameOff+2 : layout.UserNameOff+4])
+
+	if domainLen%2 != 0 || userLen%2 != 0 {
+		return false
+	}
+	if domainLen > domainMax || userLen > userMax {
+		return false
+	}
+	if domainLen > 512 || userLen > 512 {
+		return false
+	}
+	ntIsSet := plaintext[layout.IsNtOff]
+	if ntIsSet != 0 && ntIsSet != 1 {
+		return false
+	}
+	return true
 }
 
 // hexLower formats bytes as lowercase hex without any separators. encoding/hex

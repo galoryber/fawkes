@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -152,9 +151,6 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 			output += fmt.Sprintf("\nWorking days: %v", days)
 		}
 	}
-
-	// Log the change
-	log.Printf("timing updated: %d/%d", args.Interval, args.Jitter)
 
 	return successResult(output)
 }

@@ -81,7 +81,7 @@ func TestXorEncodeString_LongKey(t *testing.T) {
 	}
 	encoded := xorEncodeString("hi", key)
 	decoded, _ := base64.StdEncoding.DecodeString(encoded)
-	if decoded[0] != 'h'^0 || decoded[1] != 'i'^1 {
+	if decoded[0] != 'h'^key[0] || decoded[1] != 'i'^key[1] {
 		t.Errorf("unexpected XOR with long key: %x %x", decoded[0], decoded[1])
 	}
 }

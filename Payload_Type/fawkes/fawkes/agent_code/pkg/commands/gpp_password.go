@@ -51,7 +51,7 @@ var gppAESKey = []byte{
 
 func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <DC> -username <user@domain> -password <pass>")
+		return errorResult("parameters required. Use -server <DC> -username <user@domain> -password <pass>")
 	}
 
 	args, parseErr := unmarshalParams[gppArgs](task)
@@ -61,10 +61,10 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password)
 
 	if args.Server == "" {
-		return errorResult("Error: server (domain controller) is required")
+		return errorResult("server (domain controller) is required")
 	}
 	if args.Username == "" || args.Password == "" {
-		return errorResult("Error: username and password are required")
+		return errorResult("username and password are required")
 	}
 
 	if args.Port <= 0 {
@@ -78,7 +78,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, creds, err := searchGPPPasswords(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to search GPP passwords on %s: %v", args.Server, err)
 	}
 
 	result := structs.CommandResult{

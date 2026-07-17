@@ -17,7 +17,7 @@ import (
 
 func certstoreExport(store, filter, format, password string) structs.CommandResult {
 	if filter == "" {
-		return errorResult("Error: filter (thumbprint) is required for export action")
+		return errorResult("filter (thumbprint) is required for export action")
 	}
 	if format == "" {
 		format = "pem"

@@ -39,7 +39,7 @@ func TestKerberoastCommand_InvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status for invalid JSON, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error parsing") {
+	if !strings.Contains(result.Output, "parsing") {
 		t.Errorf("expected parsing error message, got %q", result.Output)
 	}
 }

@@ -6,7 +6,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -87,10 +86,10 @@ func persistLaunchAgent(args persistArgs) structs.CommandResult {
 
 func persistLaunchAgentInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Name == "" {
-		args.Name = "com.fawkes.agent"
+		args.Name = "com.apple.systempreferences.agent"
 	}
 
 	// Determine LaunchAgent vs LaunchDaemon
@@ -139,7 +138,7 @@ func persistLaunchAgentInstall(args persistArgs) structs.CommandResult {
 	}
 
 	// Load the agent
-	loadCmd := exec.Command("launchctl", "load", "-w", plistPath)
+	loadCmd := safeCmd("launchctl", "load", "-w", plistPath)
 	if out, err := loadCmd.CombinedOutput(); err != nil {
 		return errorf("Plist created at %s but launchctl load failed: %v\n%s", plistPath, err, string(out))
 	}
@@ -149,7 +148,7 @@ func persistLaunchAgentInstall(args persistArgs) structs.CommandResult {
 
 func persistLaunchAgentRemove(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = "com.fawkes.agent"
+		args.Name = "com.apple.systempreferences.agent"
 	}
 
 	// Try both user and system locations
@@ -163,7 +162,7 @@ func persistLaunchAgentRemove(args persistArgs) structs.CommandResult {
 	for _, plistPath := range locations {
 		if _, err := os.Stat(plistPath); err == nil {
 			// Unload first
-			_, _ = exec.Command("launchctl", "unload", "-w", plistPath).CombinedOutput()
+			_, _ = safeCmd("launchctl", "unload", "-w", plistPath).CombinedOutput()
 
 			if err := os.Remove(plistPath); err != nil {
 				return errorf("Failed to remove %s: %v", plistPath, err)
@@ -189,10 +188,10 @@ func persistShellProfile(args persistArgs) structs.CommandResult {
 
 func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute on login) is required")
+		return errorResult("path (command to execute on login) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -221,7 +220,7 @@ func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistShellProfileRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}

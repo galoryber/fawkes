@@ -37,18 +37,26 @@ function(task, responses){
         // Extract stdout output (everything after the status lines)
         let lines = combined.split("\n");
         let outputLines = [];
+        let errorLines = [];
         let pastHeader = false;
         for(let i = 0; i < lines.length; i++){
             if(pastHeader){
-                outputLines.push(lines[i]);
+                if(lines[i].startsWith("[ERROR] ")){
+                    errorLines.push(lines[i].substring(8));
+                } else {
+                    outputLines.push(lines[i]);
+                }
             } else if(lines[i].match(/^\[\+\]/) || lines[i].match(/^\[!\]/)){
                 pastHeader = true;
-                // Check if there's content after this line
             }
         }
         let execOutput = outputLines.join("\n").trim();
+        let execErrors = errorLines.join("\n").trim();
         if(execOutput){
             rows.push({"Property": {"plaintext": "Output"}, "Value": {"plaintext": execOutput, "copyIcon": true, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.85em", "whiteSpace": "pre-wrap"}}, "rowStyle": {}});
+        }
+        if(execErrors){
+            rows.push({"Property": {"plaintext": "Errors"}, "Value": {"plaintext": execErrors, "copyIcon": true, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.85em", "whiteSpace": "pre-wrap", "color": "#f44336"}}, "rowStyle": {"backgroundColor": "rgba(244,67,54,0.05)"}});
         }
 
         return {"table": [{"headers": headers, "rows": rows, "title": "BOF execution"}]};

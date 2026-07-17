@@ -150,6 +150,8 @@ func init() {
 			}
 			action, _ := processResponse.TaskData.Args.GetStringArg("action")
 			host := processResponse.TaskData.Callback.Host
+			createArtifact(processResponse.TaskData.Task.ID, "API Call",
+				fmt.Sprintf("LOLBIN proxy execution: %s on %s (T1218)", action, host))
 			logOperationEvent(processResponse.TaskData.Task.ID,
 				fmt.Sprintf("[DEFENSE EVASION] LOLBIN proxy execution (%s) on %s", action, host), true)
 			return response

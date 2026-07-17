@@ -23,7 +23,7 @@ func TestPrivescCheckInvalidJSON(t *testing.T) {
 	task := mockTask("privesc-check", "not valid json")
 	result := cmd.Execute(task)
 	assertError(t, result)
-	assertOutputContains(t, result, "Error parsing")
+	assertOutputContains(t, result, "parsing")
 }
 
 func TestPrivescCheckUnknownAction(t *testing.T) {

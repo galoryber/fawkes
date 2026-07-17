@@ -31,7 +31,7 @@ type secControl struct {
 func (c *SecurityInfoCommand) Execute(task structs.Task) structs.CommandResult {
 	var params secInfoParams
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &params)
+		_ = json.Unmarshal([]byte(task.Params), &params) // best-effort; proceed with defaults on error
 	}
 	if params.Action == "" {
 		params.Action = "all"

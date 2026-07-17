@@ -75,7 +75,7 @@ var knownEDRMinifilters = map[string]struct{ vendor, product string }{
 
 func securityInfoMinifilterEnum() structs.CommandResult {
 	if err := fltlib.Load(); err != nil {
-		return errorf("fltlib.dll not available: %v", err)
+		return errorf("filter manager library not available: %v", err)
 	}
 
 	var filters []minifilterInfo

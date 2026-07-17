@@ -34,7 +34,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := extractDarwinHashes()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to extract password hashes from Directory Services: %v", err)
 	}
 
 	if len(entries) == 0 {
@@ -42,7 +42,10 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if strings.ToLower(args.Format) == "json" {
-		data, _ := json.Marshal(entries)
+		data, err := json.Marshal(entries)
+		if err != nil {
+			return errorf("failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 

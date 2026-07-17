@@ -244,7 +244,7 @@ func TestBase64EncodeToUnwritablePath(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error for unwritable output path, got %s", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error writing output file") {
+	if !strings.Contains(result.Output, "writing output file") {
 		t.Errorf("expected write error message, got: %s", result.Output)
 	}
 }
@@ -257,7 +257,7 @@ func TestBase64DecodeToUnwritablePath(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error for unwritable output path, got %s", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error writing output file") {
+	if !strings.Contains(result.Output, "writing output file") {
 		t.Errorf("expected write error message, got: %s", result.Output)
 	}
 }

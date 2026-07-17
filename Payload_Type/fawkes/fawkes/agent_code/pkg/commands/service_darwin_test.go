@@ -110,9 +110,9 @@ func TestServiceArgs_ActionValues(t *testing.T) {
 func TestServiceArgs_JSONRoundTrip(t *testing.T) {
 	original := serviceArgs{
 		Action:  "create",
-		Name:    "com.globetech.fawkes",
-		BinPath: "/opt/fawkes/bin/agent",
-		Display: "Fawkes Agent",
+		Name:    "com.example.testservice",
+		BinPath: "/opt/svc/bin/agent",
+		Display: "Test Service Agent",
 		Start:   "disabled",
 	}
 

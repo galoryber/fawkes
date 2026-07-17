@@ -95,6 +95,19 @@ func upgradeToUTLS(ctx context.Context, rawConn net.Conn, addr string, helloID u
 		MinVersion:         stdConfig.MinVersion,
 	}
 
+	if len(stdConfig.Certificates) > 0 {
+		utlsCerts := make([]utls.Certificate, len(stdConfig.Certificates))
+		for i, c := range stdConfig.Certificates {
+			utlsCerts[i] = utls.Certificate{
+				Certificate: c.Certificate,
+				PrivateKey:  c.PrivateKey,
+				OCSPStaple:  c.OCSPStaple,
+				Leaf:        c.Leaf,
+			}
+		}
+		utlsConfig.Certificates = utlsCerts
+	}
+
 	if stdConfig.RootCAs != nil {
 		utlsConfig.RootCAs = stdConfig.RootCAs
 	}

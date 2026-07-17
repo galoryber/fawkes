@@ -31,7 +31,7 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 
 	pid := params.PID
 	if pid <= 0 {
-		return errorResult("Error: PID must be greater than 0")
+		return errorResult("PID must be greater than 0")
 	}
 
 	// Get process name before killing (best effort)
@@ -39,12 +39,12 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		return errorf("Error finding process %d: %v", pid, err)
+		return errorf("finding process %d: %v", pid, err)
 	}
 
 	err = proc.Kill()
 	if err != nil {
-		return errorf("Error killing process %d: %v", pid, err)
+		return errorf("killing process %d: %v", pid, err)
 	}
 
 	if procName != "" {

@@ -61,7 +61,7 @@ var defaultSensitivePatterns = []string{
 func smbSharePerms(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to connect to SMB on %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -69,7 +69,7 @@ func smbSharePerms(args smbArgs) structs.CommandResult {
 	shares, err := sc.session.ListSharenames()
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error listing shares: %v", err)
+		return errorf("listing shares: %v", err)
 	}
 
 	var results []sharePermResult
@@ -80,7 +80,7 @@ func smbSharePerms(args smbArgs) structs.CommandResult {
 
 	data, err := json.Marshal(results)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -112,7 +112,7 @@ func testShareAccess(sc *smbConn, shareName string) sharePermResult {
 	r.Remark = classifyShare(shareName, entries)
 
 	// Test write access with a temp file
-	testFile := fmt.Sprintf(".fawkes_perm_test_%d", time.Now().UnixNano()%100000)
+	testFile := fmt.Sprintf(".sys_perm_test_%d", time.Now().UnixNano()%100000)
 	sc.setDeadline(smbOperationTimeout)
 	f, err := share.OpenFile(testFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	sc.clearDeadline()
@@ -154,7 +154,7 @@ func classifyShare(name string, entries []os.FileInfo) string {
 func smbShareSpider(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to connect to SMB on %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -173,7 +173,7 @@ func smbShareSpider(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -209,7 +209,7 @@ func smbShareSpider(args smbArgs) structs.CommandResult {
 
 	data, err := json.Marshal(out)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -271,7 +271,7 @@ func spiderWalk(sc *smbConn, share interface{ ReadDir(string) ([]os.FileInfo, er
 func smbShareSearch(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to connect to SMB on %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -298,7 +298,7 @@ func smbShareSearch(args smbArgs) structs.CommandResult {
 		shares, err := sc.session.ListSharenames()
 		sc.clearDeadline()
 		if err != nil {
-			return errorf("Error listing shares: %v", err)
+			return errorf("listing shares: %v", err)
 		}
 		sharesToSearch = shares
 	}
@@ -329,7 +329,7 @@ func smbShareSearch(args smbArgs) structs.CommandResult {
 
 	data, err := json.Marshal(out)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 	return successResult(string(data))
 }

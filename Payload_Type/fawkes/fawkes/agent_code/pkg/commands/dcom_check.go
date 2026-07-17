@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -23,7 +22,7 @@ type dcomCheckResult struct {
 
 func dcomCheck(host string, timeout int) structs.CommandResult {
 	if host == "" {
-		return errorResult("Error: host is required for check action")
+		return errorResult("host is required for check action")
 	}
 
 	checkTimeout := 10 * time.Second
@@ -45,8 +44,7 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.DCOMConnect = "skipped"
 		result.ObjectAccess = "skipped"
 		result.Recommendation = "Port 135 (RPC) is not reachable. DCOM requires RPC on port 135 + dynamic high ports."
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Check 2: DCOM connectivity via WMI (uses same COM infrastructure)
@@ -74,8 +72,7 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 			} else {
 				result.Recommendation = fmt.Sprintf("DCOM connection failed: %v", res.err)
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			return successResult(string(data))
+			return checkResult(result)
 		}
 		result.DCOMConnect = "pass (WMI/DCOM accessible)"
 		defer res.cleanup()
@@ -91,8 +88,7 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.DCOMConnect = "timeout"
 		result.ObjectAccess = "skipped"
 		result.Recommendation = "DCOM connection timed out. Host may be firewalled."
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	if result.RPCPort == "open" && strings.HasPrefix(result.DCOMConnect, "pass") {
@@ -102,6 +98,5 @@ func dcomCheck(host string, timeout int) structs.CommandResult {
 		result.Recommendation = "Some prerequisites failed. Review individual check results."
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
-	return successResult(string(data))
+	return checkResult(result)
 }

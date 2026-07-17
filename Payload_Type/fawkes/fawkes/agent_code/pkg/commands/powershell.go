@@ -6,7 +6,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -46,12 +45,12 @@ func parsePowershellParams(params string) (string, bool) {
 // Execute executes the powershell command
 func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: No command specified")
+		return errorResult("No command specified")
 	}
 
 	command, encoded := parsePowershellParams(task.Params)
 	if command == "" {
-		return errorResult("Error: No command specified")
+		return errorResult("No command specified")
 	}
 
 	opts := DefaultPSOptions()
@@ -69,7 +68,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 			if outputStr != "" {
 				return errorf("%s\nError: %v", outputStr, err)
 			}
-			return errorf("Error executing PowerShell: %v", err)
+			return errorf("executing PowerShell: %v", err)
 		}
 		outputStr := strings.TrimSpace(output)
 		if outputStr == "" {
@@ -89,7 +88,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 			if outputStr != "" {
 				return errorf("%s\nError: %v", outputStr, err)
 			}
-			return errorf("Error executing PowerShell: %v", err)
+			return errorf("executing PowerShell: %v", err)
 		}
 		outputStr := strings.TrimSpace(output)
 		if outputStr == "" {
@@ -108,7 +107,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		args = BuildPSArgs(command, opts)
 	}
 
-	cmd := exec.CommandContext(ctx, "powershell.exe", args...)
+	cmd := safeCmdContext(ctx, "powershell.exe", args...)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -119,7 +118,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		if outputStr != "" {
 			return errorf("%s\nError: %v", outputStr, err)
 		}
-		return errorf("Error executing PowerShell: %v", err)
+		return errorf("executing PowerShell: %v", err)
 	}
 
 	outputStr := strings.TrimSpace(string(output))

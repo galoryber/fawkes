@@ -43,7 +43,7 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 		"-", // stdout
 		"trim", "0", strconv.Itoa(params.Duration),
 	}
-	cmd := exec.Command("rec", recArgs...)
+	cmd := safeCmd("rec", recArgs...)
 	output, err := audioRunWithTimeoutDarwin(cmd, task, params.Duration+5)
 	if err == nil && len(output) > 44 {
 		wavData = output
@@ -62,7 +62,7 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 			"-y",     // overwrite
 			"pipe:1", // output to stdout
 		}
-		ffCmd := exec.Command("ffmpeg", ffmpegArgs...)
+		ffCmd := safeCmd("ffmpeg", ffmpegArgs...)
 		ffOutput, ffErr := audioRunWithTimeoutDarwin(ffCmd, task, params.Duration+10)
 		if ffErr == nil && len(ffOutput) > 44 {
 			wavData = ffOutput
@@ -106,7 +106,10 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 				DataSize:    len(wavData),
 				DeviceUsed:  "default",
 			}
-			output, _ := json.Marshal(result)
+			output, err := json.Marshal(result)
+			if err != nil {
+				return errorf("failed to marshal result: %v", err)
+			}
 			return successResult(string(output))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {

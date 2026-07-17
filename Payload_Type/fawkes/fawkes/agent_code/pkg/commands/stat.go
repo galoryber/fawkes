@@ -24,7 +24,7 @@ type statArgs struct {
 
 func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -path <file>")
+		return errorResult("parameters required. Use -path <file>")
 	}
 
 	var args statArgs
@@ -33,7 +33,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path parameter is required")
+		return errorResult("path parameter is required")
 	}
 
 	// Resolve path
@@ -47,12 +47,12 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errorf("Error: path not found: %s", path)
+			return errorf("path not found: %s", path)
 		}
 		if os.IsPermission(err) {
-			return errorf("Error: access denied to %s — check privileges", path)
+			return errorf("access denied to %s — check privileges", path)
 		}
-		return errorf("Error: cannot access %s", path)
+		return errorf("cannot access %s", path)
 	}
 
 	// Build output

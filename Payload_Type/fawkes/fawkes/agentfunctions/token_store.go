@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -89,6 +90,9 @@ func init() {
 			if user == "" {
 				return response
 			}
+			createArtifact(processResponse.TaskData.Task.ID, "API Call",
+				fmt.Sprintf("Token store: impersonating %s (T1134.001)", user))
+
 			host := processResponse.TaskData.Callback.Host
 			_, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
 				TaskID: processResponse.TaskData.Task.ID,

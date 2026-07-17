@@ -108,7 +108,7 @@ func (s *apiSpoofState) init() error {
 	if err != nil {
 		windows.CloseHandle(reqEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc data: %w", err)
+		return fmt.Errorf("memory alloc data: %w", err)
 	}
 	s.dataAddr = dataAddr
 
@@ -119,7 +119,7 @@ func (s *apiSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(reqEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc spoof stack: %w", err)
+		return fmt.Errorf("memory alloc stack: %w", err)
 	}
 	s.spoofStack = spoofStack
 
@@ -144,7 +144,7 @@ func (s *apiSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(reqEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc stub: %w", err)
+		return fmt.Errorf("memory alloc stub: %w", err)
 	}
 	stubSlice := unsafe.Slice((*byte)(unsafe.Pointer(stubAddr)), len(stub))
 	copy(stubSlice, stub)
@@ -174,7 +174,7 @@ func (s *apiSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(reqEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("CreateThread: %w", err)
+		return fmt.Errorf("thread creation: %w", err)
 	}
 
 	s.threadHandle = hThread

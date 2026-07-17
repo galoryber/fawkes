@@ -31,7 +31,7 @@ type regDeleteArgs struct {
 
 func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required (hive, path)")
+		return errorResult("parameters required (hive, path)")
 	}
 
 	args, parseErr := unmarshalParams[regDeleteArgs](task)
@@ -40,12 +40,12 @@ func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return errorf("Error deleting registry key: %v", err)
+		return errorf("deleting registry key: %v", err)
 	}
 
 	if args.Name != "" {
@@ -61,7 +61,7 @@ func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 func regDeleteValue(hiveKey registry.Key, args regDeleteArgs) structs.CommandResult {
 	key, err := registry.OpenKey(hiveKey, args.Path, registry.SET_VALUE)
 	if err != nil {
-		return errorf("Error opening key %s\\%s: %v", args.Hive, args.Path, err)
+		return errorf("opening key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	defer key.Close()
 
@@ -71,7 +71,7 @@ func regDeleteValue(hiveKey registry.Key, args regDeleteArgs) structs.CommandRes
 		if displayName == "" {
 			displayName = "(Default)"
 		}
-		return errorf("Error deleting value '%s': %v", displayName, err)
+		return errorf("deleting value '%s': %v", displayName, err)
 	}
 
 	displayName := args.Name
@@ -89,7 +89,7 @@ func regDeleteKey(hiveKey registry.Key, args regDeleteArgs, recursive bool) stru
 	// Non-recursive: delete the leaf key only
 	err := registry.DeleteKey(hiveKey, args.Path)
 	if err != nil {
-		return errorf("Error deleting key %s\\%s: %v (if key has subkeys, use -recursive true)", args.Hive, args.Path, err)
+		return errorf("deleting key %s\\%s: %v (if key has subkeys, use -recursive true)", args.Hive, args.Path, err)
 	}
 
 	return successf("Deleted key: %s\\%s", args.Hive, args.Path)

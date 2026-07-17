@@ -114,6 +114,8 @@ func init() {
 				}
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			createArtifact(processResponse.TaskData.Task.ID, "Credential Access",
+				fmt.Sprintf("SSH agent enumeration: %d keys discovered", len(creds)))
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {

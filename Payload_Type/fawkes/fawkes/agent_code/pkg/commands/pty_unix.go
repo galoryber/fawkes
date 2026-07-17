@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 
@@ -50,7 +49,7 @@ func (c *PtyCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Start shell with PTY
-	cmd := exec.Command(shell)
+	cmd := safeCmd(shell)
 	cmd.Env = os.Environ()
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{

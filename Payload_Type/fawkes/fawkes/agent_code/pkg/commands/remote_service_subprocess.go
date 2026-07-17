@@ -83,7 +83,10 @@ func rpcHelperSvcctlList(req rpcHelperRequest) (json.RawMessage, error) {
 	needed := resp.BytesNeededLength
 	if needed == 0 {
 		result := svcctlResult{Text: "No services found"}
-		out, _ := json.Marshal(result)
+		out, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal result: %v", err)
+		}
 		return out, nil
 	}
 
@@ -112,7 +115,10 @@ func rpcHelperSvcctlList(req rpcHelperRequest) (json.RawMessage, error) {
 	}
 
 	result := svcctlResult{Text: sb.String()}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -176,7 +182,10 @@ func rpcHelperSvcctlQuery(req rpcHelperRequest) (json.RawMessage, error) {
 	sb.WriteString(fmt.Sprintf("  State        : %s\n", remoteSvcStateName(statusResp.ServiceStatus.CurrentState)))
 
 	result := svcctlResult{Text: sb.String()}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -226,7 +235,10 @@ func rpcHelperSvcctlCreate(req rpcHelperRequest) (json.RawMessage, error) {
 	_, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: createResp.Service})
 
 	result := svcctlResult{Text: fmt.Sprintf("Service %q created (binary: %s, start: %s)", p.Name, p.BinPath, p.StartType)}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -273,7 +285,10 @@ func rpcHelperSvcctlStart(req rpcHelperRequest) (json.RawMessage, error) {
 	}
 
 	result := svcctlResult{Text: fmt.Sprintf("Service %q started", p.Name)}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -321,7 +336,10 @@ func rpcHelperSvcctlStop(req rpcHelperRequest) (json.RawMessage, error) {
 	}
 
 	result := svcctlResult{Text: fmt.Sprintf("Service %q stopped", p.Name)}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -368,6 +386,9 @@ func rpcHelperSvcctlDelete(req rpcHelperRequest) (json.RawMessage, error) {
 	}
 
 	result := svcctlResult{Text: fmt.Sprintf("Service %q deleted", p.Name)}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }

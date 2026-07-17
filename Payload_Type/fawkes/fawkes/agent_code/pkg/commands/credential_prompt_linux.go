@@ -97,7 +97,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	ctx, cancel := context.WithTimeout(context.Background(), credPromptLinuxTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, toolPath, dialogArgs...).CombinedOutput()
+	out, err := safeCmdContext(ctx, toolPath, dialogArgs...).CombinedOutput()
 	defer structs.ZeroBytes(out)
 	if err != nil {
 		// Exit code 1 = user cancelled for zenity/yad, exit code 1 for kdialog cancel
@@ -189,7 +189,7 @@ func credPromptMFAPhishLinux(task structs.Task) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), credPromptLinuxTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, toolPath, dialogArgs...).CombinedOutput()
+	out, err := safeCmdContext(ctx, toolPath, dialogArgs...).CombinedOutput()
 	defer structs.ZeroBytes(out)
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {

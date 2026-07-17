@@ -197,6 +197,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "env_key_cpuid",
+			Description:   "Optional: Environment key — regex pattern the CPU brand string must match (e.g. '.*Intel.*i7-12700.*' or '.*AMD.*5950X.*'). Agent exits silently before checkin if CPU doesn't match. Prevents execution in sandboxes with different CPU models. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "env_key_derive",
 			Description:   "Environmental keying: encrypt C2 config with a key derived from the target host's properties. The payload only decrypts on the correct host — wrong host = silent exit, no C2 config in binary. Requires the corresponding env_key_* values to be set with EXACT values (not regex). Stronger than env_key match alone (config is AES-encrypted, not just checked).",
 			Required:      false,
@@ -294,7 +301,7 @@ var payloadDefinition = agentstructs.PayloadType{
 		},
 		{
 			Name:          "stack_spoof",
-			Description:   "Spoof the call stack of the sleeping thread. Creates a dedicated native thread that performs NtDelayExecution with fake return addresses pointing to kernel32.dll and ntdll.dll, defeating EDR thread-scanning tools (Hunt-Sleeping-Beacons, Moneta). Requires indirect_syscalls=true. Windows only.",
+			Description:   "Spoof the call stack of the sleeping thread. Windows: dedicated native thread with NtDelayExecution and fake return addresses from kernel32/ntdll, defeating EDR thread scanners (Hunt-Sleeping-Beacons, Moneta). Requires indirect_syscalls=true. Linux amd64: native child process via clone with anonymous mmap'd code. macOS arm64: native pthread with ARM64 machine code stub using __ulock_wait/nanosleep. All platforms: no Go runtime or agent frames on the sleeping thread's stack.",
 			Required:      false,
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,

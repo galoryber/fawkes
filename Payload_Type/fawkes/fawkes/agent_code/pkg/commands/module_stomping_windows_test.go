@@ -42,7 +42,7 @@ func TestModuleStompingParams_Validation(t *testing.T) {
 		{
 			name:    "invalid json",
 			params:  "{invalid",
-			wantErr: "Error parsing",
+			wantErr: "parsing",
 		},
 		{
 			name:    "empty shellcode",

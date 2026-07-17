@@ -50,7 +50,7 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Command == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			return errorf("Error getting executable path: %v", err)
+			return errorf("getting executable path: %v", err)
 		}
 		args.Command = exe
 	}

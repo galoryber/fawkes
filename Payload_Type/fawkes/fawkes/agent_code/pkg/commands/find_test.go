@@ -114,7 +114,7 @@ func TestFindPlainText(t *testing.T) {
 	task.Params = "*.go"
 	result := cmd.Execute(task)
 	// Plain text should be treated as pattern (not a parse error)
-	if result.Status == "error" && strings.Contains(result.Output, "Error parsing") {
+	if result.Status == "error" && strings.Contains(result.Output, "parsing") {
 		t.Errorf("plain text should be treated as pattern, got parse error: %s", result.Output)
 	}
 }
@@ -621,5 +621,57 @@ func TestFindFilterSummaryWithOwner(t *testing.T) {
 	summary := findFilterSummary(params)
 	if !strings.Contains(summary, "owner=root") {
 		t.Errorf("summary should include owner, got %q", summary)
+	}
+}
+
+func TestFindFormatResults_NoMatches(t *testing.T) {
+	params := FindParams{Pattern: "*.txt", MaxDepth: 10}
+	result := findFormatResults(nil, nil, params, "/home", 500)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "No files matching '*.txt'") {
+		t.Errorf("expected no-match message, got %q", result.Output)
+	}
+}
+
+func TestFindFormatResults_WithMatches(t *testing.T) {
+	matches := []string{"/home/a.txt", "/home/b.txt", "/home/c.txt"}
+	params := FindParams{Pattern: "*.txt", MaxDepth: 10}
+	result := findFormatResults(matches, nil, params, "/home", 500)
+	if !strings.Contains(result.Output, "Found 3 match(es)") {
+		t.Errorf("expected 3 matches, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "/home/a.txt") {
+		t.Errorf("expected file path in output")
+	}
+}
+
+func TestFindFormatResults_Truncated(t *testing.T) {
+	matches := []string{"/a", "/b", "/c"}
+	params := FindParams{Pattern: "*", MaxDepth: 10}
+	result := findFormatResults(matches, nil, params, "/", 3)
+	if !strings.Contains(result.Output, "results truncated at 3") {
+		t.Errorf("expected truncation message, got %q", result.Output)
+	}
+}
+
+func TestFindFormatResults_WithAccessErrors(t *testing.T) {
+	result := findFormatResults(nil, []string{"/root", "/etc/shadow"}, FindParams{Pattern: "*", MaxDepth: 10}, "/", 500)
+	if !strings.Contains(result.Output, "2 path(s) inaccessible") {
+		t.Errorf("expected access error count, got %q", result.Output)
+	}
+}
+
+func TestFindFormatResults_MatchesWithErrors(t *testing.T) {
+	matches := []string{"/home/a.txt"}
+	errors := []string{"/root"}
+	params := FindParams{Pattern: "*.txt", MaxDepth: 10}
+	result := findFormatResults(matches, errors, params, "/", 500)
+	if !strings.Contains(result.Output, "Found 1 match(es)") {
+		t.Errorf("expected 1 match")
+	}
+	if !strings.Contains(result.Output, "1 path(s) inaccessible") {
+		t.Errorf("expected access error count")
 	}
 }

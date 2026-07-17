@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -40,7 +39,7 @@ func chromeSafeStorageKey(browserName string) ([]byte, error) {
 	// Try to retrieve password from GNOME Keyring / Secret Service via secret-tool
 	var password string
 	for _, app := range appNames {
-		cmd := exec.Command("secret-tool", "lookup", "application", app)
+		cmd := safeCmd("secret-tool", "lookup", "application", app)
 		output, err := cmd.Output()
 		if err == nil {
 			password = strings.TrimSpace(string(output))

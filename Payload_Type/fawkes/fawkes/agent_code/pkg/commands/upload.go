@@ -143,7 +143,7 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if writeErr != nil {
-		return errorf("Error writing to %s after %d bytes: %v", writePath, totalBytesWritten, writeErr)
+		return errorf("writing to %s after %d bytes: %v", writePath, totalBytesWritten, writeErr)
 	}
 
 	if task.DidStop() {
@@ -154,7 +154,7 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Decompress {
 		hash, decompBytes, decompErr := files.DecompressFileGzip(writePath, fullPath)
 		if decompErr != nil {
-			return errorf("Error decompressing file: %v", decompErr)
+			return errorf("decompressing file: %v", decompErr)
 		}
 		return successf("Uploaded and decompressed to %s\nCompressed: %s → Decompressed: %s\nDecompressed SHA256: %s",
 			fullPath,

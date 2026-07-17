@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -27,7 +26,7 @@ type psexecCheckResult struct {
 
 func psexecCheck(host string, timeout int) structs.CommandResult {
 	if host == "" {
-		return errorResult("Error: host is required for check action")
+		return errorResult("host is required for check action")
 	}
 
 	checkTimeout := 10 * time.Second
@@ -47,8 +46,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 	result.SMBPort = checkTCPPort(ctx, host, "445", checkTimeout)
 	if result.SMBPort != "open" {
 		result.Recommendation = "Port 445 is not reachable. SMB/PSExec requires port 445."
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Check 2: SCM access via mgr.ConnectRemote
@@ -75,8 +73,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 			} else {
 				result.Recommendation = fmt.Sprintf("SCM connection failed: %v", res.err)
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			return successResult(string(data))
+			return checkResult(result)
 		}
 		result.SCMAccess = "pass"
 		defer res.m.Disconnect()
@@ -94,8 +91,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 		result.AdminShareC = "skipped"
 		result.AdminShareADM = "skipped"
 		result.Recommendation = "SCM connection timed out. Host may be firewalled or not a Windows machine."
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Check 4: Admin share access (C$ and ADMIN$)
@@ -110,8 +106,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 		result.Recommendation = "Some prerequisites failed. Review individual check results."
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
-	return successResult(string(data))
+	return checkResult(result)
 }
 
 // checkSMBShare reports admin share accessibility based on SCM access.

@@ -274,90 +274,24 @@ func fwProtocolToString(proto int) string {
 
 // --- Thread Scan helpers (from ts.go) ---
 
-// tsWaitReasonString converts a KWAIT_REASON enum value to human-readable string
+var kwaitReasonNames = map[uint32]string{
+	0: "Executive", 1: "FreePage", 2: "PageIn", 3: "PoolAllocation",
+	4: "DelayExecution", 5: "Suspended", 6: "UserRequest", 7: "WrExecutive",
+	8: "WrFreePage", 9: "WrPageIn", 10: "WrPoolAllocation", 11: "WrDelayExecution",
+	12: "WrSuspended", 13: "WrUserRequest", 14: "WrEventPair", 15: "WrQueue",
+	16: "WrLpcReceive", 17: "WrLpcReply", 18: "WrVirtualMemory", 19: "WrPageOut",
+	20: "WrRendezvous", 21: "WrKeyedEvent", 22: "WrTerminated", 23: "WrProcessInSwap",
+	24: "WrCpuRateControl", 25: "WrCalloutStack", 26: "WrKernel", 27: "WrResource",
+	28: "WrPushLock", 29: "WrMutex", 30: "WrQuantumEnd", 31: "WrDispatchInt",
+	32: "WrPreempted", 33: "WrYieldExecution", 34: "WrFastMutex", 35: "WrGuardedMutex",
+	36: "WrRundown", 37: "WrAlertByThreadId", 38: "WrDeferredPreempt",
+}
+
 func tsWaitReasonString(reason uint32) string {
-	switch reason {
-	case 0:
-		return "Executive"
-	case 1:
-		return "FreePage"
-	case 2:
-		return "PageIn"
-	case 3:
-		return "PoolAllocation"
-	case 4:
-		return "DelayExecution"
-	case 5:
-		return "Suspended"
-	case 6:
-		return "UserRequest"
-	case 7:
-		return "WrExecutive"
-	case 8:
-		return "WrFreePage"
-	case 9:
-		return "WrPageIn"
-	case 10:
-		return "WrPoolAllocation"
-	case 11:
-		return "WrDelayExecution"
-	case 12:
-		return "WrSuspended"
-	case 13:
-		return "WrUserRequest"
-	case 14:
-		return "WrEventPair"
-	case 15:
-		return "WrQueue"
-	case 16:
-		return "WrLpcReceive"
-	case 17:
-		return "WrLpcReply"
-	case 18:
-		return "WrVirtualMemory"
-	case 19:
-		return "WrPageOut"
-	case 20:
-		return "WrRendezvous"
-	case 21:
-		return "WrKeyedEvent"
-	case 22:
-		return "WrTerminated"
-	case 23:
-		return "WrProcessInSwap"
-	case 24:
-		return "WrCpuRateControl"
-	case 25:
-		return "WrCalloutStack"
-	case 26:
-		return "WrKernel"
-	case 27:
-		return "WrResource"
-	case 28:
-		return "WrPushLock"
-	case 29:
-		return "WrMutex"
-	case 30:
-		return "WrQuantumEnd"
-	case 31:
-		return "WrDispatchInt"
-	case 32:
-		return "WrPreempted"
-	case 33:
-		return "WrYieldExecution"
-	case 34:
-		return "WrFastMutex"
-	case 35:
-		return "WrGuardedMutex"
-	case 36:
-		return "WrRundown"
-	case 37:
-		return "WrAlertByThreadId"
-	case 38:
-		return "WrDeferredPreempt"
-	default:
-		return fmt.Sprintf("Unknown(%d)", reason)
+	if name, ok := kwaitReasonNames[reason]; ok {
+		return name
 	}
+	return fmt.Sprintf("Unknown(%d)", reason)
 }
 
 // tsTruncateOwner consolidated into truncStr in format_helpers.go

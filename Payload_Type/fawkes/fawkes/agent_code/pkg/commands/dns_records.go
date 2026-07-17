@@ -22,7 +22,7 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		// Full SRV record like _ldap._tcp.domain.local
 		_, addrs, err := r.LookupSRV(ctx, "", "", target)
 		if err != nil {
-			return errorf("Error SRV lookup %s: %v", target, err)
+			return errorf("SRV lookup %s: %v", target, err)
 		}
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("[*] SRV records for %s (%d found)\n", target, len(addrs)))
@@ -39,7 +39,7 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 
 	_, addrs, err := r.LookupSRV(ctx, service, proto, domain)
 	if err != nil {
-		return errorf("Error SRV lookup _%s._%s.%s: %v", service, proto, domain, err)
+		return errorf("SRV lookup _%s._%s.%s: %v", service, proto, domain, err)
 	}
 
 	var sb strings.Builder
@@ -54,7 +54,7 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 func dnsMX(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	records, err := r.LookupMX(ctx, args.Target)
 	if err != nil {
-		return errorf("Error MX lookup %s: %v", args.Target, err)
+		return errorf("MX lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -69,7 +69,7 @@ func dnsMX(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 func dnsNS(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	records, err := r.LookupNS(ctx, args.Target)
 	if err != nil {
-		return errorf("Error NS lookup %s: %v", args.Target, err)
+		return errorf("NS lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -84,7 +84,7 @@ func dnsNS(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 func dnsTXT(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	records, err := r.LookupTXT(ctx, args.Target)
 	if err != nil {
-		return errorf("Error TXT lookup %s: %v", args.Target, err)
+		return errorf("TXT lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder

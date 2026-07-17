@@ -39,7 +39,7 @@ const (
 
 func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <unconstrained|constrained|rbcd|all|monitor> -server <DC>")
+		return errorResult("parameters required. Use -action <unconstrained|constrained|rbcd|all|monitor> -server <DC>")
 	}
 
 	args, parseErr := unmarshalParams[kerbDelegArgs](task)
@@ -54,7 +54,7 @@ func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult
 	}
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -67,17 +67,17 @@ func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult
 
 	conn, err := kdConnect(args)
 	if err != nil {
-		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := kdBind(conn, args); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	baseDN, err := kdDetectBaseDN(conn)
 	if err != nil {
-		return errorf("Error detecting base DN: %v", err)
+		return errorf("detecting base DN: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -90,7 +90,7 @@ func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult
 	case "all":
 		return kdFindAll(conn, baseDN)
 	default:
-		return errorResult("Error: action must be one of: unconstrained, constrained, rbcd, all")
+		return errorResult("action must be one of: unconstrained, constrained, rbcd, all")
 	}
 }
 
@@ -140,7 +140,7 @@ func kdMarshalResult(entries []kdOutputEntry) structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -149,7 +149,7 @@ func kdMarshalResult(entries []kdOutputEntry) structs.CommandResult {
 func kdFindUnconstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdUnconstrainedEntries(conn, baseDN)
 	if err != nil {
-		return errorf("Error searching for unconstrained delegation: %v", err)
+		return errorf("searching for unconstrained delegation: %v", err)
 	}
 	return kdMarshalResult(entries)
 }
@@ -190,7 +190,7 @@ func kdUnconstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, er
 func kdFindConstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdConstrainedEntries(conn, baseDN)
 	if err != nil {
-		return errorf("Error searching for constrained delegation: %v", err)
+		return errorf("searching for constrained delegation: %v", err)
 	}
 	return kdMarshalResult(entries)
 }
@@ -240,7 +240,7 @@ func kdConstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, erro
 func kdFindRBCD(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdRBCDEntries(conn, baseDN)
 	if err != nil {
-		return errorf("Error searching for RBCD: %v", err)
+		return errorf("searching for RBCD: %v", err)
 	}
 	return kdMarshalResult(entries)
 }

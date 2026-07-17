@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -94,6 +95,15 @@ func init() {
 				return response
 			} else {
 				response.DisplayParams = &path
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			if responseText, ok := msg.Response.(string); ok && responseText != "" {
+				path, _ := msg.TaskData.Args.GetStringArg("path")
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] Working directory changed to: %s on %s", path, msg.TaskData.Callback.Host), false)
 			}
 			return response
 		},

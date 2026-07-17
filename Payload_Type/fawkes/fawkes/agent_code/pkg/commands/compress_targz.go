@@ -15,17 +15,17 @@ import (
 
 func tarGzCreate(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for create action")
+		return errorResult("'path' is required for create action")
 	}
 
 	srcPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	srcInfo, err := os.Stat(srcPath)
 	if err != nil {
-		return errorf("Error accessing path: %v", err)
+		return errorf("accessing path: %v", err)
 	}
 
 	outputPath := params.Output
@@ -38,12 +38,12 @@ func tarGzCreate(task structs.Task, params CompressParams) structs.CommandResult
 	}
 	outputPath, err = filepath.Abs(outputPath)
 	if err != nil {
-		return errorf("Error resolving output path: %v", err)
+		return errorf("resolving output path: %v", err)
 	}
 
 	outFile, err := os.Create(outputPath)
 	if err != nil {
-		return errorf("Error creating archive file: %v", err)
+		return errorf("creating archive file: %v", err)
 	}
 	defer outFile.Close()
 
@@ -59,109 +59,30 @@ func tarGzCreate(task structs.Task, params CompressParams) structs.CommandResult
 	var fileErrors []string
 
 	if srcInfo.IsDir() {
-		baseDir := srcPath
-		err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
-			if task.DidStop() {
-				return fmt.Errorf("cancelled")
-			}
-			if walkErr != nil {
-				relName, _ := filepath.Rel(baseDir, path)
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
-				return nil
-			}
-
-			if path == outputPath {
-				return nil
-			}
-
-			relPath, _ := filepath.Rel(baseDir, path)
-			depth := len(strings.Split(relPath, string(os.PathSeparator)))
-			if depth > params.MaxDepth {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			if d.IsDir() {
-				return nil
-			}
-
-			if params.Pattern != "" {
-				matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
-				if matchErr != nil || !matched {
-					return nil
-				}
-			}
-
-			info, infoErr := d.Info()
-			if infoErr != nil {
-				relName, _ := filepath.Rel(baseDir, path)
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
-				return nil
-			}
-
-			if info.Size() > params.MaxSize {
-				skipped++
-				return nil
-			}
-
-			relName, _ := filepath.Rel(baseDir, path)
-			relName = filepath.ToSlash(relName)
-
-			header, headerErr := tar.FileInfoHeader(info, "")
-			if headerErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
-				return nil
-			}
-			header.Name = relName
-
-			if writeErr := tarWriter.WriteHeader(header); writeErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: write header: %v", relName, writeErr))
-				return nil
-			}
-
-			file, openErr := os.Open(path)
-			if openErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
-				return nil
-			}
-			defer file.Close()
-
-			written, copyErr := io.Copy(tarWriter, file)
-			if copyErr != nil {
-				fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
-				return nil
-			}
-
-			fileCount++
-			totalSize += written
-			return nil
-		})
-
+		fileCount, totalSize, skipped, fileErrors, err = tarGzAddDirectory(tarWriter, task, srcPath, outputPath, params)
 		if err != nil {
-			return errorf("Error walking directory: %v", err)
+			return errorf("walking directory: %v", err)
 		}
 	} else {
 		header, headerErr := tar.FileInfoHeader(srcInfo, "")
 		if headerErr != nil {
-			return errorf("Error creating file header: %v", headerErr)
+			return errorf("creating file header: %v", headerErr)
 		}
 		header.Name = filepath.Base(srcPath)
 
 		if err := tarWriter.WriteHeader(header); err != nil {
-			return errorf("Error writing tar header: %v", err)
+			return errorf("writing tar header: %v", err)
 		}
 
 		file, openErr := os.Open(srcPath)
 		if openErr != nil {
-			return errorf("Error opening file: %v", openErr)
+			return errorf("opening file: %v", openErr)
 		}
 		defer file.Close()
 
 		written, copyErr := io.Copy(tarWriter, file)
 		if copyErr != nil {
-			return errorf("Error writing to archive: %v", copyErr)
+			return errorf("writing to archive: %v", copyErr)
 		}
 
 		fileCount = 1
@@ -169,10 +90,10 @@ func tarGzCreate(task structs.Task, params CompressParams) structs.CommandResult
 	}
 
 	if closeErr := tarWriter.Close(); closeErr != nil {
-		return errorf("Error finalizing tar archive: %v", closeErr)
+		return errorf("finalizing tar archive: %v", closeErr)
 	}
 	if closeErr := gzWriter.Close(); closeErr != nil {
-		return errorf("Error finalizing gzip: %v", closeErr)
+		return errorf("finalizing gzip: %v", closeErr)
 	}
 
 	archiveStat, _ := os.Stat(outputPath)
@@ -196,25 +117,111 @@ func tarGzCreate(task structs.Task, params CompressParams) structs.CommandResult
 	return successResult(result)
 }
 
+// tarGzAddDirectory walks a directory tree and adds matching files to the tar archive.
+func tarGzAddDirectory(tarWriter *tar.Writer, task structs.Task, srcPath, outputPath string, params CompressParams) (int, int64, int, []string, error) {
+	var fileCount, skipped int
+	var totalSize int64
+	var fileErrors []string
+	baseDir := srcPath
+
+	err := filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
+		if walkErr != nil {
+			relName, _ := filepath.Rel(baseDir, path)
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
+			return nil
+		}
+		if path == outputPath {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(baseDir, path)
+		depth := len(strings.Split(relPath, string(os.PathSeparator)))
+		if depth > params.MaxDepth {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		if params.Pattern != "" {
+			matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
+			if matchErr != nil || !matched {
+				return nil
+			}
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			relName, _ := filepath.Rel(baseDir, path)
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
+			return nil
+		}
+		if info.Size() > params.MaxSize {
+			skipped++
+			return nil
+		}
+
+		relName, _ := filepath.Rel(baseDir, path)
+		relName = filepath.ToSlash(relName)
+
+		header, headerErr := tar.FileInfoHeader(info, "")
+		if headerErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
+			return nil
+		}
+		header.Name = relName
+
+		if writeErr := tarWriter.WriteHeader(header); writeErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: write header: %v", relName, writeErr))
+			return nil
+		}
+
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
+			return nil
+		}
+		defer file.Close()
+
+		written, copyErr := io.Copy(tarWriter, file)
+		if copyErr != nil {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
+			return nil
+		}
+
+		fileCount++
+		totalSize += written
+		return nil
+	})
+
+	return fileCount, totalSize, skipped, fileErrors, err
+}
+
 func tarGzList(params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for list action")
+		return errorResult("'path' is required for list action")
 	}
 
 	archivePath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	file, err := os.Open(archivePath)
 	if err != nil {
-		return errorf("Error opening archive: %v", err)
+		return errorf("opening archive: %v", err)
 	}
 	defer file.Close()
 
 	gzReader, err := gzip.NewReader(file)
 	if err != nil {
-		return errorf("Error reading gzip: %v", err)
+		return errorf("reading gzip: %v", err)
 	}
 	defer gzReader.Close()
 
@@ -233,7 +240,7 @@ func tarGzList(params CompressParams) structs.CommandResult {
 			break
 		}
 		if readErr != nil {
-			return errorf("Error reading tar entry: %v", readErr)
+			return errorf("reading tar entry: %v", readErr)
 		}
 
 		sb.WriteString(fmt.Sprintf("%-12s %-10s %-20s %s\n",
@@ -260,23 +267,23 @@ func tarGzList(params CompressParams) structs.CommandResult {
 
 func tarGzExtract(params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for extract action")
+		return errorResult("'path' is required for extract action")
 	}
 
 	archivePath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	file, err := os.Open(archivePath)
 	if err != nil {
-		return errorf("Error opening archive: %v", err)
+		return errorf("opening archive: %v", err)
 	}
 	defer file.Close()
 
 	gzReader, err := gzip.NewReader(file)
 	if err != nil {
-		return errorf("Error reading gzip: %v", err)
+		return errorf("reading gzip: %v", err)
 	}
 	defer gzReader.Close()
 
@@ -295,11 +302,11 @@ func tarGzExtract(params CompressParams) structs.CommandResult {
 	}
 	outputDir, err = filepath.Abs(outputDir)
 	if err != nil {
-		return errorf("Error resolving output path: %v", err)
+		return errorf("resolving output path: %v", err)
 	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return errorf("Error creating output directory: %v", err)
+		return errorf("creating output directory: %v", err)
 	}
 
 	var extracted int
@@ -312,7 +319,7 @@ func tarGzExtract(params CompressParams) structs.CommandResult {
 			break
 		}
 		if readErr != nil {
-			return errorf("Error reading tar entry: %v", readErr)
+			return errorf("reading tar entry: %v", readErr)
 		}
 
 		// Sanitize path to prevent traversal

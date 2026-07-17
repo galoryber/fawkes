@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -200,6 +201,9 @@ func lsProcessResponse(msg agentstructs.PtTaskProcessResponseMessage) agentstruc
 	}
 
 	dirPath := filepath.Join(listing.ParentPath, listing.Name)
+
+	createArtifact(msg.TaskData.Task.ID, "File Open",
+		fmt.Sprintf("Directory listing: %s (%d entries, T1083)", dirPath, len(listing.Files)))
 
 	if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
 		TaskID: msg.TaskData.Task.ID,

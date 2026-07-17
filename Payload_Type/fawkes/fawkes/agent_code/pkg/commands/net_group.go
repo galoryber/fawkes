@@ -45,7 +45,7 @@ var privilegedGroups = []string{
 
 func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <list|members|user|privileged> -server <DC>")
+		return errorResult("parameters required. Use -action <list|members|user|privileged> -server <DC>")
 	}
 
 	args, parseErr := unmarshalParams[netGroupArgs](task)
@@ -55,7 +55,7 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -68,17 +68,17 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := ngConnect(args)
 	if err != nil {
-		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := ngBind(conn, args); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	baseDN, err := ngDetectBaseDN(conn)
 	if err != nil {
-		return errorf("Error detecting base DN: %v", err)
+		return errorf("detecting base DN: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -86,18 +86,18 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 		return ngList(conn, baseDN)
 	case "members":
 		if args.Group == "" {
-			return errorResult("Error: group parameter required for members action")
+			return errorResult("group parameter required for members action")
 		}
 		return ngMembers(conn, baseDN, args.Group)
 	case "user":
 		if args.User == "" {
-			return errorResult("Error: user parameter required for user action")
+			return errorResult("user parameter required for user action")
 		}
 		return ngUserGroups(conn, baseDN, args.User)
 	case "privileged":
 		return ngPrivileged(conn, baseDN)
 	default:
-		return errorResult("Error: action must be one of: list, members, user, privileged")
+		return errorResult("action must be one of: list, members, user, privileged")
 	}
 }
 

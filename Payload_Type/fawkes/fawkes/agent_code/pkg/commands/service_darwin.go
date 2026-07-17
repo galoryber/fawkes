@@ -76,7 +76,7 @@ func serviceListDarwin() structs.CommandResult {
 	// launchctl list outputs: PID\tStatus\tLabel
 	out, err := execCmdTimeoutOutput("launchctl", "list")
 	if err != nil {
-		return errorf("Error listing services: %v\n%s", err, string(out))
+		return errorf("listing services: %v\n%s", err, string(out))
 	}
 
 	var entries []darwinServiceEntry
@@ -123,7 +123,7 @@ func serviceListDarwin() structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshalling services: %v", err)
+		return errorf("marshalling services: %v", err)
 	}
 
 	return successResult(string(jsonBytes))
@@ -131,7 +131,7 @@ func serviceListDarwin() structs.CommandResult {
 
 func serviceQueryDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for query action")
+		return errorResult("name is required for query action")
 	}
 
 	var sb strings.Builder
@@ -214,7 +214,7 @@ func findPlistPath(label string) string {
 
 func serviceStartDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to start a service")
+		return errorResult("name is required to start a service")
 	}
 
 	// Try kickstart (more reliable for system services)
@@ -225,7 +225,7 @@ func serviceStartDarwin(args serviceArgs) structs.CommandResult {
 		if plistPath != "" {
 			out, err = execCmdTimeoutOutput("launchctl", "load", plistPath)
 			if err != nil {
-				return errorf("Error starting service '%s': %v\n%s", args.Name, err, string(out))
+				return errorf("starting service '%s': %v\n%s", args.Name, err, string(out))
 			}
 			return successf("Loaded service '%s' from %s", args.Name, plistPath)
 		}
@@ -234,7 +234,7 @@ func serviceStartDarwin(args serviceArgs) structs.CommandResult {
 		uid := fmt.Sprintf("%d", os.Getuid())
 		out, err = execCmdTimeoutOutput("launchctl", "kickstart", "gui/"+uid+"/"+args.Name)
 		if err != nil {
-			return errorf("Error starting service '%s': %v\n%s", args.Name, err, string(out))
+			return errorf("starting service '%s': %v\n%s", args.Name, err, string(out))
 		}
 	}
 
@@ -243,7 +243,7 @@ func serviceStartDarwin(args serviceArgs) structs.CommandResult {
 
 func serviceStopDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to stop a service")
+		return errorResult("name is required to stop a service")
 	}
 
 	// Try kill in system domain
@@ -254,7 +254,7 @@ func serviceStopDarwin(args serviceArgs) structs.CommandResult {
 		if plistPath != "" {
 			out, err = execCmdTimeoutOutput("launchctl", "unload", plistPath)
 			if err != nil {
-				return errorf("Error stopping service '%s': %v\n%s", args.Name, err, string(out))
+				return errorf("stopping service '%s': %v\n%s", args.Name, err, string(out))
 			}
 			return successf("Unloaded service '%s' from %s", args.Name, plistPath)
 		}
@@ -263,7 +263,7 @@ func serviceStopDarwin(args serviceArgs) structs.CommandResult {
 		uid := fmt.Sprintf("%d", os.Getuid())
 		out, err = execCmdTimeoutOutput("launchctl", "kill", "SIGTERM", "gui/"+uid+"/"+args.Name)
 		if err != nil {
-			return errorf("Error stopping service '%s': %v\n%s", args.Name, err, string(out))
+			return errorf("stopping service '%s': %v\n%s", args.Name, err, string(out))
 		}
 	}
 
@@ -272,7 +272,7 @@ func serviceStopDarwin(args serviceArgs) structs.CommandResult {
 
 func serviceRestartDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to restart a service")
+		return errorResult("name is required to restart a service")
 	}
 
 	// Use kickstart -k which kills the running instance and restarts it
@@ -282,7 +282,7 @@ func serviceRestartDarwin(args serviceArgs) structs.CommandResult {
 		uid := fmt.Sprintf("%d", os.Getuid())
 		out, err = execCmdTimeoutOutput("launchctl", "kickstart", "-k", "gui/"+uid+"/"+args.Name)
 		if err != nil {
-			return errorf("Error restarting service '%s': %v\n%s", args.Name, err, string(out))
+			return errorf("restarting service '%s': %v\n%s", args.Name, err, string(out))
 		}
 	}
 
@@ -291,7 +291,7 @@ func serviceRestartDarwin(args serviceArgs) structs.CommandResult {
 
 func serviceEnableDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to enable a service")
+		return errorResult("name is required to enable a service")
 	}
 
 	// launchctl enable system/<label>
@@ -301,7 +301,7 @@ func serviceEnableDarwin(args serviceArgs) structs.CommandResult {
 		uid := fmt.Sprintf("%d", os.Getuid())
 		out, err = execCmdTimeoutOutput("launchctl", "enable", "gui/"+uid+"/"+args.Name)
 		if err != nil {
-			return errorf("Error enabling service '%s': %v\n%s", args.Name, err, string(out))
+			return errorf("enabling service '%s': %v\n%s", args.Name, err, string(out))
 		}
 	}
 
@@ -331,10 +331,10 @@ func buildLaunchdPlist(label, binPath string, runAtLoad bool) string {
 
 func serviceCreateDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for service creation")
+		return errorResult("name is required for service creation")
 	}
 	if args.BinPath == "" {
-		return errorResult("Error: binpath is required for service creation")
+		return errorResult("binpath is required for service creation")
 	}
 
 	// Determine plist location based on effective UID
@@ -344,7 +344,7 @@ func serviceCreateDarwin(args serviceArgs) structs.CommandResult {
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return errorf("Error getting home directory: %v", err)
+			return errorf("getting home directory: %v", err)
 		}
 		plistDir = filepath.Join(home, "Library", "LaunchAgents")
 	}
@@ -353,12 +353,12 @@ func serviceCreateDarwin(args serviceArgs) structs.CommandResult {
 
 	// Check if plist already exists
 	if _, err := os.Stat(plistPath); err == nil {
-		return errorf("Error: plist already exists at %s. Delete first or choose a different name.", plistPath)
+		return errorf("plist already exists at %s. Delete first or choose a different name.", plistPath)
 	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(plistDir, 0755); err != nil {
-		return errorf("Error creating directory %s: %v", plistDir, err)
+		return errorf("creating directory %s: %v", plistDir, err)
 	}
 
 	runAtLoad := strings.ToLower(args.Start) == "auto"
@@ -366,7 +366,7 @@ func serviceCreateDarwin(args serviceArgs) structs.CommandResult {
 
 	// Write the plist file
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
-		return errorf("Error writing plist %s: %v", plistPath, err)
+		return errorf("writing plist %s: %v", plistPath, err)
 	}
 
 	var sb strings.Builder
@@ -403,13 +403,13 @@ func serviceCreateDarwin(args serviceArgs) structs.CommandResult {
 
 func serviceDeleteDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for service deletion")
+		return errorResult("name is required for service deletion")
 	}
 
 	// Find the plist file
 	plistPath := findPlistPath(args.Name)
 	if plistPath == "" {
-		return errorf("Error: plist not found for '%s'. Searched LaunchDaemons and LaunchAgents directories.", args.Name)
+		return errorf("plist not found for '%s'. Searched LaunchDaemons and LaunchAgents directories.", args.Name)
 	}
 
 	var sb strings.Builder
@@ -423,7 +423,7 @@ func serviceDeleteDarwin(args serviceArgs) structs.CommandResult {
 
 	// Remove the plist file
 	if err := os.Remove(plistPath); err != nil {
-		return errorf("Error removing plist %s: %v", plistPath, err)
+		return errorf("removing plist %s: %v", plistPath, err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Removed %s\n", plistPath))
 	sb.WriteString(fmt.Sprintf("\n[+] Service '%s' deleted successfully", args.Name))
@@ -433,7 +433,7 @@ func serviceDeleteDarwin(args serviceArgs) structs.CommandResult {
 
 func serviceDisableDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to disable a service")
+		return errorResult("name is required to disable a service")
 	}
 
 	// launchctl disable system/<label>
@@ -443,7 +443,7 @@ func serviceDisableDarwin(args serviceArgs) structs.CommandResult {
 		uid := fmt.Sprintf("%d", os.Getuid())
 		out, err = execCmdTimeoutOutput("launchctl", "disable", "gui/"+uid+"/"+args.Name)
 		if err != nil {
-			return errorf("Error disabling service '%s': %v\n%s", args.Name, err, string(out))
+			return errorf("disabling service '%s': %v\n%s", args.Name, err, string(out))
 		}
 	}
 

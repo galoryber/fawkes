@@ -45,7 +45,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" || args.Username == "" || args.Password == "" {
-		return errorResult("Error: server, username, and password are required. Username should be in UPN format (user@domain.local)")
+		return errorResult("server, username, and password are required. Username should be in UPN format (user@domain.local)")
 	}
 
 	// Auto-detect realm from username if not specified
@@ -53,7 +53,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 		if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
 			args.Realm = strings.ToUpper(parts[1])
 		} else {
-			return errorResult("Error: realm required. Specify -realm DOMAIN.LOCAL or use UPN username (user@domain.local)")
+			return errorResult("realm required. Specify -realm DOMAIN.LOCAL or use UPN username (user@domain.local)")
 		}
 	} else {
 		args.Realm = strings.ToUpper(args.Realm)
@@ -77,7 +77,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	} else {
 		targets, err = enumerateAsrepTargets(args, opTimeout)
 		if err != nil {
-			return errorf("Error enumerating AS-REP targets via LDAP: %v", err)
+			return errorf("enumerating AS-REP targets via LDAP: %v", err)
 		}
 		if len(targets) == 0 {
 			return successResult("No AS-REP roastable accounts found (no accounts with DONT_REQUIRE_PREAUTH set)")
@@ -88,7 +88,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	krb5Conf := buildKrb5Config(args.Realm, args.Server)
 	cfg, err := config.NewFromString(krb5Conf)
 	if err != nil {
-		return errorf("Error creating Kerberos config: %v", err)
+		return errorf("creating Kerberos config: %v", err)
 	}
 
 	// Step 3: Send unauthenticated AS-REQ for each target
@@ -123,7 +123,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	result := structs.CommandResult{

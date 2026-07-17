@@ -248,3 +248,8 @@ func enumerateWSLDistros() []string {
 
 	return distros
 }
+
+// sshKeysEnumerateUnix is a no-op on Windows.
+func sshKeysEnumerateUnix() string {
+	return ""
+}

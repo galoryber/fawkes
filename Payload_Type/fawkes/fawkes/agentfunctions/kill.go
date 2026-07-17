@@ -95,5 +95,14 @@ func init() {
 
 			return response
 		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			if responseText, ok := msg.Response.(string); ok && responseText != "" {
+				pid, _ := parsePIDFromArg(msg.TaskData)
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[IMPACT] Process kill: PID %d on %s", pid, msg.TaskData.Callback.Host), false)
+			}
+			return response
+		},
 	})
 }

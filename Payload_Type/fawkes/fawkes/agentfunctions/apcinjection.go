@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 
 	"path/filepath"
 
@@ -378,6 +380,25 @@ func init() {
 			})
 			logOperationEvent(processResponse.TaskData.Task.ID,
 				fmt.Sprintf("%s on %s", eventTag, host), true)
+
+			responseText, _ := processResponse.Response.(string)
+			if responseText != "" {
+				re := regexp.MustCompile(`Target PID:\s*(\d+)`)
+				if m := re.FindStringSubmatch(responseText); m != nil {
+					pid, _ := strconv.Atoi(m[1])
+					if pid > 0 {
+						if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+							TaskID: processResponse.TaskData.Task.ID,
+							Processes: []mythicrpc.MythicRPCProcessCreateProcessData{{
+								Host:      &host,
+								ProcessID: pid,
+							}},
+						}); err != nil {
+							logging.LogError(err, "Failed to register APC-injected process")
+						}
+					}
+				}
+			}
 			return response
 		},
 	})

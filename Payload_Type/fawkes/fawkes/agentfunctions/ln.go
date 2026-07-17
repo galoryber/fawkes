@@ -116,5 +116,20 @@ func init() {
 
 			return response
 		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			if responseText, ok := msg.Response.(string); ok && responseText != "" {
+				target, _ := msg.TaskData.Args.GetStringArg("target")
+				link, _ := msg.TaskData.Args.GetStringArg("link")
+				symbolic, _ := msg.TaskData.Args.GetBooleanArg("symbolic")
+				linkType := "hard"
+				if symbolic {
+					linkType = "symlink"
+				}
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[IMPACT] Link created: %s %s -> %s on %s", linkType, link, target, msg.TaskData.Callback.Host), false)
+			}
+			return response
+		},
 	})
 }

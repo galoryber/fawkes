@@ -26,7 +26,7 @@ import (
 // sshKeysFindReachable scans the target list/CIDR for hosts with SSH open.
 func sshKeysFindReachable(args sshKeysArgs) structs.CommandResult {
 	if args.Targets == "" {
-		return errorResult("Error: -targets required (e.g., 192.168.1.0/24 or host1,host2)")
+		return errorResult("-targets required (e.g., 192.168.1.0/24 or host1,host2)")
 	}
 	port := 22
 	if args.Port > 0 {
@@ -35,7 +35,7 @@ func sshKeysFindReachable(args sshKeysArgs) structs.CommandResult {
 
 	hosts := expandHosts(args.Targets)
 	if len(hosts) == 0 {
-		return errorResult("Error: no valid hosts parsed from targets")
+		return errorResult("no valid hosts parsed from targets")
 	}
 
 	reachable := sshScanReachable(hosts, port, 3*time.Second)
@@ -55,7 +55,7 @@ func sshKeysFindReachable(args sshKeysArgs) structs.CommandResult {
 // Returns a list of keys that successfully authenticate.
 func sshKeysTryKeys(args sshKeysArgs) structs.CommandResult {
 	if args.Host == "" {
-		return errorResult("Error: -host required for try-keys action")
+		return errorResult("-host required for try-keys action")
 	}
 
 	username := args.Username
@@ -130,7 +130,7 @@ func sshKeysTryKeys(args sshKeysArgs) structs.CommandResult {
 // sshKeysAutoMove chains find-reachable → try-keys → run command on each successful host.
 func sshKeysAutoMove(args sshKeysArgs) structs.CommandResult {
 	if args.Targets == "" {
-		return errorResult("Error: -targets required for auto-move (e.g., 192.168.1.0/24)")
+		return errorResult("-targets required for auto-move (e.g., 192.168.1.0/24)")
 	}
 
 	username := args.Username
@@ -156,7 +156,7 @@ func sshKeysAutoMove(args sshKeysArgs) structs.CommandResult {
 	// Phase 1: Find reachable SSH hosts
 	hosts := expandHosts(args.Targets)
 	if len(hosts) == 0 {
-		return errorResult("Error: no valid hosts parsed from targets")
+		return errorResult("no valid hosts parsed from targets")
 	}
 	sb.WriteString(fmt.Sprintf("[*] Phase 1: Scanning %d host(s) for SSH (port %d)...\n", len(hosts), port))
 	reachable := sshScanReachable(hosts, port, 3*time.Second)

@@ -94,7 +94,7 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 		results = triageMail(task, args)
 	case "custom":
 		if args.Path == "" {
-			return errorResult("Error: -path required for custom triage")
+			return errorResult("-path required for custom triage")
 		}
 		results = triageCustom(task, args)
 	default:
@@ -111,7 +111,7 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 
 	data, err := json.Marshal(results)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))

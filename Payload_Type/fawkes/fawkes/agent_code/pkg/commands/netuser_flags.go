@@ -43,12 +43,12 @@ func netUserSetFlags(username string, flags uint32) error {
 // netUserDisable disables a user account by setting UF_ACCOUNTDISABLE (T1531).
 func netUserDisable(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for disable action")
+		return errorResult("username is required for disable action")
 	}
 
 	flags, err := netUserGetFlags(args.Username)
 	if err != nil {
-		return errorf("Error getting flags for '%s': %v", args.Username, err)
+		return errorf("getting flags for '%s': %v", args.Username, err)
 	}
 
 	if flags&UF_ACCOUNTDISABLE != 0 {
@@ -57,7 +57,7 @@ func netUserDisable(args netUserArgs) structs.CommandResult {
 
 	flags |= UF_ACCOUNTDISABLE
 	if err := netUserSetFlags(args.Username, flags); err != nil {
-		return errorf("Error disabling '%s': %v", args.Username, err)
+		return errorf("disabling '%s': %v", args.Username, err)
 	}
 
 	return successf("Successfully disabled account '%s'", args.Username)
@@ -66,12 +66,12 @@ func netUserDisable(args netUserArgs) structs.CommandResult {
 // netUserEnable re-enables a disabled user account by clearing UF_ACCOUNTDISABLE.
 func netUserEnable(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for enable action")
+		return errorResult("username is required for enable action")
 	}
 
 	flags, err := netUserGetFlags(args.Username)
 	if err != nil {
-		return errorf("Error getting flags for '%s': %v", args.Username, err)
+		return errorf("getting flags for '%s': %v", args.Username, err)
 	}
 
 	if flags&UF_ACCOUNTDISABLE == 0 {
@@ -80,7 +80,7 @@ func netUserEnable(args netUserArgs) structs.CommandResult {
 
 	flags &^= UF_ACCOUNTDISABLE
 	if err := netUserSetFlags(args.Username, flags); err != nil {
-		return errorf("Error enabling '%s': %v", args.Username, err)
+		return errorf("enabling '%s': %v", args.Username, err)
 	}
 
 	return successf("Successfully enabled account '%s'", args.Username)
@@ -91,12 +91,12 @@ func netUserEnable(args netUserArgs) structs.CommandResult {
 // This forces the lockout flag — the account cannot authenticate until unlocked.
 func netUserLockout(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for lockout action")
+		return errorResult("username is required for lockout action")
 	}
 
 	flags, err := netUserGetFlags(args.Username)
 	if err != nil {
-		return errorf("Error getting flags for '%s': %v", args.Username, err)
+		return errorf("getting flags for '%s': %v", args.Username, err)
 	}
 
 	if flags&UF_LOCKOUT != 0 {
@@ -105,7 +105,7 @@ func netUserLockout(args netUserArgs) structs.CommandResult {
 
 	flags |= UF_LOCKOUT
 	if err := netUserSetFlags(args.Username, flags); err != nil {
-		return errorf("Error locking out '%s': %v", args.Username, err)
+		return errorf("locking out '%s': %v", args.Username, err)
 	}
 
 	return successf("Successfully locked out account '%s'", args.Username)

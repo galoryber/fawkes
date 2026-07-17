@@ -195,7 +195,7 @@ func enumerateDarwinSessions() ([]sessionEntry, error) {
 func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateDarwinSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to enumerate macOS logon sessions from utmpx: %v", err)
 	}
 
 	var filtered []sessionEntry
@@ -215,7 +215,7 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 
 	data, err := json.Marshal(filtered)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))
@@ -224,7 +224,7 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateDarwinSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to enumerate macOS logon sessions from utmpx: %v", err)
 	}
 
 	type userInfo struct {
@@ -273,7 +273,7 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))

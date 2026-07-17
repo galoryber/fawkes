@@ -17,7 +17,7 @@ import (
 func masqueradeHide(path string) structs.CommandResult {
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: path not found: %v", err)
+		return errorf("path not found: %v", err)
 	}
 
 	var actions []string
@@ -27,7 +27,7 @@ func masqueradeHide(path string) structs.CommandResult {
 	if !strings.HasPrefix(base, ".") {
 		newPath := filepath.Join(filepath.Dir(path), "."+base)
 		if err := os.Rename(path, newPath); err != nil {
-			return errorf("Error renaming to hidden: %v", err)
+			return errorf("renaming to hidden: %v", err)
 		}
 		actions = append(actions, fmt.Sprintf("Renamed: %s → %s", path, newPath))
 		path = newPath
@@ -52,7 +52,7 @@ func masqueradeHide(path string) structs.CommandResult {
 func masqueradeUnhide(path string) structs.CommandResult {
 	_, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: path not found: %v", err)
+		return errorf("path not found: %v", err)
 	}
 
 	var actions []string
@@ -67,7 +67,7 @@ func masqueradeUnhide(path string) structs.CommandResult {
 	if strings.HasPrefix(base, ".") && len(base) > 1 {
 		newPath := filepath.Join(filepath.Dir(path), base[1:])
 		if err := os.Rename(path, newPath); err != nil {
-			return errorf("Error renaming to visible: %v", err)
+			return errorf("renaming to visible: %v", err)
 		}
 		actions = append(actions, fmt.Sprintf("Renamed: %s → %s", path, newPath))
 		path = newPath

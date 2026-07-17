@@ -5,6 +5,7 @@ import (
 	"fawkes/pkg/structs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -62,7 +63,7 @@ func TestZipDirectoryBasic(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	count, totalSize, zipErr := zipDirectory(tmpFile, dir)
+	count, totalSize, _, zipErr := zipDirectory(tmpFile, dir)
 	tmpFile.Close()
 
 	if zipErr != nil {
@@ -99,7 +100,7 @@ func TestZipDirectoryNested(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	count, _, zipErr := zipDirectory(tmpFile, dir)
+	count, _, _, zipErr := zipDirectory(tmpFile, dir)
 	tmpFile.Close()
 
 	if zipErr != nil {
@@ -137,7 +138,7 @@ func TestZipDirectoryEmpty(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	count, totalSize, zipErr := zipDirectory(tmpFile, dir)
+	count, totalSize, _, zipErr := zipDirectory(tmpFile, dir)
 	tmpFile.Close()
 
 	if zipErr != nil {
@@ -167,7 +168,7 @@ func TestZipDirectoryDepthLimit(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	count, _, zipErr := zipDirectory(tmpFile, dir)
+	count, _, _, zipErr := zipDirectory(tmpFile, dir)
 	tmpFile.Close()
 
 	if zipErr != nil {
@@ -193,7 +194,7 @@ func TestZipDirectorySkipsInaccessible(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	count, _, zipErr := zipDirectory(tmpFile, dir)
+	count, _, _, zipErr := zipDirectory(tmpFile, dir)
 	tmpFile.Close()
 
 	if zipErr != nil {
@@ -230,7 +231,7 @@ func TestZipDirectoryForwardSlashPaths(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	_, _, zipErr := zipDirectory(tmpFile, dir)
+	_, _, _, zipErr := zipDirectory(tmpFile, dir)
 	tmpFile.Close()
 
 	if zipErr != nil {
@@ -250,5 +251,45 @@ func TestZipDirectoryForwardSlashPaths(t *testing.T) {
 				t.Errorf("expected forward slashes in zip path, got %s", f.Name)
 			}
 		}
+	}
+}
+
+func TestZipDirectorySkippedFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "good.txt"), []byte("ok"), 0644)
+	unreadable := filepath.Join(dir, "secret.txt")
+	os.WriteFile(unreadable, []byte("hidden"), 0000)
+
+	tmpFile, err := os.CreateTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	count, _, skipped, zipErr := zipDirectory(tmpFile, dir)
+	tmpFile.Close()
+
+	if zipErr != nil {
+		t.Fatalf("unexpected error: %v", zipErr)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 file zipped, got %d", count)
+	}
+	if len(skipped) != 1 {
+		t.Fatalf("expected 1 skipped file, got %d: %v", len(skipped), skipped)
+	}
+	if !strings.Contains(skipped[0], "secret.txt") {
+		t.Errorf("skipped entry should mention secret.txt, got: %s", skipped[0])
+	}
+}
+
+func TestParamHints(t *testing.T) {
+	type testArgs struct {
+		Action string `json:"action"`
+		Target string `json:"target"`
+	}
+	hints := paramHints[testArgs]()
+	if !strings.Contains(hints, "action") || !strings.Contains(hints, "target") {
+		t.Errorf("paramHints should list json fields, got: %s", hints)
 	}
 }

@@ -94,7 +94,7 @@ func enumTokensList(filterUser string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshalling token data: %v", err)
+		return errorf("marshalling token data: %v", err)
 	}
 
 	return successResult(string(jsonBytes))
@@ -191,7 +191,7 @@ func enumTokensUnique(filterUser string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(uniqueEntries)
 	if err != nil {
-		return errorf("Error marshalling token data: %v", err)
+		return errorf("marshalling token data: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

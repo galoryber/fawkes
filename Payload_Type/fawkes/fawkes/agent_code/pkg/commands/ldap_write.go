@@ -34,7 +34,7 @@ type ldapWriteArgs struct {
 func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred, gpo-task, gpo-script, template-esc1, template-esc4"
 	if task.Params == "" {
-		return errorf("Error: parameters required. Use -action <%s> -server <DC>", allActions)
+		return errorf("parameters required. Use -action <%s> -server <DC>", allActions)
 	}
 
 	args, parseErr := unmarshalParams[ldapWriteArgs](task)
@@ -44,7 +44,7 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
-		return errorResult("Error: server parameter required (domain controller IP or hostname)")
+		return errorResult("server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -73,7 +73,7 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// set-password requires LDAPS
 	if action == "set-password" && !args.UseTLS {
-		return errorResult("Error: set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.")
+		return errorResult("set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.")
 	}
 
 	// Connect
@@ -82,13 +82,13 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		Username: args.Username, Password: args.Password,
 	})
 	if err != nil {
-		return errorf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
+		return errorf("connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind
 	if err := ldapBind(conn, ldapQueryArgs{Username: args.Username, Password: args.Password}); err != nil {
-		return errorf("Error binding to LDAP: %v", err)
+		return errorf("binding to LDAP: %v", err)
 	}
 
 	// Determine base DN
@@ -96,7 +96,7 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
+			return errorf("detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 

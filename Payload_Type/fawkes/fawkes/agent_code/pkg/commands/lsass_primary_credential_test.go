@@ -203,3 +203,79 @@ func TestParsePrimaryCredential10NewLayoutOffsets(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePrimaryCredential10_OlderLayout(t *testing.T) {
+	buf := make([]byte, PrimaryCredential10Layout.FixedSize)
+	buf[PrimaryCredential10Layout.IsNtOff] = 1
+	for i := 0; i < 16; i++ {
+		buf[PrimaryCredential10Layout.NtHashOff+i] = 0xAA
+	}
+	binary.LittleEndian.PutUint16(buf[PrimaryCredential10Layout.LogonDomainOff:], 12)
+	binary.LittleEndian.PutUint16(buf[PrimaryCredential10Layout.LogonDomainOff+2:], 14)
+	binary.LittleEndian.PutUint16(buf[PrimaryCredential10Layout.UserNameOff:], 10)
+	binary.LittleEndian.PutUint16(buf[PrimaryCredential10Layout.UserNameOff+2:], 12)
+
+	parsed, err := parsePrimaryCredential10(buf, PrimaryCredential10Layout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if parsed.Layout != "PrimaryCredential_10" {
+		t.Errorf("Layout = %q, want PrimaryCredential_10", parsed.Layout)
+	}
+	if !parsed.IsNtOwfPassword {
+		t.Error("IsNtOwfPassword should be true")
+	}
+	for i, b := range parsed.NtOwfPassword {
+		if b != 0xAA {
+			t.Errorf("NtOwfPassword[%d] = 0x%02X, want 0xAA", i, b)
+		}
+	}
+}
+
+func TestParsePrimaryCredential10Old_NoIsoField(t *testing.T) {
+	buf := make([]byte, PrimaryCredential10OldLayout.FixedSize)
+	buf[PrimaryCredential10OldLayout.IsNtOff] = 1
+	for i := 0; i < 16; i++ {
+		buf[PrimaryCredential10OldLayout.NtHashOff+i] = 0xBB
+	}
+	parsed, err := parsePrimaryCredential10(buf, PrimaryCredential10OldLayout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if parsed.IsIso {
+		t.Error("IsIso should be false for _10_OLD layout (field not present)")
+	}
+}
+
+func TestDetectLayout_PlausibleHeaders(t *testing.T) {
+	buf := make([]byte, PrimaryCredential10NewLayout.FixedSize+100)
+	binary.LittleEndian.PutUint16(buf[0x00:], 26) // LogonDomain Length (even)
+	binary.LittleEndian.PutUint16(buf[0x02:], 28) // LogonDomain MaxLen
+	binary.LittleEndian.PutUint16(buf[0x10:], 20) // UserName Length (even)
+	binary.LittleEndian.PutUint16(buf[0x12:], 22) // UserName MaxLen
+	buf[0x29] = 1                                  // IsNt = true (valid boolean)
+
+	layout := detectPrimaryCredentialLayout(buf)
+	if layout.Name != "PrimaryCredential_10_NEW" {
+		t.Errorf("detected %q, want PrimaryCredential_10_NEW", layout.Name)
+	}
+}
+
+func TestDetectLayout_FallsBackOnGarbage(t *testing.T) {
+	buf := make([]byte, 200)
+	for i := range buf {
+		buf[i] = 0xFF
+	}
+	layout := detectPrimaryCredentialLayout(buf)
+	if layout.Name != "PrimaryCredential_10_NEW" {
+		t.Errorf("fallback should be PrimaryCredential_10_NEW, got %q", layout.Name)
+	}
+}
+
+func TestDetectLayout_ShortBuffer(t *testing.T) {
+	buf := make([]byte, 50) // Too short for any layout
+	layout := detectPrimaryCredentialLayout(buf)
+	if layout.Name != "PrimaryCredential_10_NEW" {
+		t.Errorf("fallback should be PrimaryCredential_10_NEW, got %q", layout.Name)
+	}
+}

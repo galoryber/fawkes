@@ -67,15 +67,11 @@ func CalculateAdaptiveSleep(interval, jitter int, profile string) time.Duration 
 		return time.Duration(drifted * float64(time.Second))
 	}
 
-	var base time.Duration
-	switch profile {
-	case "normal":
-		base = jitterNormal(interval, jitter)
-	case "exponential":
-		base = jitterExponential(interval, jitter)
-	default:
-		base = jitterUniform(interval, jitter)
+	calc := jitterUniform
+	if p, ok := jitterProfiles[profile]; ok {
+		calc = p.calc
 	}
+	base := calc(interval, jitter)
 
 	baseMs := float64(base.Milliseconds())
 	driftedMs := baseMs * (1.0 + instanceDrift - 0.05)
@@ -142,23 +138,28 @@ func jitterExponential(interval, jitter int) time.Duration {
 	return time.Duration(actual * float64(time.Second))
 }
 
-// ValidJitterProfile returns true if the profile name is recognized.
-func ValidJitterProfile(profile string) bool {
-	switch profile {
-	case "", "uniform", "normal", "exponential":
-		return true
-	}
-	return false
+type jitterProfileDef struct {
+	calc func(int, int) time.Duration
+	desc string
 }
 
-// JitterProfileDescription returns a human-readable description of the profile.
-func JitterProfileDescription(profile string) string {
-	switch profile {
-	case "normal":
-		return "normal (Gaussian bell curve — clusters near interval, rare outliers)"
-	case "exponential":
-		return "exponential (bursty — shorter sleeps with occasional long pauses)"
-	default:
-		return "uniform (flat random — legacy behavior)"
+var jitterProfiles = map[string]jitterProfileDef{
+	"uniform":     {jitterUniform, "uniform (flat random — legacy behavior)"},
+	"normal":      {jitterNormal, "normal (Gaussian bell curve — clusters near interval, rare outliers)"},
+	"exponential": {jitterExponential, "exponential (bursty — shorter sleeps with occasional long pauses)"},
+}
+
+func ValidJitterProfile(profile string) bool {
+	if profile == "" {
+		return true
 	}
+	_, ok := jitterProfiles[profile]
+	return ok
+}
+
+func JitterProfileDescription(profile string) string {
+	if p, ok := jitterProfiles[profile]; ok {
+		return p.desc
+	}
+	return jitterProfiles["uniform"].desc
 }

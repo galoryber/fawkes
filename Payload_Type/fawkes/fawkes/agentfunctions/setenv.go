@@ -106,5 +106,17 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			if responseText, ok := msg.Response.(string); ok && responseText != "" {
+				action, _ := msg.TaskData.Args.GetStringArg("action")
+				name, _ := msg.TaskData.Args.GetStringArg("name")
+				createArtifact(msg.TaskData.Task.ID, "Configuration Modification",
+					fmt.Sprintf("setenv %s %s on %s", action, name, msg.TaskData.Callback.Host))
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] Environment variable %s: %s on %s", action, name, msg.TaskData.Callback.Host), false)
+			}
+			return response
+		},
 	})
 }

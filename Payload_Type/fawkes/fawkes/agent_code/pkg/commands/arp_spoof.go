@@ -39,6 +39,7 @@ type arpSpoofResult struct {
 	ForwardingOn bool   `json:"forwarding_enabled"`
 	Restored     bool   `json:"arp_restored"`
 	Errors       []string `json:"errors,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 // buildARPReply constructs a raw Ethernet frame containing a gratuitous ARP reply.

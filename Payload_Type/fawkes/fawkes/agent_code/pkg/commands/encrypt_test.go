@@ -357,13 +357,13 @@ func TestEncryptFilesDecryptFilesRoundTrip(t *testing.T) {
 		t.Fatal("no recovery key in output")
 	}
 
-	// Verify .fawkes files exist and originals removed
+	// Verify .enc files exist and originals removed
 	for name := range files {
 		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
 			t.Errorf("original %s should be deleted", name)
 		}
-		if _, err := os.Stat(filepath.Join(dir, name+".fawkes")); err != nil {
-			t.Errorf(".fawkes file missing for %s", name)
+		if _, err := os.Stat(filepath.Join(dir, name+".enc")); err != nil {
+			t.Errorf(".enc file missing for %s", name)
 		}
 	}
 
@@ -410,7 +410,7 @@ func TestEncryptFilesMaxFilesLimit(t *testing.T) {
 func TestEncryptFilesSkipsExisting(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new"), 0644)
-	os.WriteFile(filepath.Join(dir, "old.txt.fawkes"), []byte("already encrypted"), 0644)
+	os.WriteFile(filepath.Join(dir, "old.txt.enc"), []byte("already encrypted"), 0644)
 
 	cmd := &EncryptCommand{}
 	params, _ := json.Marshal(encryptArgs{

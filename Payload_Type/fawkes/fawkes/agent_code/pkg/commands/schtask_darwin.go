@@ -137,7 +137,7 @@ func enumerateLaunchdJobs() []schtaskListEntry {
 
 func schtaskDarwinQuery(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for query (launchd label or at job ID)")
+		return errorResult("name is required for query (launchd label or at job ID)")
 	}
 
 	if strings.HasPrefix(args.Name, "at-job-") || isNumeric(args.Name) {
@@ -147,7 +147,7 @@ func schtaskDarwinQuery(args schtaskArgs) structs.CommandResult {
 	label := args.Name
 	out, err := execCmdTimeout("launchctl", "list", label)
 	if err != nil {
-		return errorf("Error querying launchd job '%s': %v\n%s", label, err, string(out))
+		return errorf("querying launchd job '%s': %v\n%s", label, err, string(out))
 	}
 
 	plistPath := findPlistPath(label)
@@ -165,7 +165,7 @@ func schtaskDarwinQuery(args schtaskArgs) structs.CommandResult {
 
 func schtaskDarwinCreate(args schtaskArgs) structs.CommandResult {
 	if args.Program == "" {
-		return errorResult("Error: program is required for task creation")
+		return errorResult("program is required for task creation")
 	}
 
 	trigger := strings.ToLower(args.Trigger)
@@ -180,7 +180,7 @@ func schtaskDarwinCreate(args schtaskArgs) structs.CommandResult {
 
 func schtaskDarwinCreateLaunchd(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name/label is required for launchd job creation (e.g., com.apple.security.updater)")
+		return errorResult("name/label is required for launchd job creation (e.g., com.apple.security.updater)")
 	}
 
 	programPath := args.Program
@@ -201,16 +201,16 @@ func schtaskDarwinCreateLaunchd(args schtaskArgs) structs.CommandResult {
 	isDaemon := strings.ToLower(args.Trigger) == "launchdaemon"
 	plistDir, err := getPlistDir(isDaemon)
 	if err != nil {
-		return errorf("Error determining plist directory: %v", err)
+		return errorf("determining plist directory: %v", err)
 	}
 
 	if err := os.MkdirAll(plistDir, 0755); err != nil {
-		return errorf("Error creating directory %s: %v", plistDir, err)
+		return errorf("creating directory %s: %v", plistDir, err)
 	}
 
 	plistPath := filepath.Join(plistDir, args.Name+".plist")
 	if err := os.WriteFile(plistPath, []byte(plist), 0644); err != nil {
-		return errorf("Error writing plist: %v", err)
+		return errorf("writing plist: %v", err)
 	}
 
 	out, loadErr := execCmdTimeout("launchctl", "load", "-w", plistPath)
@@ -227,14 +227,14 @@ func schtaskDarwinCreateLaunchd(args schtaskArgs) structs.CommandResult {
 
 func schtaskDarwinDelete(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for deletion")
+		return errorResult("name is required for deletion")
 	}
 
 	if strings.HasPrefix(args.Name, "at-job-") || isNumeric(args.Name) {
 		jobID := strings.TrimPrefix(args.Name, "at-job-")
 		out, err := execCmdTimeout("atrm", jobID)
 		if err != nil {
-			return errorf("Error deleting at job '%s': %v\n%s", jobID, err, string(out))
+			return errorf("deleting at job '%s': %v\n%s", jobID, err, string(out))
 		}
 		return successf("Deleted at job '%s'", jobID)
 	}
@@ -243,7 +243,7 @@ func schtaskDarwinDelete(args schtaskArgs) structs.CommandResult {
 	if plistPath != "" {
 		execCmdTimeout("launchctl", "unload", "-w", plistPath)
 		if err := os.Remove(plistPath); err != nil {
-			return errorf("Error removing plist '%s': %v", plistPath, err)
+			return errorf("removing plist '%s': %v", plistPath, err)
 		}
 		return successf("Deleted launchd job '%s' (removed %s)", args.Name, plistPath)
 	}
@@ -253,19 +253,19 @@ func schtaskDarwinDelete(args schtaskArgs) structs.CommandResult {
 
 func schtaskDarwinRun(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to run a task (launchd label)")
+		return errorResult("name is required to run a task (launchd label)")
 	}
 
 	out, err := execCmdTimeout("launchctl", "start", args.Name)
 	if err != nil {
-		return errorf("Error starting '%s': %v\n%s", args.Name, err, string(out))
+		return errorf("starting '%s': %v\n%s", args.Name, err, string(out))
 	}
 	return successf("Triggered execution of '%s'", args.Name)
 }
 
 func schtaskDarwinSetEnabled(args schtaskArgs, enabled bool) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required (launchd label)")
+		return errorResult("name is required (launchd label)")
 	}
 
 	plistPath := findPlistPath(args.Name)
@@ -276,58 +276,36 @@ func schtaskDarwinSetEnabled(args schtaskArgs, enabled bool) structs.CommandResu
 	if enabled {
 		out, err := execCmdTimeout("launchctl", "load", "-w", plistPath)
 		if err != nil {
-			return errorf("Error loading '%s': %v\n%s", args.Name, err, string(out))
+			return errorf("loading '%s': %v\n%s", args.Name, err, string(out))
 		}
 		return successf("Enabled launchd job '%s'", args.Name)
 	}
 
 	out, err := execCmdTimeout("launchctl", "unload", "-w", plistPath)
 	if err != nil {
-		return errorf("Error unloading '%s': %v\n%s", args.Name, err, string(out))
+		return errorf("unloading '%s': %v\n%s", args.Name, err, string(out))
 	}
 	return successf("Disabled launchd job '%s'", args.Name)
 }
 
 func schtaskDarwinStop(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required to stop a task (launchd label)")
+		return errorResult("name is required to stop a task (launchd label)")
 	}
 
 	out, err := execCmdTimeout("launchctl", "stop", args.Name)
 	if err != nil {
-		return errorf("Error stopping '%s': %v\n%s", args.Name, err, string(out))
+		return errorf("stopping '%s': %v\n%s", args.Name, err, string(out))
 	}
 	return successf("Stopped '%s'", args.Name)
-}
-
-func parseLaunchdListOutput(output string) []struct {
-	PID    string
-	Status string
-	Label  string
-} {
-	var results []struct {
-		PID    string
-		Status string
-		Label  string
-	}
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 3 || fields[2] == "Label" {
-			continue
-		}
-		results = append(results, struct {
-			PID    string
-			Status string
-			Label  string
-		}{fields[0], fields[1], fields[2]})
-	}
-	return results
 }
 
 // schtaskDarwinListJSON returns the list as JSON for testing
 func schtaskDarwinListJSON() string {
 	entries := enumerateLaunchdJobs()
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return fmt.Sprintf("Error: failed to marshal result: %v", err)
+	}
 	return string(data)
 }

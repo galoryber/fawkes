@@ -95,7 +95,10 @@ func rpcHelperWinregQuery(req rpcHelperRequest) (json.RawMessage, error) {
 		displayName = "(Default)"
 	}
 	result := winregResult{Text: formatRemoteRegValue(displayName, resp.Type, resp.Data)}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -185,7 +188,10 @@ func rpcHelperWinregEnum(req rpcHelperRequest) (json.RawMessage, error) {
 	}
 
 	result := winregResult{Text: sb.String()}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -240,7 +246,10 @@ func rpcHelperWinregSet(req rpcHelperRequest) (json.RawMessage, error) {
 	}
 
 	result := winregResult{Text: fmt.Sprintf("Successfully set %s\\%s\\%s", p.Hive, p.Path, p.Name)}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 
@@ -286,7 +295,10 @@ func rpcHelperWinregDelete(req rpcHelperRequest) (json.RawMessage, error) {
 			return nil, fmt.Errorf("DeleteValue error: 0x%08x", resp.Return)
 		}
 		result := winregResult{Text: fmt.Sprintf("Successfully deleted value %s from %s\\%s", p.Name, p.Hive, p.Path)}
-		out, _ := json.Marshal(result)
+		out, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal result: %v", err)
+		}
 		return out, nil
 	}
 
@@ -301,6 +313,9 @@ func rpcHelperWinregDelete(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("DeleteKey error: 0x%08x", resp.Return)
 	}
 	result := winregResult{Text: fmt.Sprintf("Successfully deleted key %s\\%s", p.Hive, p.Path)}
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }

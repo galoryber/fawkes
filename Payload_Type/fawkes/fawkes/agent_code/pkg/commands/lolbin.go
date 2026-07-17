@@ -37,7 +37,7 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action is required (rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs, lua, python)")
+		return errorResult("action is required (rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs, lua, python)")
 	}
 
 	switch args.Action {
@@ -46,15 +46,15 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path to payload file is required")
+		return errorResult("path to payload file is required")
 	}
 
 	absPath, err := filepath.Abs(args.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 	if _, err := os.Stat(absPath); err != nil {
-		return errorf("Error: payload file not found: %v", err)
+		return errorf("payload file not found: %v", err)
 	}
 
 	switch args.Action {

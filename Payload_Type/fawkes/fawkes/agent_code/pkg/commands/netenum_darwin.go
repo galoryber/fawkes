@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -59,7 +58,7 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 
 // neDarwinUsers lists users via dscl.
 func neDarwinUsers() structs.CommandResult {
-	out, err := exec.Command("dscl", ".", "-list", "/Users", "UniqueID").Output()
+	out, err := safeCmd("dscl", ".", "-list", "/Users", "UniqueID").Output()
 	if err != nil {
 		return errorf("dscl failed: %v", err)
 	}
@@ -88,13 +87,16 @@ func neDarwinUsers() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
 // neDarwinGroups lists groups via dscl.
 func neDarwinGroups() structs.CommandResult {
-	out, err := exec.Command("dscl", ".", "-list", "/Groups", "PrimaryGroupID").Output()
+	out, err := safeCmd("dscl", ".", "-list", "/Groups", "PrimaryGroupID").Output()
 	if err != nil {
 		return errorf("dscl failed: %v", err)
 	}
@@ -115,13 +117,16 @@ func neDarwinGroups() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
 // neDarwinGroupMembers returns members of a specific group.
 func neDarwinGroupMembers(group string) structs.CommandResult {
-	out, err := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
+	out, err := safeCmd("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
 	if err != nil {
 		return errorf("Failed to read group %s: %v", group, err)
 	}
@@ -142,11 +147,17 @@ func neDarwinGroupMembers(group string) structs.CommandResult {
 
 	if len(entries) == 0 {
 		empty := []netEnumEntry{{Name: group, Type: "info", Comment: "No members found"}}
-		data, _ := json.Marshal(empty)
+		data, err := json.Marshal(empty)
+		if err != nil {
+			return errorf("failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -156,7 +167,7 @@ func neDarwinAdmins() structs.CommandResult {
 	var entries []netEnumEntry
 
 	for _, group := range adminGroups {
-		out, err := exec.Command("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
+		out, err := safeCmd("dscl", ".", "-read", fmt.Sprintf("/Groups/%s", group), "GroupMembership").Output()
 		if err != nil {
 			continue
 		}
@@ -192,7 +203,7 @@ func neDarwinAdmins() structs.CommandResult {
 
 // neDarwinSessions uses the who command for session enumeration.
 func neDarwinSessions() structs.CommandResult {
-	out, err := exec.Command("who").Output()
+	out, err := safeCmd("who").Output()
 	if err != nil {
 		return errorf("who failed: %v", err)
 	}
@@ -217,7 +228,10 @@ func neDarwinSessions() structs.CommandResult {
 		})
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -246,7 +260,7 @@ func neDarwinShares() structs.CommandResult {
 	}
 
 	// SMB shares via sharing command
-	if out, err := exec.Command("sharing", "-l").Output(); err == nil {
+	if out, err := safeCmd("sharing", "-l").Output(); err == nil {
 		scanner := bufio.NewScanner(strings.NewReader(string(out)))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -262,10 +276,16 @@ func neDarwinShares() structs.CommandResult {
 
 	if len(entries) == 0 {
 		empty := []netEnumEntry{{Name: "(none)", Type: "info", Comment: "No NFS exports or SMB shares found"}}
-		data, _ := json.Marshal(empty)
+		data, err := json.Marshal(empty)
+		if err != nil {
+			return errorf("failed to marshal result: %v", err)
+		}
 		return successResult(string(data))
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }

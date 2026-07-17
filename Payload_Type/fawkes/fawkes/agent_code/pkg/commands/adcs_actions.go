@@ -1,17 +1,15 @@
 package commands
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
 	"github.com/go-ldap/ldap/v3"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 )
 
 // adcsEnumerateCAs lists all Certificate Authorities and their published templates
@@ -24,7 +22,7 @@ func adcsEnumerateCAs(conn *ldap.Conn, configDN string) structs.CommandResult {
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return errorf("Error querying CAs: %v", err)
+		return errorf("querying CAs: %v", err)
 	}
 
 	var sb strings.Builder
@@ -68,7 +66,7 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return errorf("Error querying templates: %v", err)
+		return errorf("querying templates: %v", err)
 	}
 
 	var sb strings.Builder
@@ -125,7 +123,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 	caResult, err := conn.Search(caReq)
 	if err != nil {
-		return errorf("Error querying CAs: %v", err)
+		return errorf("querying CAs: %v", err)
 	}
 
 	publishedTemplates := make(map[string][]string)
@@ -151,7 +149,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 	templateResult, err := conn.SearchWithPaging(templateReq, 100)
 	if err != nil {
-		return errorf("Error querying templates: %v", err)
+		return errorf("querying templates: %v", err)
 	}
 
 	var sb strings.Builder
@@ -230,71 +228,87 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 		sb.WriteString(fmt.Sprintf("Found %d vulnerable template(s)\n", vulnCount))
 	}
 
-	if args.Username != "" && (args.Password != "" || args.Hash != "") {
-		sb.WriteString("\n" + strings.Repeat("-", 60) + "\n")
-		sb.WriteString("ESC6 Check (EDITF_ATTRIBUTESUBJECTALTNAME2)\n")
-		sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-		domain := args.Domain
-		username := args.Username
-		if domain == "" {
-			if parts := strings.SplitN(username, `\`, 2); len(parts) == 2 {
-				domain = parts[0]
-				username = parts[1]
-			} else if parts := strings.SplitN(username, "@", 2); len(parts) == 2 {
-				domain = parts[1]
-				username = parts[0]
-			}
-		}
-		cred, credErr := rpcCredential(username, domain, args.Password, args.Hash)
-		structs.ZeroString(&args.Password)
-		structs.ZeroString(&args.Hash)
-		if credErr != nil {
-			return errorf("Error: %v", credErr)
-		}
-
-		timeout := args.Timeout
-		if timeout <= 0 {
-			timeout = 30
-		}
-
-		for _, ca := range caResult.Entries {
-			caName := ca.GetAttributeValue("cn")
-			caHost := ca.GetAttributeValue("dNSHostName")
-			if caHost == "" {
-				sb.WriteString(fmt.Sprintf("  %s: SKIP (no dNSHostName in LDAP)\n", caName))
-				continue
-			}
-
-			dcomTarget := caHost
-			if _, lookupErr := net.LookupHost(caHost); lookupErr != nil {
-				dcomTarget = args.Server
-			}
-
-			ctx, cancel := context.WithTimeout(
-				gssapi.NewSecurityContext(context.Background()),
-				time.Duration(timeout)*time.Second)
-			editFlags, err := adcsQueryEditFlags(ctx, dcomTarget, caName, cred)
-			cancel()
-
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — %v\n", caName, dcomTarget, err))
-				continue
-			}
-
-			if editFlags&editfAttributeSubjectAltName2 != 0 {
-				vulnCount++
-				sb.WriteString(fmt.Sprintf("[!] %s (%s): ESC6 VULNERABLE\n", caName, dcomTarget))
-				sb.WriteString(fmt.Sprintf("    EditFlags: 0x%08x (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)\n", editFlags))
-				sb.WriteString("    Any template with enrollment rights can be used for impersonation\n")
-			} else {
-				sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, dcomTarget, editFlags))
-			}
-		}
-	} else {
-		sb.WriteString("\nNote: ESC6 check requires credentials (-username/-password or -hash).\n")
-		sb.WriteString("ESC8 (HTTP enrollment) requires manual verification.\n")
-	}
+	adcsCheckESC6(&sb, caResult, args)
 
 	return successResult(sb.String())
+}
+
+// adcsCheckESC6 queries each CA via DCOM for the EDITF_ATTRIBUTESUBJECTALTNAME2 flag.
+func adcsCheckESC6(sb *strings.Builder, caResult *ldap.SearchResult, args adcsArgs) int {
+	if args.Username == "" || (args.Password == "" && args.Hash == "") {
+		sb.WriteString("\nNote: ESC6 check requires credentials (-username/-password or -hash).\n")
+		sb.WriteString("ESC8 (HTTP enrollment) requires manual verification.\n")
+		return 0
+	}
+
+	sb.WriteString("\n" + strings.Repeat("-", 60) + "\n")
+	sb.WriteString("ESC6 Check (EDITF_ATTRIBUTESUBJECTALTNAME2)\n")
+	sb.WriteString(strings.Repeat("-", 60) + "\n")
+
+	domain := args.Domain
+	username := args.Username
+	if domain == "" {
+		if parts := strings.SplitN(username, `\`, 2); len(parts) == 2 {
+			domain = parts[0]
+			username = parts[1]
+		} else if parts := strings.SplitN(username, "@", 2); len(parts) == 2 {
+			domain = parts[1]
+			username = parts[0]
+		}
+	}
+
+	timeout := args.Timeout
+	if timeout <= 0 {
+		timeout = 30
+	}
+
+	vulns := 0
+	for _, ca := range caResult.Entries {
+		caName := ca.GetAttributeValue("cn")
+		caHost := ca.GetAttributeValue("dNSHostName")
+		if caHost == "" {
+			sb.WriteString(fmt.Sprintf("  %s: SKIP (no dNSHostName in LDAP)\n", caName))
+			continue
+		}
+
+		dcomTarget := caHost
+		if _, lookupErr := net.LookupHost(caHost); lookupErr != nil {
+			dcomTarget = args.Server
+		}
+
+		subParams, _ := json.Marshal(adcsEditFlagsSubprocessParams{CAName: caName})
+		rpcReq := rpcHelperRequest{
+			Operation: "adcs-editflags",
+			Server:    dcomTarget,
+			Username:  username,
+			Password:  args.Password,
+			Hash:      args.Hash,
+			Domain:    domain,
+			Timeout:   timeout,
+			Params:    subParams,
+		}
+		rawResult, err := rpcViaSubprocess(rpcReq)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — %v\n", caName, dcomTarget, err))
+			continue
+		}
+
+		var result adcsEditFlagsSubprocessResult
+		if err := json.Unmarshal(rawResult, &result); err != nil {
+			sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — parse result: %v\n", caName, dcomTarget, err))
+			continue
+		}
+
+		if result.EditFlags&editfAttributeSubjectAltName2 != 0 {
+			vulns++
+			sb.WriteString(fmt.Sprintf("[!] %s (%s): ESC6 VULNERABLE\n", caName, dcomTarget))
+			sb.WriteString(fmt.Sprintf("    EditFlags: 0x%08x (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)\n", result.EditFlags))
+			sb.WriteString("    Any template with enrollment rights can be used for impersonation\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, dcomTarget, result.EditFlags))
+		}
+	}
+	structs.ZeroString(&args.Password)
+	structs.ZeroString(&args.Hash)
+	return vulns
 }

@@ -38,7 +38,7 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action is required (osascript, swift, open, python, curl)")
+		return errorResult("action is required (osascript, swift, open, python, curl)")
 	}
 
 	switch args.Action {
@@ -74,7 +74,7 @@ func runWithTimeout(binary string, cmdArgs []string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binary, cmdArgs...)
+	cmd := safeCmdContext(ctx, binary, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", binary, strings.Join(cmdArgs, " "))
@@ -93,11 +93,11 @@ func runWithTimeout(binary string, cmdArgs []string) structs.CommandResult {
 func lolbinOsascript(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("osascript")
 	if binary == "" {
-		return errorResult("Error: osascript not found on this system")
+		return errorResult("osascript not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide AppleScript in 'path' field or script path in 'args' field")
+		return errorResult("provide AppleScript in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string
@@ -122,25 +122,25 @@ func lolbinOsascript(code, extraArgs string) structs.CommandResult {
 func lolbinSwift(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("swift")
 	if binary == "" {
-		return errorResult("Error: swift not found on this system (requires Xcode CLI tools)")
+		return errorResult("swift not found on this system (requires Xcode CLI tools)")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide Swift code in 'path' field or script path in 'args' field")
+		return errorResult("provide Swift code in 'path' field or script path in 'args' field")
 	}
 
 	if code != "" {
 		// Write source to temp file for compilation
-		srcFile, err := os.CreateTemp("", "fawkes-*.swift")
+		srcFile, err := os.CreateTemp("", "tmp-*.swift")
 		if err != nil {
-			return errorf("Error creating temp file: %v", err)
+			return errorf("creating temp file: %v", err)
 		}
 		srcPath := srcFile.Name()
 		defer os.Remove(srcPath)
 
 		if _, err := srcFile.WriteString(code); err != nil {
 			srcFile.Close()
-			return errorf("Error writing source: %v", err)
+			return errorf("writing source: %v", err)
 		}
 		srcFile.Close()
 
@@ -161,11 +161,11 @@ func lolbinSwift(code, extraArgs string) structs.CommandResult {
 func lolbinOpen(appOrFile, extraArgs string) structs.CommandResult {
 	binary := findBinary("open")
 	if binary == "" {
-		return errorResult("Error: open not found on this system")
+		return errorResult("open not found on this system")
 	}
 
 	if appOrFile == "" {
-		return errorResult("Error: application name or file path required in 'path' field")
+		return errorResult("application name or file path required in 'path' field")
 	}
 
 	var cmdArgs []string
@@ -189,11 +189,11 @@ func lolbinOpen(appOrFile, extraArgs string) structs.CommandResult {
 func lolbinPython(code, extraArgs string) structs.CommandResult {
 	binary := findBinary("python3", "python")
 	if binary == "" {
-		return errorResult("Error: python3/python not found on this system")
+		return errorResult("python3/python not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+		return errorResult("provide code in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string
@@ -213,11 +213,11 @@ func lolbinPython(code, extraArgs string) structs.CommandResult {
 func lolbinCurl(url, extraArgs string) structs.CommandResult {
 	binary := findBinary("curl")
 	if binary == "" {
-		return errorResult("Error: curl not found on this system")
+		return errorResult("curl not found on this system")
 	}
 
 	if url == "" {
-		return errorResult("Error: URL is required in 'path' field")
+		return errorResult("URL is required in 'path' field")
 	}
 
 	var cmdArgs []string
@@ -234,7 +234,7 @@ func lolbinCurl(url, extraArgs string) structs.CommandResult {
 func lolbinLuaDarwin(scriptPath, extraArgs string) structs.CommandResult {
 	binary := findBinary("lua", "lua5.4", "lua5.3", "luajit")
 	if binary == "" {
-		return errorResult("Error: no Lua interpreter found (lua, lua5.4, lua5.3, luajit)")
+		return errorResult("no Lua interpreter found (lua, lua5.4, lua5.3, luajit)")
 	}
 
 	cmdArgs := []string{scriptPath}

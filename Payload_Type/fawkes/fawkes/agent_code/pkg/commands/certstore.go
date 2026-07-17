@@ -196,7 +196,7 @@ func certstoreList(store, filter string) structs.CommandResult {
 
 func certstoreFind(store, filter string) structs.CommandResult {
 	if filter == "" {
-		return errorResult("Error: filter is required for find action (search by subject, issuer, or thumbprint)")
+		return errorResult("filter is required for find action (search by subject, issuer, or thumbprint)")
 	}
 	return certstoreList(store, filter)
 }

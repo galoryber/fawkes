@@ -33,7 +33,7 @@ func (c *CertCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Host == "" {
-		return errorResult("Error: host parameter is required")
+		return errorResult("host parameter is required")
 	}
 	if args.Port == 0 {
 		args.Port = 443
@@ -51,7 +51,7 @@ func (c *CertCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
-		return errorf("Error connecting to %s: %v", addr, err)
+		return errorf("connecting to %s: %v", addr, err)
 	}
 	defer conn.Close()
 

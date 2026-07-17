@@ -4,11 +4,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
@@ -294,6 +296,21 @@ func init() {
 					l = 200
 				}
 				createArtifact(processResponse.TaskData.Task.ID, "Process Injection", fmt.Sprintf("[threadless-injection] %s", responseText[:l]))
+
+				pidStr, _ := processResponse.TaskData.Args.GetStringArg("pid")
+				pid, _ := strconv.Atoi(pidStr)
+				if pid > 0 {
+					host := processResponse.TaskData.Callback.Host
+					if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+						TaskID: processResponse.TaskData.Task.ID,
+						Processes: []mythicrpc.MythicRPCProcessCreateProcessData{{
+							Host:      &host,
+							ProcessID: pid,
+						}},
+					}); err != nil {
+						logging.LogError(err, "Failed to register threadless-injected process")
+					}
+				}
 			}
 			return response
 		},

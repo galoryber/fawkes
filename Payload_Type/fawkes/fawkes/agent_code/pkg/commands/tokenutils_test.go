@@ -31,14 +31,15 @@ func TestZeroStoredCredentials_Nil(t *testing.T) {
 }
 
 func TestSavedToken_Fields(t *testing.T) {
+	sealed := sealCredentials(&StoredCredentials{
+		Domain:   "CORP",
+		Username: "admin",
+		Password: "pass",
+	})
 	saved := &SavedToken{
 		Identity: `CORP\admin`,
 		Source:   "make-token",
-		Creds: &StoredCredentials{
-			Domain:   "CORP",
-			Username: "admin",
-			Password: "pass",
-		},
+		Creds:    sealed,
 	}
 	if saved.Identity != `CORP\admin` {
 		t.Errorf("Identity = %q, want %q", saved.Identity, `CORP\admin`)

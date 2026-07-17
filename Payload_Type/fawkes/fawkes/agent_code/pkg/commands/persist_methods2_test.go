@@ -246,7 +246,7 @@ func TestPersistPrintProcessor_NonexistentDLL(t *testing.T) {
 }
 
 func TestPersistPrintProcessor_DefaultName(t *testing.T) {
-	// Verify default processor name is FawkesProc when name is empty
+	// Verify default processor name is PrintFilterSvc when name is empty
 	result := persistPrintProcessor(persistArgs{
 		Method: "print-processor",
 		Action: "install",
@@ -254,7 +254,7 @@ func TestPersistPrintProcessor_DefaultName(t *testing.T) {
 	})
 	// Will fail on DLL not found, but the error shouldn't be about missing name
 	if strings.Contains(result.Output, "name") {
-		t.Error("empty name should default to FawkesProc, not error about name")
+		t.Error("empty name should default to PrintFilterSvc, not error about name")
 	}
 }
 
@@ -270,7 +270,7 @@ func TestPersistPrintProcessor_UnknownAction(t *testing.T) {
 
 func TestPersistPrintProcessor_Remove(t *testing.T) {
 	// Create a test registry key and verify removal
-	testName := "FawkesTestProc"
+	testName := "TestPrintProc"
 	regPath := printProcessorRegBase + `\` + testName
 
 	key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, regPath, registry.SET_VALUE)

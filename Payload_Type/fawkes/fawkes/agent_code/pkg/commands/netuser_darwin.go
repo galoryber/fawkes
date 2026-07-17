@@ -19,7 +19,7 @@ func (c *NetUserCommand) Description() string {
 
 func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: add, delete, info, password, group-add, group-remove")
+		return errorResult("parameters required. Actions: add, delete, info, password, group-add, group-remove")
 	}
 
 	args, parseErr := unmarshalParams[netUserArgs](task)
@@ -48,16 +48,16 @@ func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 
 func darwinUserAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for add action")
+		return errorResult("username is required for add action")
 	}
 	if args.Password == "" {
-		return errorResult("Error: password is required for add action")
+		return errorResult("password is required for add action")
 	}
 
 	// Find next available UniqueID (start from 501 for regular users)
 	out, err := execCmdTimeout("dscl", ".", "-list", "/Users", "UniqueID")
 	if err != nil {
-		return errorf("Error listing users: %v", err)
+		return errorf("listing users: %v", err)
 	}
 	maxUID := 500
 	for _, line := range strings.Split(string(out), "\n") {
@@ -99,7 +99,7 @@ func darwinUserAdd(args netUserArgs) structs.CommandResult {
 
 	for _, step := range steps {
 		if out, err := execCmdTimeout("dscl", step.args...); err != nil {
-			return errorf("Error (%s): %v\n%s", step.desc, err, string(out))
+			return errorf("(%s): %v\n%s", step.desc, err, string(out))
 		}
 	}
 
@@ -119,12 +119,12 @@ func darwinUserAdd(args netUserArgs) structs.CommandResult {
 
 func darwinUserDelete(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for delete action")
+		return errorResult("username is required for delete action")
 	}
 
 	out, err := execCmdTimeout("dscl", ".", "-delete", "/Users/"+args.Username)
 	if err != nil {
-		return errorf("Error deleting user '%s': %v\n%s", args.Username, err, string(out))
+		return errorf("deleting user '%s': %v\n%s", args.Username, err, string(out))
 	}
 
 	// Try to remove home directory
@@ -138,7 +138,7 @@ func darwinUserDelete(args netUserArgs) structs.CommandResult {
 
 func darwinUserInfo(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for info action")
+		return errorResult("username is required for info action")
 	}
 
 	// Read all user properties via dscl
@@ -203,15 +203,15 @@ func darwinUserInfo(args netUserArgs) structs.CommandResult {
 
 func darwinUserPassword(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for password action")
+		return errorResult("username is required for password action")
 	}
 	if args.Password == "" {
-		return errorResult("Error: password is required for password action")
+		return errorResult("password is required for password action")
 	}
 
 	out, err := execCmdTimeout("dscl", ".", "-passwd", "/Users/"+args.Username, args.Password)
 	if err != nil {
-		return errorf("Error setting password for '%s': %v\n%s", args.Username, err, string(out))
+		return errorf("setting password for '%s': %v\n%s", args.Username, err, string(out))
 	}
 
 	return successf("Successfully changed password for '%s'", args.Username)
@@ -219,15 +219,15 @@ func darwinUserPassword(args netUserArgs) structs.CommandResult {
 
 func darwinUserGroupAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for group-add action")
+		return errorResult("username is required for group-add action")
 	}
 	if args.Group == "" {
-		return errorResult("Error: group is required for group-add action")
+		return errorResult("group is required for group-add action")
 	}
 
 	out, err := execCmdTimeout("dseditgroup", "-o", "edit", "-a", args.Username, "-t", "user", args.Group)
 	if err != nil {
-		return errorf("Error adding '%s' to group '%s': %v\n%s", args.Username, args.Group, err, string(out))
+		return errorf("adding '%s' to group '%s': %v\n%s", args.Username, args.Group, err, string(out))
 	}
 
 	return successf("Successfully added '%s' to group '%s'", args.Username, args.Group)
@@ -235,15 +235,15 @@ func darwinUserGroupAdd(args netUserArgs) structs.CommandResult {
 
 func darwinUserGroupRemove(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for group-remove action")
+		return errorResult("username is required for group-remove action")
 	}
 	if args.Group == "" {
-		return errorResult("Error: group is required for group-remove action")
+		return errorResult("group is required for group-remove action")
 	}
 
 	out, err := execCmdTimeout("dseditgroup", "-o", "edit", "-d", args.Username, "-t", "user", args.Group)
 	if err != nil {
-		return errorf("Error removing '%s' from group '%s': %v\n%s", args.Username, args.Group, err, string(out))
+		return errorf("removing '%s' from group '%s': %v\n%s", args.Username, args.Group, err, string(out))
 	}
 
 	return successf("Successfully removed '%s' from group '%s'", args.Username, args.Group)

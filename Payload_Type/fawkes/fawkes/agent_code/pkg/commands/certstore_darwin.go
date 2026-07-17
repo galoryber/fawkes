@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -69,7 +68,7 @@ func certstoreListDarwin(store, filter string) structs.CommandResult {
 		args = append(args, "/System/Library/Keychains/SystemRootCertificates.keychain")
 	}
 
-	cmd := exec.Command("security", args...)
+	cmd := safeCmd("security", args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return errorf("Failed to enumerate certificates: %v", err)
@@ -152,7 +151,7 @@ func certstoreListDarwin(store, filter string) structs.CommandResult {
 	}
 
 	// Check for identities (certs with private keys)
-	identityCmd := exec.Command("security", "find-identity", "-v", "-p", "ssl-client")
+	identityCmd := safeCmd("security", "find-identity", "-v", "-p", "ssl-client")
 	identityOutput, _ := identityCmd.Output()
 	identityThumbprints := make(map[string]bool)
 	for _, line := range strings.Split(string(identityOutput), "\n") {
@@ -186,7 +185,10 @@ func certstoreListDarwin(store, filter string) structs.CommandResult {
 		}
 	}
 
-	jsonBytes, _ := json.Marshal(entries)
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("=== macOS Keychain Certificates (%d) ===\n\n", len(entries)))
@@ -204,10 +206,7 @@ func certstoreListDarwin(store, filter string) structs.CommandResult {
 			e.Thumbprint, privKeyFlag, e.Store))
 	}
 
-	return structs.CommandResult{
-		Output: sb.String() + "\n" + string(jsonBytes),
-		Status: "success",
-	}
+	return successResult(sb.String() + "\n" + string(jsonBytes))
 }
 
 // certstoreExportDarwin exports a certificate from the Keychain as PEM.
@@ -217,7 +216,7 @@ func certstoreExportDarwin(filter string) structs.CommandResult {
 	}
 
 	// Use security find-certificate with subject filter and export as PEM
-	cmd := exec.Command("security", "find-certificate", "-c", filter, "-p")
+	cmd := safeCmd("security", "find-certificate", "-c", filter, "-p")
 	output, err := cmd.Output()
 	if err != nil {
 		return errorf("Certificate not found: %v", err)
@@ -232,7 +231,7 @@ func certstoreExportDarwin(filter string) structs.CommandResult {
 
 // getKeychainPath returns the path to the user's login keychain.
 func getKeychainPath(name string) string {
-	cmd := exec.Command("security", "default-keychain")
+	cmd := safeCmd("security", "default-keychain")
 	output, err := cmd.Output()
 	if err != nil || name != "login" {
 		return ""

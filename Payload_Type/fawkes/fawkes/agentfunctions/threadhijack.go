@@ -23,8 +23,7 @@ func init() {
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "threadhijack_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
-			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -124,11 +123,18 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			tid, _ := taskData.Args.GetNumberArg("tid")
+			os := taskData.Payload.OS
+			var msg string
+			if strings.EqualFold(os, "macos") {
+				msg = fmt.Sprintf("OPSEC WARNING: Thread hijack into PID %s TID %d via Mach APIs. Requires root. Uses task_for_pid + thread_get/set_state — may trigger ES_EVENT_TYPE_NOTIFY_MACH_TRAP and Endpoint Security alerts. Does NOT create new threads.", pid, int(tid))
+			} else {
+				msg = fmt.Sprintf("OPSEC WARNING: Thread hijack injection into PID %s TID %d. Suspends thread, overwrites RIP/RCX, and resumes — avoids CreateRemoteThread but SuspendThread/SetThreadContext may be monitored.", pid, int(tid))
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Thread hijack injection into PID %s TID %d. Suspends thread, overwrites RIP/RCX, and resumes — avoids CreateRemoteThread but SuspendThread/SetThreadContext may be monitored.", pid, int(tid)),
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},

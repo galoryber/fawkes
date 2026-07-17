@@ -40,7 +40,7 @@ func (c *WhoCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to marshal logged-in user entries to JSON: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

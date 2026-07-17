@@ -37,7 +37,7 @@ func (c *RouteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	routes, err := enumerateRoutes()
 	if err != nil {
-		return errorf("Error enumerating routes: %v", err)
+		return errorf("enumerating routes: %v", err)
 	}
 
 	// Apply filters

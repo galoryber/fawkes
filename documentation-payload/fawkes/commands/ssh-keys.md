@@ -9,6 +9,10 @@ hidden = false
 
 Read or manipulate SSH authorized_keys files for persistence and lateral movement. Can also extract private keys for credential harvesting, generate new key pairs, and enumerate SSH configuration for lateral movement. Supports targeting other users' `.ssh` directories. Cross-platform: Linux, macOS, and Windows (OpenSSH).
 
+On Linux/macOS, the `enumerate` action additionally discovers:
+- **SSH agent sockets** — `SSH_AUTH_SOCK` environment variable and `/tmp/ssh-*/agent.*` sockets for agent forwarding lateral movement
+- **Authorized keys across all users** — scans `/root/.ssh/` and `/home/*/.ssh/` for authorized_keys files, counts keys, and flags `from=` restrictions
+
 On Windows, the `enumerate` action additionally discovers:
 - **PuTTY sessions** — saved connections from the registry (`HKCU\Software\SimonTatham\PuTTY\Sessions`)
 - **PuTTY .ppk keys** — private key files in common locations (`%USERPROFILE%\.ssh\`, `%APPDATA%\PuTTY\`, Desktop, Documents)
@@ -136,6 +140,36 @@ ssh-keys -action enumerate -user admin
 [Private Keys] 2 key(s):
   id_ed25519 (411 bytes, plaintext)
   id_rsa (1766 bytes, encrypted)
+```
+
+### Example Output (enumerate on Linux/macOS)
+
+```
+=== SSH Enumeration: /home/setup/.ssh ===
+
+[SSH Config] 2 host(s):
+  Host: prod-web
+    HostName: 10.10.10.50
+    User: deploy
+    ProxyJump: bastion
+  Host: bastion
+    HostName: bastion.example.com
+
+[Known Hosts] 3 host(s):
+  bastion.example.com (ssh-ed25519)
+  10.10.10.50 (ssh-rsa)
+  + 1 hashed host(s) (not decodable)
+
+[Private Keys] 1 key(s):
+  id_ed25519 (411 bytes, plaintext)
+
+[SSH Agent Sockets] 1 found:
+  /tmp/ssh-abc123/agent.4567 (SSH_AUTH_SOCK, current user)
+
+[Authorized Keys] 3 user(s), 5 total key(s):
+  root: 1 key(s) in /root/.ssh/authorized_keys
+  deploy: 2 key(s) in /home/deploy/.ssh/authorized_keys (has from= restrictions)
+  admin: 2 key(s) in /home/admin/.ssh/authorized_keys
 ```
 
 ### Example Output (enumerate on Windows)

@@ -17,7 +17,7 @@ import (
 // etwStop stops an ETW trace session entirely using ControlTrace
 func etwStop(sessionName string) structs.CommandResult {
 	if sessionName == "" {
-		return errorResult("Error: session_name is required for stop action\nUsage: etw -action stop -session_name \"EventLog-Security\"")
+		return errorResult("session_name is required for stop action\nUsage: etw -action stop -session_name \"EventLog-Security\"")
 	}
 
 	props := make([]byte, eventTracePropsSize)
@@ -27,7 +27,7 @@ func etwStop(sessionName string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return errorf("Error converting session name: %v", err)
+		return errorf("converting session name: %v", err)
 	}
 
 	r1, _, sysErr := procControlTraceW.Call(
@@ -58,10 +58,10 @@ func etwStop(sessionName string) structs.CommandResult {
 // but the specified provider no longer generates events.
 func etwBlind(sessionName, provider string) structs.CommandResult {
 	if sessionName == "" {
-		return errorResult("Error: session_name is required for blind action\nUsage: etw -action blind -session_name \"EventLog-Security\" -provider sysmon")
+		return errorResult("session_name is required for blind action\nUsage: etw -action blind -session_name \"EventLog-Security\" -provider sysmon")
 	}
 	if provider == "" {
-		return errorResult("Error: provider is required for blind action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
+		return errorResult("provider is required for blind action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
 	}
 
 	// Step 1: Resolve provider to GUID
@@ -78,7 +78,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return errorf("Error converting session name: %v", err)
+		return errorf("converting session name: %v", err)
 	}
 
 	r1, _, _ := procControlTraceW.Call(
@@ -141,7 +141,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 // etwQuery queries a specific ETW trace session for detailed information
 func etwQuery(sessionName string) structs.CommandResult {
 	if sessionName == "" {
-		return errorResult("Error: session_name is required for query action\nUsage: etw -action query -session_name \"EventLog-Security\"")
+		return errorResult("session_name is required for query action\nUsage: etw -action query -session_name \"EventLog-Security\"")
 	}
 
 	props := make([]byte, eventTracePropsSize)
@@ -151,7 +151,7 @@ func etwQuery(sessionName string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return errorf("Error converting session name: %v", err)
+		return errorf("converting session name: %v", err)
 	}
 
 	r1, _, sysErr := procControlTraceW.Call(
@@ -257,10 +257,10 @@ func etwQuery(sessionName string) structs.CommandResult {
 // etwEnable re-enables a previously blinded ETW provider within a trace session
 func etwEnable(sessionName, provider string) structs.CommandResult {
 	if sessionName == "" {
-		return errorResult("Error: session_name is required for enable action\nUsage: etw -action enable -session_name \"EventLog-Security\" -provider sysmon")
+		return errorResult("session_name is required for enable action\nUsage: etw -action enable -session_name \"EventLog-Security\" -provider sysmon")
 	}
 	if provider == "" {
-		return errorResult("Error: provider is required for enable action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
+		return errorResult("provider is required for enable action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
 	}
 
 	providerGUID, resolvedName := resolveProviderGUID(provider)
@@ -275,7 +275,7 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return errorf("Error converting session name: %v", err)
+		return errorf("converting session name: %v", err)
 	}
 
 	r1, _, _ := procControlTraceW.Call(

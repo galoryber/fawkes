@@ -24,12 +24,12 @@ func (c *MkdirCommand) Description() string {
 // Execute executes the mkdir command
 func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: No directory path provided")
+		return errorResult("No directory path provided")
 	}
 
 	path, err := resolveMkdirPath(task.Params)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to resolve directory path: %v", err)
 	}
 
 	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")
@@ -38,9 +38,9 @@ func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create directory with parent directories if needed (0755 permissions)
 	if err := os.MkdirAll(path, 0755); err != nil {
 		if os.IsPermission(err) {
-			return errorf("Error: access denied creating %s — check privileges", path)
+			return errorf("access denied creating %s — check privileges", path)
 		}
-		return errorf("Error: cannot create directory %s (read-only filesystem or invalid path)", path)
+		return errorf("cannot create directory %s (read-only filesystem or invalid path)", path)
 	}
 
 	return successf("Successfully created directory: %s", path)

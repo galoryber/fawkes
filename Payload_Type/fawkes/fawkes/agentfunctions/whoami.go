@@ -81,6 +81,8 @@ func init() {
 					}
 				}
 			}
+			createArtifact(processResponse.TaskData.Task.ID, "API Call",
+				"User identity discovery (T1033)")
 			if hasUpdate {
 				if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
 					logging.LogError(err, "Failed to update callback metadata from whoami")

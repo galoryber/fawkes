@@ -48,7 +48,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Host == "" || args.Username == "" {
-		return errorResult("Error: host and username are required")
+		return errorResult("host and username are required")
 	}
 
 	// Default action is exec
@@ -68,45 +68,13 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if action == "tunnel-stop" {
 		if args.TunnelID == "" {
-			return errorResult("Error: tunnel_id required for tunnel-stop")
+			return errorResult("tunnel_id required for tunnel-stop")
 		}
 		return sshTunnelStop(args.TunnelID)
 	}
 
-	if action == "exec" && args.Command == "" {
-		return errorResult("Error: command is required for exec action")
-	}
-
-	if action == "push" {
-		if args.Source == "" || args.Destination == "" {
-			return errorResult("Error: source (local file) and destination (remote path) required for push action")
-		}
-	}
-
-	if action == "tunnel-local" {
-		if args.LocalPort <= 0 || args.RemoteHost == "" || args.RemotePort <= 0 {
-			return errorResult("Error: local_port, remote_host, and remote_port required for tunnel-local")
-		}
-	}
-
-	if action == "tunnel-remote" {
-		if args.RemotePort <= 0 || args.LocalPort <= 0 {
-			return errorResult("Error: remote_port and local_port required for tunnel-remote")
-		}
-	}
-
-	if action == "tunnel-dynamic" {
-		if args.LocalPort <= 0 {
-			return errorResult("Error: local_port required for tunnel-dynamic")
-		}
-	}
-
-	validActions := map[string]bool{
-		"exec": true, "push": true, "check": true,
-		"tunnel-local": true, "tunnel-remote": true, "tunnel-dynamic": true,
-	}
-	if !validActions[action] {
-		return errorf("Error: unknown action %q. Valid: exec, push, check, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
+	if err := validateSSHActionParams(action, args); err != nil {
+		return errorf("validating SSH action parameters: %v", err)
 	}
 
 	// Set defaults for tunnel params
@@ -118,7 +86,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Password == "" && args.KeyPath == "" && args.KeyData == "" {
-		return errorResult("Error: at least one auth method required (password, key_path, or key_data)")
+		return errorResult("at least one auth method required (password, key_path, or key_data)")
 	}
 
 	if args.Port <= 0 {
@@ -129,46 +97,11 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Timeout = 60
 	}
 
-	// Zero sensitive parameters after use
 	defer zeroCredentials(&args.Password, &args.KeyData)
 
-	// Build auth methods
-	var authMethods []ssh.AuthMethod
-
-	// Key-based auth (try first — preferred)
-	if args.KeyData != "" {
-		signer, err := parsePrivateKey([]byte(args.KeyData), args.Password)
-		if err != nil {
-			return errorf("Error parsing inline key: %v", err)
-		}
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
-	}
-
-	if args.KeyPath != "" {
-		keyBytes, err := os.ReadFile(args.KeyPath)
-		if err != nil {
-			return errorf("Error reading key file %s: %v", args.KeyPath, err)
-		}
-		defer structs.ZeroBytes(keyBytes)
-		signer, err := parsePrivateKey(keyBytes, args.Password)
-		if err != nil {
-			return errorf("Error parsing key file %s: %v", args.KeyPath, err)
-		}
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
-	}
-
-	// Password auth (fallback) — try both password and keyboard-interactive
-	if args.Password != "" {
-		authMethods = append(authMethods, ssh.Password(args.Password))
-		authMethods = append(authMethods, ssh.KeyboardInteractive(
-			func(user, instruction string, questions []string, echos []bool) ([]string, error) {
-				answers := make([]string, len(questions))
-				for i := range questions {
-					answers[i] = args.Password
-				}
-				return answers, nil
-			},
-		))
+	authMethods, authErr := buildSSHAuthMethods(args)
+	if authErr != nil {
+		return errorf("building SSH auth methods: %v", authErr)
 	}
 
 	config := &ssh.ClientConfig{
@@ -186,7 +119,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	// Connect with context-aware dialer
 	client, err := sshDialContext(ctx, "tcp", addr, config)
 	if err != nil {
-		return errorf("Error connecting to %s: %v", addr, err)
+		return errorf("connecting to %s: %v", addr, err)
 	}
 
 	// Tunnel actions take ownership of the client (long-running background job)
@@ -209,7 +142,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create session for exec
 	session, err := client.NewSession()
 	if err != nil {
-		return errorf("Error creating SSH session on %s: %v", addr, err)
+		return errorf("creating SSH session on %s: %v", addr, err)
 	}
 	defer session.Close()
 
@@ -228,8 +161,80 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	case res := <-resultCh:
 		return formatSSHResult(args, addr, res.output, res.err)
 	case <-ctx.Done():
-		return errorf("Error: command execution on %s timed out after %ds", addr, args.Timeout)
+		return errorf("command execution on %s timed out after %ds", addr, args.Timeout)
 	}
+}
+
+// validateSSHActionParams checks that required parameters are present for the given action.
+func validateSSHActionParams(action string, args sshExecArgs) error {
+	switch action {
+	case "exec":
+		if args.Command == "" {
+			return fmt.Errorf("command is required for exec action")
+		}
+	case "push":
+		if args.Source == "" || args.Destination == "" {
+			return fmt.Errorf("source (local file) and destination (remote path) required for push action")
+		}
+	case "tunnel-local":
+		if args.LocalPort <= 0 || args.RemoteHost == "" || args.RemotePort <= 0 {
+			return fmt.Errorf("local_port, remote_host, and remote_port required for tunnel-local")
+		}
+	case "tunnel-remote":
+		if args.RemotePort <= 0 || args.LocalPort <= 0 {
+			return fmt.Errorf("remote_port and local_port required for tunnel-remote")
+		}
+	case "tunnel-dynamic":
+		if args.LocalPort <= 0 {
+			return fmt.Errorf("local_port required for tunnel-dynamic")
+		}
+	case "check":
+		// no additional params needed
+	default:
+		return fmt.Errorf("unknown action %q; valid: exec, push, check, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
+	}
+	return nil
+}
+
+// buildSSHAuthMethods constructs SSH auth methods from key data, key file, and/or password.
+func buildSSHAuthMethods(args sshExecArgs) ([]ssh.AuthMethod, error) {
+	var methods []ssh.AuthMethod
+
+	if args.KeyData != "" {
+		signer, err := parsePrivateKey([]byte(args.KeyData), args.Password)
+		if err != nil {
+			return nil, fmt.Errorf("parsing inline key: %w", err)
+		}
+		methods = append(methods, ssh.PublicKeys(signer))
+	}
+
+	if args.KeyPath != "" {
+		keyBytes, err := os.ReadFile(args.KeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading key file %s: %w", args.KeyPath, err)
+		}
+		defer structs.ZeroBytes(keyBytes)
+		signer, err := parsePrivateKey(keyBytes, args.Password)
+		if err != nil {
+			return nil, fmt.Errorf("parsing key file %s: %w", args.KeyPath, err)
+		}
+		methods = append(methods, ssh.PublicKeys(signer))
+	}
+
+	if args.Password != "" {
+		methods = append(methods, ssh.Password(args.Password))
+		methods = append(methods, ssh.KeyboardInteractive(
+			func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range questions {
+					answers[i] = args.Password
+				}
+				return answers, nil
+			},
+		))
+	}
+
+	return methods, nil
 }
 
 // parsePrivateKey parses a PEM-encoded SSH private key, optionally with a passphrase.
@@ -277,21 +282,15 @@ func formatSSHResult(args sshExecArgs, addr string, output []byte, cmdErr error)
 	}
 
 	// Non-zero exit still returns output — mark as success if we got output
-	status := "success"
 	if cmdErr != nil {
 		if _, ok := cmdErr.(*ssh.ExitError); !ok {
 			// Real connection/session error, not just non-zero exit
 			if _, ok2 := cmdErr.(*ssh.ExitMissingError); !ok2 {
-				status = "error"
+				return errorResult(sb.String())
 			}
 		}
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // sshPushFile transfers a local file to the remote host via SSH session stdin.
@@ -301,13 +300,13 @@ func sshPushFile(ctx context.Context, client *ssh.Client, args sshExecArgs, addr
 	// Read local file
 	data, err := os.ReadFile(args.Source)
 	if err != nil {
-		return errorf("Error reading local file %s: %v", args.Source, err)
+		return errorf("reading local file %s: %v", args.Source, err)
 	}
 	defer structs.ZeroBytes(data) // clear file content from memory
 
 	session, err := client.NewSession()
 	if err != nil {
-		return errorf("Error creating SSH session on %s: %v", addr, err)
+		return errorf("creating SSH session on %s: %v", addr, err)
 	}
 	defer session.Close()
 
@@ -332,7 +331,7 @@ func sshPushFile(ctx context.Context, client *ssh.Client, args sshExecArgs, addr
 	select {
 	case res := <-resultCh:
 		if res.err != nil {
-			return errorf("Error writing to %s:%s: %v\n%s", addr, args.Destination, res.err, string(res.output))
+			return errorf("writing to %s:%s: %v\n%s", addr, args.Destination, res.err, string(res.output))
 		}
 
 		authMethod := "password"
@@ -347,7 +346,7 @@ func sshPushFile(ctx context.Context, client *ssh.Client, args sshExecArgs, addr
 			args.Username, addr, args.Destination, authMethod,
 			strings.TrimSpace(string(res.output)))
 	case <-ctx.Done():
-		return errorf("Error: file transfer to %s timed out after %ds", addr, args.Timeout)
+		return errorf("file transfer to %s timed out after %ds", addr, args.Timeout)
 	}
 }
 

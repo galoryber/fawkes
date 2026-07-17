@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"log"
 	"os"
 	"time"
 
@@ -23,8 +22,6 @@ func (c *ExitCommand) Description() string {
 
 // Execute executes the exit command
 func (c *ExitCommand) Execute(task structs.Task) structs.CommandResult {
-	log.Printf("exit received")
-
 	// Send response before exiting
 	result := structs.CommandResult{
 		Output:    "Agent exiting...",
@@ -35,7 +32,6 @@ func (c *ExitCommand) Execute(task structs.Task) structs.CommandResult {
 	// Exit in a goroutine after a short delay to allow the response to be posted
 	go func() {
 		jitterSleep(2*time.Second, 4*time.Second)
-		log.Printf("shutting down")
 		os.Exit(0)
 	}()
 

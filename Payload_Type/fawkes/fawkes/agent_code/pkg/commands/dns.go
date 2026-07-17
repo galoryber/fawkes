@@ -34,11 +34,11 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Target == "" && args.Action != "exfil" {
-		return errorResult("Error: target is required")
+		return errorResult("target is required")
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil, doh")
+		return errorResult("action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil, doh")
 	}
 
 	if args.Timeout <= 0 {
@@ -91,14 +91,14 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "doh":
 		return dnsDoH(ctx, args)
 	default:
-		return errorf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil, doh", args.Action)
+		return errorf("unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil, doh", args.Action)
 	}
 }
 
 func dnsResolve(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	addrs, err := r.LookupHost(ctx, args.Target)
 	if err != nil {
-		return errorf("Error resolving %s: %v", args.Target, err)
+		return errorf("resolving %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -113,7 +113,7 @@ func dnsResolve(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Comm
 func dnsReverse(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	names, err := r.LookupAddr(ctx, args.Target)
 	if err != nil {
-		return errorf("Error reverse lookup %s: %v", args.Target, err)
+		return errorf("reverse lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -128,7 +128,7 @@ func dnsReverse(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Comm
 func dnsCNAME(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	cname, err := r.LookupCNAME(ctx, args.Target)
 	if err != nil {
-		return errorf("Error CNAME lookup %s: %v", args.Target, err)
+		return errorf("CNAME lookup %s: %v", args.Target, err)
 	}
 
 	return successf("[*] CNAME for %s\n  %s\n", args.Target, cname)

@@ -61,7 +61,10 @@ func rpcHelperCoerce(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("unknown coerce method: %s", p.Method)
 	}
 
-	out, _ := json.Marshal(result)
+	out, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %v", err)
+	}
 	return out, nil
 }
 

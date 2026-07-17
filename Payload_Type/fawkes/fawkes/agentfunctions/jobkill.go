@@ -78,5 +78,16 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			if responseText, ok := msg.Response.(string); ok && responseText != "" {
+				id, _ := msg.TaskData.Args.GetStringArg("id")
+				createArtifact(msg.TaskData.Task.ID, "Job Control",
+					fmt.Sprintf("jobkill %s on %s", id, msg.TaskData.Callback.Host))
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[IMPACT] Background job killed: %s on %s", id, msg.TaskData.Callback.Host), false)
+			}
+			return response
+		},
 	})
 }

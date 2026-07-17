@@ -55,7 +55,7 @@ func expandTrClass(s string) string {
 
 func (c *TrCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	args, parseErr := unmarshalParams[trArgs](task)
@@ -63,15 +63,15 @@ func (c *TrCommand) Execute(task structs.Task) structs.CommandResult {
 		return *parseErr
 	}
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 	if args.From == "" && args.Delete == "" && !args.Squeeze {
-		return errorResult("Error: from/to, delete, or squeeze is required")
+		return errorResult("from/to, delete, or squeeze is required")
 	}
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to read file %q: %v", args.Path, err)
 	}
 
 	content := strings.Join(lines, "\n")

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -25,7 +24,7 @@ type sshCheckResult struct {
 
 func sshExecCheck(args sshExecArgs) structs.CommandResult {
 	if args.Host == "" {
-		return errorResult("Error: host is required for check action")
+		return errorResult("host is required for check action")
 	}
 
 	port := args.Port
@@ -53,8 +52,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.Authentication = "skipped"
 		result.ShellAccess = "skipped"
 		result.Recommendation = fmt.Sprintf("Port %d is not reachable. SSH requires port %d.", port, port)
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Check 1b: Grab SSH banner
@@ -75,8 +73,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.ShellAccess = "skipped"
 		result.OverallStatus = "partial"
 		result.Recommendation = "Port reachable. Provide credentials to test authentication."
-		data, _ := json.MarshalIndent(result, "", "  ")
-		return successResult(string(data))
+		return checkResult(result)
 	}
 
 	// Build SSH auth methods
@@ -91,8 +88,7 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		} else {
 			result.Authentication = fmt.Sprintf("fail: invalid key data: %v", err)
 			result.ShellAccess = "skipped"
-			data, _ := json.MarshalIndent(result, "", "  ")
-			return successResult(string(data))
+			return checkResult(result)
 		}
 	}
 
@@ -153,6 +149,5 @@ func sshExecCheck(args sshExecArgs) structs.CommandResult {
 		result.Recommendation = "SSH authentication timed out."
 	}
 
-	data, _ := json.MarshalIndent(result, "", "  ")
-	return successResult(string(data))
+	return checkResult(result)
 }

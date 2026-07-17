@@ -46,7 +46,7 @@ func parseTimeWindow(s string) (time.Duration, bool) {
 func eventlogQueryFile(path, filter string, maxCount int) structs.CommandResult {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return errorf("Error reading %s: %v", path, err)
+		return errorf("reading %s: %v", path, err)
 	}
 
 	lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
@@ -120,7 +120,7 @@ func filterLinesByTime(lines []string, cutoff time.Time) []string {
 func eventlogFileInfo(path string) structs.CommandResult {
 	info, err := os.Stat(path)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to stat log file %q: %v", path, err)
 	}
 
 	var sb strings.Builder

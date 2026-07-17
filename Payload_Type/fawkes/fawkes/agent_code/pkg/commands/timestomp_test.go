@@ -117,7 +117,7 @@ func TestTimestompSetBadTimestamp(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status for invalid timestamp, got %q: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Error parsing timestamp") {
+	if !strings.Contains(result.Output, "parsing timestamp") {
 		t.Errorf("expected error message about parsing timestamp, got: %s", result.Output)
 	}
 }

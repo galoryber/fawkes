@@ -88,7 +88,7 @@ func envList(filter string) structs.CommandResult {
 
 func envGet(name string) structs.CommandResult {
 	if name == "" {
-		return errorResult("Error: name is required for get action")
+		return errorResult("name is required for get action")
 	}
 
 	value, exists := os.LookupEnv(name)
@@ -101,12 +101,12 @@ func envGet(name string) structs.CommandResult {
 
 func envSet(name, value string) structs.CommandResult {
 	if name == "" {
-		return errorResult("Error: name is required for set action")
+		return errorResult("name is required for set action")
 	}
 
 	oldValue, existed := os.LookupEnv(name)
 	if err := os.Setenv(name, value); err != nil {
-		return errorf("Error: cannot set environment variable '%s' (invalid name or restricted)", name)
+		return errorf("cannot set environment variable '%s' (invalid name or restricted)", name)
 	}
 
 	if existed {
@@ -117,7 +117,7 @@ func envSet(name, value string) structs.CommandResult {
 
 func envUnset(name string) structs.CommandResult {
 	if name == "" {
-		return errorResult("Error: name is required for unset action")
+		return errorResult("name is required for unset action")
 	}
 
 	_, existed := os.LookupEnv(name)
@@ -126,7 +126,7 @@ func envUnset(name string) structs.CommandResult {
 	}
 
 	if err := os.Unsetenv(name); err != nil {
-		return errorf("Error unsetting %s: %v", name, err)
+		return errorf("unsetting %s: %v", name, err)
 	}
 
 	return successf("Unset %s", name)

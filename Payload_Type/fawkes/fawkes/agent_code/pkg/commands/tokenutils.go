@@ -24,10 +24,9 @@ var (
 	// This is set by make-token and steal-token, cleared by rev2self
 	gIdentityToken windows.Token
 
-	// gIdentityCreds stores plaintext credentials from make-token
-	// Needed for DCOM/COM remote activation which requires explicit COAUTHINFO
-	// (thread impersonation tokens are not used by CoCreateInstanceEx for remote calls)
-	gIdentityCreds *StoredCredentials
+	// gIdentityCreds stores encrypted credentials from make-token.
+	// Credentials are sealed with AES-256-GCM and decrypted only on access.
+	gIdentityCreds *sealedCredentials
 
 	// tokenMutex protects token operations from race conditions
 	tokenMutex sync.Mutex
@@ -46,7 +45,7 @@ type SavedToken struct {
 	Token    windows.Token
 	Identity string             // DOMAIN\username at save time
 	Source   string             // "steal-token", "make-token", "printspoofer", etc.
-	Creds    *StoredCredentials // non-nil if from make-token
+	Creds    *sealedCredentials // non-nil if from make-token (encrypted at rest)
 }
 
 // StoredCredentials holds plaintext credentials for use by commands
@@ -115,8 +114,8 @@ func RevertCurrentToken() error {
 		gIdentityToken = 0
 	}
 
-	// Clear stored credentials (zero password before releasing)
-	zeroStoredCredentials(gIdentityCreds)
+	// Clear stored credentials (zero encrypted blob before releasing)
+	zeroSealedCredentials(gIdentityCreds)
 	gIdentityCreds = nil
 
 	// Call RevertToSelf to drop any thread impersonation
@@ -149,7 +148,7 @@ func SetIdentityToken(token windows.Token) error {
 	// Impersonate the new token
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(token))
 	if ret == 0 {
-		return fmt.Errorf("ImpersonateLoggedOnUser failed: %w", err)
+		return fmt.Errorf("token impersonation failed: %w", err)
 	}
 
 	// Store the token for later use
@@ -210,33 +209,26 @@ func HasActiveImpersonation() bool {
 	return true
 }
 
-// SetIdentityCredentials stores plaintext credentials alongside the token.
+// SetIdentityCredentials encrypts and stores credentials alongside the token.
 // Called by make-token so that DCOM and other commands requiring explicit
-// auth credentials can use them.
+// auth credentials can use them. Credentials are AES-256-GCM encrypted at rest.
 func SetIdentityCredentials(domain, username, password string) {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
-	gIdentityCreds = &StoredCredentials{
+	zeroSealedCredentials(gIdentityCreds)
+	gIdentityCreds = sealCredentials(&StoredCredentials{
 		Domain:   domain,
 		Username: username,
 		Password: password,
-	}
+	})
 }
 
-// GetIdentityCredentials returns stored credentials from the last make-token call.
-// Returns nil if no credentials are stored (e.g., using steal-token or no impersonation).
+// GetIdentityCredentials decrypts and returns stored credentials from the last
+// make-token call. Returns nil if no credentials are stored.
 func GetIdentityCredentials() *StoredCredentials {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
-	if gIdentityCreds == nil {
-		return nil
-	}
-	// Return a copy to avoid races
-	return &StoredCredentials{
-		Domain:   gIdentityCreds.Domain,
-		Username: gIdentityCreds.Username,
-		Password: gIdentityCreds.Password,
-	}
+	return unsealCredentials(gIdentityCreds)
 }
 
 // SaveTokenToStore saves the current impersonation token to the store under the given name.
@@ -260,22 +252,23 @@ func SaveTokenToStore(name, source string) error {
 		&dupToken,
 	)
 	if err != nil {
-		return fmt.Errorf("DuplicateTokenEx failed: %w", err)
+		return fmt.Errorf("token duplication failed: %w", err)
 	}
 
 	identity, _ := GetTokenUserInfo(dupToken)
 
 	// Close any existing token with the same name
 	if old, exists := gTokenStore[name]; exists {
+		zeroSealedCredentials(old.Creds)
 		windows.CloseHandle(windows.Handle(old.Token))
 	}
 
-	var savedCreds *StoredCredentials
+	// Re-seal credentials with a fresh key for the stored copy
+	var savedCreds *sealedCredentials
 	if gIdentityCreds != nil {
-		savedCreds = &StoredCredentials{
-			Domain:   gIdentityCreds.Domain,
-			Username: gIdentityCreds.Username,
-			Password: gIdentityCreds.Password,
+		plainCreds := unsealCredentials(gIdentityCreds)
+		if plainCreds != nil {
+			savedCreds = sealCredentials(plainCreds)
 		}
 	}
 
@@ -310,7 +303,7 @@ func UseTokenFromStore(name string) (string, error) {
 		&dupToken,
 	)
 	if err != nil {
-		return "", fmt.Errorf("DuplicateTokenEx failed: %w", err)
+		return "", fmt.Errorf("token duplication failed: %w", err)
 	}
 
 	// Clear current impersonation
@@ -324,17 +317,19 @@ func UseTokenFromStore(name string) (string, error) {
 	ret, _, sysErr := procImpersonateLoggedOnUser.Call(uintptr(dupToken))
 	if ret == 0 {
 		windows.CloseHandle(windows.Handle(dupToken))
-		return "", fmt.Errorf("ImpersonateLoggedOnUser failed: %w", sysErr)
+		return "", fmt.Errorf("token impersonation failed: %w", sysErr)
 	}
 
 	gIdentityToken = dupToken
 
 	// Restore credentials if the saved token had them
+	zeroSealedCredentials(gIdentityCreds)
 	if saved.Creds != nil {
-		gIdentityCreds = &StoredCredentials{
-			Domain:   saved.Creds.Domain,
-			Username: saved.Creds.Username,
-			Password: saved.Creds.Password,
+		plainCreds := unsealCredentials(saved.Creds)
+		if plainCreds != nil {
+			gIdentityCreds = sealCredentials(plainCreds)
+		} else {
+			gIdentityCreds = nil
 		}
 	} else {
 		gIdentityCreds = nil
@@ -353,7 +348,7 @@ func RemoveTokenFromStore(name string) error {
 		return fmt.Errorf("no token stored with name %q", name)
 	}
 
-	zeroStoredCredentials(saved.Creds)
+	zeroSealedCredentials(saved.Creds)
 	windows.CloseHandle(windows.Handle(saved.Token))
 	delete(gTokenStore, name)
 	return nil

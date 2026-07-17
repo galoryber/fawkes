@@ -129,7 +129,7 @@ func init() {
 		Name:                "inline-execute",
 		Description:         "Execute a Beacon Object File (BOF/COFF) in memory",
 		HelpString:          "inline-execute",
-		Version:             1,
+		Version:             2,
 		MitreAttackMappings: []string{"T1620"}, // Reflective Code Loading
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
@@ -258,6 +258,35 @@ func init() {
 						ParameterIsRequired: false,
 						GroupName:           "CLI",
 						UIModalPosition:     2,
+					},
+				},
+			},
+			{
+				Name:             "timeout",
+				ModalDisplayName: "Timeout (seconds)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Execution timeout in seconds (default: 30). Increase for long-running BOFs.",
+				DefaultValue:     30,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     3,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     3,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
+						UIModalPosition:     3,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Forge",
+						UIModalPosition:     3,
 					},
 				},
 			},
@@ -432,10 +461,19 @@ func init() {
 				}
 			}
 
+			// Get timeout value
+			timeoutVal := 30
+			if tv, tvErr := taskData.Args.GetNumberArg("timeout"); tvErr == nil && tv > 0 {
+				timeoutVal = int(tv)
+			}
+
 			// Build the display parameters
 			displayParams := fmt.Sprintf("BOF: %s, Entry: %s", filename, entryPoint)
 			if len(goffloaderArgs) > 0 {
 				displayParams += fmt.Sprintf("\nArguments: %v", goffloaderArgs)
+			}
+			if timeoutVal != 30 {
+				displayParams += fmt.Sprintf("\nTimeout: %ds", timeoutVal)
 			}
 			response.DisplayParams = &displayParams
 
@@ -444,6 +482,7 @@ func init() {
 				"bof_b64":     base64.StdEncoding.EncodeToString(fileContents),
 				"entry_point": entryPoint,
 				"arguments":   goffloaderArgs,
+				"timeout":     timeoutVal,
 			}
 
 			paramsJSON, err := json.Marshal(params)

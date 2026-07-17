@@ -190,11 +190,29 @@ func init() {
 				if strings.Contains(responseText, "disabled") || strings.Contains(responseText, "Disabled") || strings.Contains(responseText, "Success") {
 					createArtifact(processResponse.TaskData.Task.ID, "API Call",
 						"[Defender] Real-time protection disabled")
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DEFENSE EVASION] Disabled Windows Defender real-time protection on %s", processResponse.TaskData.Callback.Host), true)
 				}
 			case "enable":
 				if strings.Contains(responseText, "enabled") || strings.Contains(responseText, "Enabled") || strings.Contains(responseText, "Success") {
 					createArtifact(processResponse.TaskData.Task.ID, "API Call",
 						"[Defender] Real-time protection enabled")
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DEFENSE EVASION] Enabled Windows Defender real-time protection on %s", processResponse.TaskData.Callback.Host), true)
+				}
+			case "add-exclusion":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "added") || strings.Contains(responseText, "Added") {
+					exType, _ := processResponse.TaskData.Args.GetStringArg("type")
+					value, _ := processResponse.TaskData.Args.GetStringArg("value")
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DEFENSE EVASION] Added Defender %s exclusion '%s' on %s", exType, value, processResponse.TaskData.Callback.Host), true)
+				}
+			case "remove-exclusion":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "removed") || strings.Contains(responseText, "Removed") {
+					exType, _ := processResponse.TaskData.Args.GetStringArg("type")
+					value, _ := processResponse.TaskData.Args.GetStringArg("value")
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DEFENSE EVASION] Removed Defender %s exclusion '%s' on %s", exType, value, processResponse.TaskData.Callback.Host), true)
 				}
 			}
 			return response

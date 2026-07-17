@@ -30,7 +30,7 @@ type sortArgs struct {
 
 func (c *SortCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
+		return errorResult("no parameters provided")
 	}
 
 	var args sortArgs
@@ -39,12 +39,12 @@ func (c *SortCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return errorResult("Error: path is required")
+		return errorResult("path is required")
 	}
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return errorf("Error reading %s: %v", args.Path, err)
+		return errorf("reading %s: %v", args.Path, err)
 	}
 
 	if args.Numeric {

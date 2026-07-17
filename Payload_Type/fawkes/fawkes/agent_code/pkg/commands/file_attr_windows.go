@@ -43,7 +43,7 @@ func getFileAttrs(path string) structs.CommandResult {
 	pathPtr, _ := syscall.UTF16PtrFromString(path)
 	ret, _, err := procGetFileAttributesW.Call(uintptr(unsafe.Pointer(pathPtr)))
 	if ret == 0xFFFFFFFF {
-		return errorf("Error getting attributes: %v", err)
+		return errorf("getting attributes: %v", err)
 	}
 
 	attrs := uint32(ret)
@@ -69,14 +69,14 @@ func getFileAttrs(path string) structs.CommandResult {
 func setFileAttrs(path string, attrsStr string) structs.CommandResult {
 	add, remove, err := parseAttrChanges(attrsStr)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to parse attribute changes %q: %v", attrsStr, err)
 	}
 
 	// Get current attributes
 	pathPtr, _ := syscall.UTF16PtrFromString(path)
 	ret, _, callErr := procGetFileAttributesW.Call(uintptr(unsafe.Pointer(pathPtr)))
 	if ret == 0xFFFFFFFF {
-		return errorf("Error getting current attributes: %v", callErr)
+		return errorf("getting current attributes: %v", callErr)
 	}
 
 	attrs := uint32(ret)
@@ -112,7 +112,7 @@ func setFileAttrs(path string, attrsStr string) structs.CommandResult {
 		uintptr(attrs),
 	)
 	if ret == 0 {
-		return errorf("Error setting attributes: %v", callErr)
+		return errorf("setting attributes: %v", callErr)
 	}
 
 	return successf("[+] Updated attributes on %s: %s", path, strings.Join(changed, ", "))

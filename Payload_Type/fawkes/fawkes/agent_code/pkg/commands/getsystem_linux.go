@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -145,7 +144,10 @@ func getsystemCheck(currentIdentity string) structs.CommandResult {
 		"total":            len(vectors),
 	}
 
-	output, _ := json.MarshalIndent(result, "", "  ")
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 
@@ -154,7 +156,7 @@ func checkSudoNopasswd() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-l")
+	cmd := safeCmdContext(ctx, "sudo", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil
@@ -175,7 +177,7 @@ func checkSudoCached() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "true")
+	cmd := safeCmdContext(ctx, "sudo", "-n", "true")
 	return cmd.Run() == nil
 }
 
@@ -243,7 +245,7 @@ func findCapSetuid() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "getcap", "-r", "/usr/bin", "/usr/sbin", "/usr/local/bin")
+	cmd := safeCmdContext(ctx, "getcap", "-r", "/usr/bin", "/usr/sbin", "/usr/local/bin")
 	output, _ := cmd.CombinedOutput()
 
 	var capBins []string
@@ -298,7 +300,7 @@ func getsystemSudo(oldIdentity string) structs.CommandResult {
 		// Check for NOPASSWD rules
 		rules := checkSudoNopasswd()
 		if len(rules) == 0 {
-			return errorResult("Error: sudo requires a password and no NOPASSWD rules found. Use 'check' technique to enumerate other vectors.")
+			return errorResult("sudo requires a password and no NOPASSWD rules found. Use 'check' technique to enumerate other vectors.")
 		}
 		// Check if we have NOPASSWD: ALL
 		hasAll := false
@@ -309,7 +311,7 @@ func getsystemSudo(oldIdentity string) structs.CommandResult {
 			}
 		}
 		if !hasAll {
-			return errorf("Error: NOPASSWD rules found but not for ALL commands: %s", strings.Join(rules, "; "))
+			return errorf("NOPASSWD rules found but not for ALL commands: %s", strings.Join(rules, "; "))
 		}
 	}
 
@@ -324,10 +326,10 @@ func getsystemSudo(oldIdentity string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "id")
+	cmd := safeCmdContext(ctx, "sudo", "-n", "id")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error: sudo -n id failed: %v\n%s", err, string(output))
+		return errorf("sudo -n id failed: %v\n%s", err, string(output))
 	}
 
 	newIdentity := strings.TrimSpace(string(output))

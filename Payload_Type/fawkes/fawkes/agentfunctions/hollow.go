@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"path/filepath"
@@ -24,7 +26,7 @@ func init() {
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "hollow_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -143,6 +145,11 @@ func init() {
 					target = "/usr/bin/sleep"
 				}
 				msg = fmt.Sprintf("OPSEC WARNING: Linux process hollowing creates a PTRACE_TRACEME %s process, writes shellcode via /proc/PID/mem, and redirects execution. Detectable by ptrace monitoring, Yama LSM, and /proc/mem access audit rules.", target)
+			} else if strings.EqualFold(payloadOS, "macos") {
+				if target == "" {
+					target = "/bin/sleep"
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: macOS process hollowing creates a ptrace'd %s process, allocates memory via Mach VM APIs (task_for_pid + mach_vm_allocate), writes shellcode, and redirects execution. Requires root. Detectable by Endpoint Security framework (ES_EVENT_TYPE_NOTIFY_MACH_TRAP, ES_EVENT_TYPE_NOTIFY_SIGNAL), ptrace monitoring, and process anomaly detection.", target)
 			} else {
 				if target == "" {
 					target = "svchost.exe"
@@ -198,7 +205,14 @@ func init() {
 			blockDLLs, _ := taskData.Args.GetBooleanArg("block_dlls")
 
 			if target == "" {
-				target = `C:\Windows\System32\svchost.exe`
+				payloadOS := taskData.Callback.OS
+				if strings.EqualFold(payloadOS, "linux") {
+					target = "/usr/bin/sleep"
+				} else if strings.EqualFold(payloadOS, "macos") {
+					target = "/bin/sleep"
+				} else {
+					target = `C:\Windows\System32\svchost.exe`
+				}
 			}
 
 			// Decode to get size for display
@@ -251,6 +265,27 @@ func init() {
 			})
 			logOperationEvent(processResponse.TaskData.Task.ID,
 				fmt.Sprintf("[EXECUTION] Process hollowing → %s on %s", target, host), true)
+
+			responseText, _ := processResponse.Response.(string)
+			if responseText != "" {
+				re := regexp.MustCompile(`Created suspended process PID:\s*(\d+)`)
+				if m := re.FindStringSubmatch(responseText); m != nil {
+					pid, _ := strconv.Atoi(m[1])
+					if pid > 0 {
+						if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+							TaskID: processResponse.TaskData.Task.ID,
+							Processes: []mythicrpc.MythicRPCProcessCreateProcessData{{
+								Host:      &host,
+								ProcessID: pid,
+								Name:      target,
+								BinPath:   target,
+							}},
+						}); err != nil {
+							logging.LogError(err, "Failed to register hollowed process")
+						}
+					}
+				}
+			}
 			return response
 		},
 	})

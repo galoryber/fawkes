@@ -90,6 +90,8 @@ func init() {
 				tagTask(processResponse.TaskData.Task.ID, "OPSEC",
 					"Virtual machine/hypervisor environment detected (T1497.001)")
 			}
+			createArtifact(processResponse.TaskData.Task.ID, "API Call",
+				"VM/hypervisor environment check (T1497.001)")
 			logOperationEvent(processResponse.TaskData.Task.ID,
 				"[RECON] VM/hypervisor environment check (T1497.001)", false)
 			return response

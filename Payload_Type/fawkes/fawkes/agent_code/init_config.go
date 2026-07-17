@@ -482,6 +482,12 @@ func checkEnvironmentKeys() bool {
 			return false
 		}
 	}
+	if envKeyCpuid != "" {
+		brand := getCPUBrand()
+		if !regexMatch(envKeyCpuid, brand) {
+			return false
+		}
+	}
 	return true
 }
 

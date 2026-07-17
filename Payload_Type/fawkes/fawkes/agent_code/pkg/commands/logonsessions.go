@@ -200,7 +200,7 @@ func utf16PtrToSlice(p *uint16) []uint16 {
 func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateWTSSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to enumerate WTS logon sessions: %v", err)
 	}
 
 	// Filter
@@ -222,7 +222,7 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 
 	data, err := json.Marshal(filtered)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))
@@ -239,7 +239,7 @@ type userEntry struct {
 func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateWTSSessions()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to enumerate WTS logon sessions: %v", err)
 	}
 
 	type userInfo struct {
@@ -297,7 +297,7 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))

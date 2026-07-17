@@ -39,7 +39,7 @@ type grepMatch struct {
 
 func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Usage: grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]")
+		return errorResult("parameters required. Usage: grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]")
 	}
 
 	args, parseErr := unmarshalParams[grepArgs](task)
@@ -48,7 +48,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Pattern == "" {
-		return errorResult("Error: pattern is required")
+		return errorResult("pattern is required")
 	}
 
 	// Set defaults
@@ -72,32 +72,21 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return errorf("Error: invalid regex pattern: %v", err)
+		return errorf("invalid regex pattern: %v", err)
 	}
 
-	// Parse extension filter
-	var extFilter map[string]bool
-	if args.Extensions != "" {
-		extFilter = make(map[string]bool)
-		for _, ext := range strings.Split(args.Extensions, ",") {
-			ext = strings.TrimSpace(ext)
-			if !strings.HasPrefix(ext, ".") {
-				ext = "." + ext
-			}
-			extFilter[strings.ToLower(ext)] = true
-		}
-	}
+	extFilter := grepParseExtFilter(args.Extensions)
 
 	// Resolve start path
 	startPath, err := filepath.Abs(args.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	// Check if path is a single file
 	info, err := os.Stat(startPath)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to stat search path %q: %v", startPath, err)
 	}
 
 	var matches []grepMatch
@@ -111,7 +100,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	} else {
 		// Walk directory
 		startDepth := strings.Count(startPath, string(os.PathSeparator))
-		_ = filepath.WalkDir(startPath, func(path string, d os.DirEntry, err error) error {
+		if walkErr := filepath.WalkDir(startPath, func(path string, d os.DirEntry, err error) error {
 			if task.DidStop() {
 				return fmt.Errorf("cancelled")
 			}
@@ -170,14 +159,34 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 				return fmt.Errorf("max results reached")
 			}
 			return nil
-		})
+		}); walkErr != nil && filesSearched == 0 {
+			return errorf("Failed to search %s: %v", startPath, walkErr)
+		}
 	}
 
+	return grepFormatResults(matches, args.Pattern, startPath, filesSearched, args.MaxResults)
+}
+
+func grepParseExtFilter(extensions string) map[string]bool {
+	if extensions == "" {
+		return nil
+	}
+	extFilter := make(map[string]bool)
+	for _, ext := range strings.Split(extensions, ",") {
+		ext = strings.TrimSpace(ext)
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		extFilter[strings.ToLower(ext)] = true
+	}
+	return extFilter
+}
+
+func grepFormatResults(matches []grepMatch, pattern, startPath string, filesSearched, maxResults int) structs.CommandResult {
 	if len(matches) == 0 {
-		return successf("No matches found for pattern %q in %s (%d files searched)", args.Pattern, startPath, filesSearched)
+		return successf("No matches found for pattern %q in %s (%d files searched)", pattern, startPath, filesSearched)
 	}
 
-	// Format output
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Found %d matches in %s (%d files searched):\n\n", len(matches), startPath, filesSearched))
 
@@ -193,8 +202,8 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("%d: %s\n", m.Line, m.Content))
 	}
 
-	if len(matches) >= args.MaxResults {
-		sb.WriteString(fmt.Sprintf("\n[Results truncated at %d matches]", args.MaxResults))
+	if len(matches) >= maxResults {
+		sb.WriteString(fmt.Sprintf("\n[Results truncated at %d matches]", maxResults))
 	}
 
 	return successResult(sb.String())

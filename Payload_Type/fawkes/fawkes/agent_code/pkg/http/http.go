@@ -180,9 +180,9 @@ func NewHTTPProfile(cfg ProfileConfig) *HTTPProfile {
 
 	transport := &http.Transport{
 		TLSClientConfig:     tlsConfig,
-		MaxIdleConns:        10,
-		MaxIdleConnsPerHost: 5,
-		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:        randPoolSize(10),
+		MaxIdleConnsPerHost: randPoolSize(5),
+		IdleConnTimeout:     time.Duration(randPoolSize(90)) * time.Second,
 	}
 
 	useNTLMProxy := cfg.ProxyURL != "" && cfg.ProxyUser != "" && cfg.ProxyDomain != ""
@@ -375,6 +375,56 @@ func (h *HTTPProfile) UpdateCallbackUUID(uuid string) {
 		return
 	}
 	h.CallbackUUID = uuid
+}
+
+// RotateVaultKey generates a new encryption key, re-encrypts the vault blob,
+// and zeros the old key. This limits the blast radius if a previous key is
+// recovered via memory forensics — only data encrypted since the last rotation
+// is at risk. No-op if vault is not active.
+func (h *HTTPProfile) RotateVaultKey() error {
+	if h.vault == nil {
+		return nil
+	}
+
+	plaintext := vaultDecrypt(h.vault.key, h.vault.blob)
+	if plaintext == nil {
+		return fmt.Errorf("vault decryption failed during key rotation")
+	}
+
+	newKey := make([]byte, 32)
+	if _, err := rand.Read(newKey); err != nil {
+		vaultZeroBytes(plaintext)
+		return fmt.Errorf("new key generation failed: %w", err)
+	}
+
+	newBlob := vaultEncrypt(newKey, plaintext)
+	vaultZeroBytes(plaintext)
+	if newBlob == nil {
+		vaultZeroBytes(newKey)
+		return fmt.Errorf("vault re-encryption failed")
+	}
+
+	oldKey := h.vault.key
+	oldBlob := h.vault.blob
+	h.vault.key = newKey
+	h.vault.blob = newBlob
+	vaultZeroBytes(oldKey)
+	vaultZeroBytes(oldBlob)
+
+	return nil
+}
+
+// randPoolSize returns base ±20% using crypto/rand to vary HTTP connection
+// pool parameters per agent instance, preventing NTA correlation.
+func randPoolSize(base int) int {
+	var b [1]byte
+	_, _ = rand.Read(b[:])
+	delta := base * 20 / 100
+	if delta == 0 {
+		delta = 1
+	}
+	offset := int(b[0]) % (2*delta + 1) // [0, 2*delta]
+	return base - delta + offset
 }
 
 // buildTLSConfig creates a TLS configuration based on the verification mode.

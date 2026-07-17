@@ -155,7 +155,7 @@ func prefetchList(count int, filter string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to marshal prefetch results to JSON: %v", err)
 	}
 
 	return successResult(string(jsonBytes))
@@ -265,16 +265,10 @@ func prefetchDelete(name string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("No prefetch files matching '%s'", name))
 	}
 
-	status := "success"
 	if len(deleted) == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func prefetchClear() structs.CommandResult {

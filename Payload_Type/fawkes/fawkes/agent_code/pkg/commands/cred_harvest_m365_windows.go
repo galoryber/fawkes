@@ -22,7 +22,7 @@ func credM365Tokens(args credHarvestArgs) (result structs.CommandResult) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = structs.CommandResult{
-				Output:    fmt.Sprintf("m365-tokens panic: %v", r),
+				Output:    "credential extraction crashed unexpectedly",
 				Status:    "error",
 				Completed: true,
 			}

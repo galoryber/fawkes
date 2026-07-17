@@ -17,10 +17,10 @@ import (
 
 func certstoreDelete(store, filter string) structs.CommandResult {
 	if filter == "" {
-		return errorResult("Error: filter (thumbprint) is required for delete action")
+		return errorResult("filter (thumbprint) is required for delete action")
 	}
 	if store == "" {
-		return errorResult("Error: store name is required for delete action (e.g., MY, ROOT, CA)")
+		return errorResult("store name is required for delete action (e.g., MY, ROOT, CA)")
 	}
 
 	locations := []struct {
@@ -92,7 +92,7 @@ func certstoreDelete(store, filter string) structs.CommandResult {
 
 func certstoreImport(store, data, format, password string) structs.CommandResult {
 	if data == "" {
-		return errorResult("Error: data (base64-encoded certificate) is required for import action")
+		return errorResult("data (base64-encoded certificate) is required for import action")
 	}
 	if store == "" {
 		store = "MY"
@@ -106,7 +106,7 @@ func certstoreImport(store, data, format, password string) structs.CommandResult
 		// Try raw base64 (no padding)
 		rawData, err = base64.RawStdEncoding.DecodeString(data)
 		if err != nil {
-			return errorf("Error decoding base64 data: %v", err)
+			return errorf("decoding base64 data: %v", err)
 		}
 	}
 
@@ -134,7 +134,7 @@ func certstoreImport(store, data, format, password string) structs.CommandResult
 	if format == "pem" {
 		block, _ := pem.Decode(rawData)
 		if block == nil {
-			return errorResult("Error: failed to decode PEM data")
+			return errorResult("failed to decode PEM data")
 		}
 		derBytes = block.Bytes
 	}

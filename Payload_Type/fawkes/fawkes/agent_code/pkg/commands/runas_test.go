@@ -69,7 +69,7 @@ func TestRunasCommand_InvalidJSON(t *testing.T) {
 	result := cmd.Execute(task)
 	assert.Equal(t, "error", result.Status)
 	assert.True(t, result.Completed)
-	assert.Contains(t, result.Output, "Error parsing parameters")
+	assert.Contains(t, result.Output, "parsing parameters")
 }
 
 func TestRunasCommand_MissingCommand(t *testing.T) {

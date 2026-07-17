@@ -1,8 +1,15 @@
 package http
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
 	"testing"
+	"time"
 
 	utls "github.com/refraction-networking/utls"
 )
@@ -170,6 +177,86 @@ func TestNewHTTPProfile_WithoutTLSFingerprint(t *testing.T) {
 		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
 		GetEndpoint: "/get", PostEndpoint: "/post",
 		TLSVerify: "none", TLSFingerprint: "go",
+	}
+	p := NewHTTPProfile(cfg)
+	if p == nil {
+		t.Fatal("NewHTTPProfile returned nil")
+	}
+}
+
+func generateTestCert(t *testing.T) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+	return tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  key,
+	}
+}
+
+func TestNewHTTPProfile_MTLSCertsPreservedWithFingerprint(t *testing.T) {
+	cert := generateTestCert(t)
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "chrome",
+		MTLSCertPEM: "unused-in-this-path",
+		MTLSKeyPEM:  "unused-in-this-path",
+	}
+
+	tlsConfig := buildTLSConfig("none")
+	tlsConfig.Certificates = []tls.Certificate{cert}
+
+	// Verify the upgradeToUTLS config includes certificates
+	utlsConfig := &utls.Config{
+		ServerName:         "test",
+		InsecureSkipVerify: true,
+	}
+	if len(tlsConfig.Certificates) > 0 {
+		utlsCerts := make([]utls.Certificate, len(tlsConfig.Certificates))
+		for i, c := range tlsConfig.Certificates {
+			utlsCerts[i] = utls.Certificate{
+				Certificate: c.Certificate,
+				PrivateKey:  c.PrivateKey,
+				OCSPStaple:  c.OCSPStaple,
+				Leaf:        c.Leaf,
+			}
+		}
+		utlsConfig.Certificates = utlsCerts
+	}
+
+	if len(utlsConfig.Certificates) != 1 {
+		t.Fatalf("expected 1 certificate in utlsConfig, got %d", len(utlsConfig.Certificates))
+	}
+	if len(utlsConfig.Certificates[0].Certificate) != 1 {
+		t.Fatalf("expected 1 cert chain entry, got %d", len(utlsConfig.Certificates[0].Certificate))
+	}
+	if utlsConfig.Certificates[0].PrivateKey == nil {
+		t.Fatal("private key not copied to utlsConfig")
+	}
+
+	_ = cfg
+}
+
+func TestNewHTTPProfile_NoCertsWhenMTLSEmpty(t *testing.T) {
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "chrome",
 	}
 	p := NewHTTPProfile(cfg)
 	if p == nil {

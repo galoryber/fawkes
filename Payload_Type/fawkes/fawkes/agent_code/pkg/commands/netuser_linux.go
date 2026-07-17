@@ -21,7 +21,7 @@ func (c *NetUserCommand) Description() string {
 
 func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: add, delete, info, password, group-add, group-remove")
+		return errorResult("parameters required. Actions: add, delete, info, password, group-add, group-remove")
 	}
 
 	args, parseErr := unmarshalParams[netUserArgs](task)
@@ -50,10 +50,10 @@ func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 
 func linuxUserAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for add action")
+		return errorResult("username is required for add action")
 	}
 	if args.Password == "" {
-		return errorResult("Error: password is required for add action")
+		return errorResult("password is required for add action")
 	}
 
 	// Build useradd command
@@ -65,7 +65,7 @@ func linuxUserAdd(args netUserArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("useradd", cmdArgs...)
 	if err != nil {
-		return errorf("Error creating user '%s': %v\n%s", args.Username, err, string(out))
+		return errorf("creating user '%s': %v\n%s", args.Username, err, string(out))
 	}
 
 	// Set password via chpasswd (reads username:password from stdin)
@@ -85,12 +85,12 @@ func linuxUserAdd(args netUserArgs) structs.CommandResult {
 
 func linuxUserDelete(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for delete action")
+		return errorResult("username is required for delete action")
 	}
 
 	out, err := execCmdTimeout("userdel", "-r", args.Username)
 	if err != nil {
-		return errorf("Error deleting user '%s': %v\n%s", args.Username, err, string(out))
+		return errorf("deleting user '%s': %v\n%s", args.Username, err, string(out))
 	}
 
 	return successf("Successfully deleted user '%s' (home directory removed)", args.Username)
@@ -98,7 +98,7 @@ func linuxUserDelete(args netUserArgs) structs.CommandResult {
 
 func linuxUserInfo(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for info action")
+		return errorResult("username is required for info action")
 	}
 
 	var sb strings.Builder
@@ -179,10 +179,10 @@ func linuxUserInfo(args netUserArgs) structs.CommandResult {
 
 func linuxUserPassword(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for password action")
+		return errorResult("username is required for password action")
 	}
 	if args.Password == "" {
-		return errorResult("Error: password is required for password action")
+		return errorResult("password is required for password action")
 	}
 
 	cmd, cancel := execCmdCtx("chpasswd")
@@ -193,7 +193,7 @@ func linuxUserPassword(args netUserArgs) structs.CommandResult {
 	cmd.Stdin = bytes.NewReader(stdinBuf)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error setting password for '%s': %v\n%s", args.Username, err, string(out))
+		return errorf("setting password for '%s': %v\n%s", args.Username, err, string(out))
 	}
 
 	return successf("Successfully changed password for '%s'", args.Username)
@@ -201,15 +201,15 @@ func linuxUserPassword(args netUserArgs) structs.CommandResult {
 
 func linuxUserGroupAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for group-add action")
+		return errorResult("username is required for group-add action")
 	}
 	if args.Group == "" {
-		return errorResult("Error: group is required for group-add action")
+		return errorResult("group is required for group-add action")
 	}
 
 	out, err := execCmdTimeout("usermod", "-aG", args.Group, args.Username)
 	if err != nil {
-		return errorf("Error adding '%s' to group '%s': %v\n%s", args.Username, args.Group, err, string(out))
+		return errorf("adding '%s' to group '%s': %v\n%s", args.Username, args.Group, err, string(out))
 	}
 
 	return successf("Successfully added '%s' to group '%s'", args.Username, args.Group)
@@ -217,15 +217,15 @@ func linuxUserGroupAdd(args netUserArgs) structs.CommandResult {
 
 func linuxUserGroupRemove(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return errorResult("Error: username is required for group-remove action")
+		return errorResult("username is required for group-remove action")
 	}
 	if args.Group == "" {
-		return errorResult("Error: group is required for group-remove action")
+		return errorResult("group is required for group-remove action")
 	}
 
 	out, err := execCmdTimeout("gpasswd", "-d", args.Username, args.Group)
 	if err != nil {
-		return errorf("Error removing '%s' from group '%s': %v\n%s", args.Username, args.Group, err, string(out))
+		return errorf("removing '%s' from group '%s': %v\n%s", args.Username, args.Group, err, string(out))
 	}
 
 	return successf("Successfully removed '%s' from group '%s'", args.Username, args.Group)

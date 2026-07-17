@@ -69,29 +69,29 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 
 func serviceQuery(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name is required for service query")
+		return errorResult("name is required for service query")
 	}
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	s, err := m.OpenService(args.Name)
 	if err != nil {
-		return errorf("Error opening service '%s': %v", args.Name, err)
+		return errorf("opening service '%s': %v", args.Name, err)
 	}
 	defer s.Close()
 
 	status, err := s.Query()
 	if err != nil {
-		return errorf("Error querying service '%s': %v", args.Name, err)
+		return errorf("querying service '%s': %v", args.Name, err)
 	}
 
 	config, err := s.Config()
 	if err != nil {
-		return errorf("Error getting config for '%s': %v", args.Name, err)
+		return errorf("getting config for '%s': %v", args.Name, err)
 	}
 
 	var sb strings.Builder
@@ -131,13 +131,13 @@ type serviceListEntry struct {
 func serviceList() structs.CommandResult {
 	m, err := mgr.Connect()
 	if err != nil {
-		return errorf("Error connecting to SCM: %v", err)
+		return errorf("connecting to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	names, err := m.ListServices()
 	if err != nil {
-		return errorf("Error listing services: %v", err)
+		return errorf("listing services: %v", err)
 	}
 
 	output := make([]serviceListEntry, 0, len(names))
@@ -170,7 +170,7 @@ func serviceList() structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to marshal service list to JSON: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

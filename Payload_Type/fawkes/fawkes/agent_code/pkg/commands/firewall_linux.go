@@ -17,7 +17,7 @@ func (c *FirewallCommand) Description() string { return "Manage Linux firewall (
 
 func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, add, delete, status")
+		return errorResult("parameters required. Actions: list, add, delete, status")
 	}
 
 	args, parseErr := unmarshalParams[firewallArgs](task)
@@ -152,7 +152,7 @@ func linuxFirewallList(args firewallArgs) structs.CommandResult {
 	if backend == "nft" {
 		out, err := execCmdTimeout("nft", "list", "ruleset")
 		if err != nil {
-			return errorf("nft list ruleset failed: %v (may require root)", err)
+			return errorf("nft list ruleset failed: %v — verify CAP_NET_ADMIN capability or run as root. Check that nf_tables kernel module is loaded", err)
 		}
 		output := strings.TrimSpace(string(out))
 		if output == "" {
@@ -215,12 +215,12 @@ func linuxFirewallAdd(args firewallArgs) structs.CommandResult {
 func linuxIptablesAdd(args firewallArgs) structs.CommandResult {
 	cmdArgs, err := buildIptablesArgs(args, "-A")
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to build iptables add rule arguments: %v", err)
 	}
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)
 	if execErr != nil {
-		return errorf("iptables add failed: %v\n%s", execErr, string(out))
+		return errorf("iptables add rule failed: %v\nOutput: %s\nVerify CAP_NET_ADMIN capability and rule syntax", execErr, string(out))
 	}
 
 	chain := cmdArgs[1]
@@ -265,12 +265,12 @@ func linuxFirewallDelete(args firewallArgs) structs.CommandResult {
 func linuxIptablesDelete(args firewallArgs) structs.CommandResult {
 	cmdArgs, err := buildIptablesArgs(args, "-D")
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to build iptables delete rule arguments: %v", err)
 	}
 
 	out, execErr := execCmdTimeout("iptables", cmdArgs...)
 	if execErr != nil {
-		return errorf("iptables delete failed: %v\n%s", execErr, string(out))
+		return errorf("iptables delete rule failed: %v\nOutput: %s\nVerify the rule exists and check CAP_NET_ADMIN capability", execErr, string(out))
 	}
 
 	chain := cmdArgs[1]
@@ -280,7 +280,7 @@ func linuxIptablesDelete(args firewallArgs) structs.CommandResult {
 func linuxNftDelete(args firewallArgs) structs.CommandResult {
 	// nft delete requires a handle number. If we have a name/comment, search for it.
 	if args.Name == "" {
-		return errorResult("Error: 'name' (rule comment) is required to identify the rule to delete on nftables")
+		return errorResult("'name' (rule comment) is required to identify the rule to delete on nftables")
 	}
 
 	chain := "input"
@@ -294,7 +294,7 @@ func linuxNftDelete(args firewallArgs) structs.CommandResult {
 		// Try ip table
 		out, err = execCmdTimeout("nft", "-a", "list", "chain", "ip", "filter", chain)
 		if err != nil {
-			return errorf("nft list chain failed: %v\n%s", err, string(out))
+			return errorf("nft list chain %s failed: %v\nOutput: %s\nVerify chain exists and check CAP_NET_ADMIN capability", chain, err, string(out))
 		}
 	}
 
@@ -307,7 +307,7 @@ func linuxNftDelete(args firewallArgs) structs.CommandResult {
 
 	out, err = execCmdTimeout("nft", "delete", "rule", family, "filter", chain, "handle", handle)
 	if err != nil {
-		return errorf("nft delete rule failed: %v\n%s", err, string(out))
+		return errorf("nft delete rule (handle %s) from %s chain failed: %v\nOutput: %s", handle, chain, err, string(out))
 	}
 
 	return successf("Deleted nftables rule (handle %s) from %s chain", handle, chain)

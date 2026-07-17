@@ -57,12 +57,12 @@ func (c *DpapiCommand) Execute(task structs.Task) structs.CommandResult {
 // decrypt decrypts a base64-encoded DPAPI blob using CryptUnprotectData
 func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 	if args.Blob == "" {
-		return errorResult("Error: -blob parameter required (base64-encoded DPAPI blob)")
+		return errorResult("-blob parameter required (base64-encoded DPAPI blob)")
 	}
 
 	data, err := base64.StdEncoding.DecodeString(args.Blob)
 	if err != nil {
-		return errorf("Error decoding base64 blob: %v", err)
+		return errorf("decoding base64 blob: %v", err)
 	}
 	defer structs.ZeroBytes(data) // opsec: clear DPAPI encrypted blob from memory
 
@@ -76,7 +76,7 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 	if args.Entropy != "" {
 		entropyBytes, err := base64.StdEncoding.DecodeString(args.Entropy)
 		if err != nil {
-			return errorf("Error decoding entropy: %v", err)
+			return errorf("decoding entropy: %v", err)
 		}
 		defer structs.ZeroBytes(entropyBytes) // opsec: clear entropy bytes from memory
 		pEntropy = &windows.DataBlob{

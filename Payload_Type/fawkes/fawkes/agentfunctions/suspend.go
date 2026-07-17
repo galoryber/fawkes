@@ -94,5 +94,17 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
+		TaskFunctionProcessResponse: func(msg agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: msg.TaskData.Task.ID, Success: true}
+			if responseText, ok := msg.Response.(string); ok && responseText != "" {
+				action, _ := msg.TaskData.Args.GetStringArg("action")
+				pid, _ := parsePIDFromArg(msg.TaskData)
+				createArtifact(msg.TaskData.Task.ID, "Process Manipulation",
+					fmt.Sprintf("%s PID %d on %s", action, pid, msg.TaskData.Callback.Host))
+				logOperationEvent(msg.TaskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] Process %s: PID %d on %s", action, pid, msg.TaskData.Callback.Host), false)
+			}
+			return response
+		},
 	})
 }

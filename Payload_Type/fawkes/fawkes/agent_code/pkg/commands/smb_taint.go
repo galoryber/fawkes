@@ -46,13 +46,13 @@ func smbTaintShares(args smbArgs) structs.CommandResult {
 		var err error
 		plantData, err = os.ReadFile(args.Source)
 		if err != nil {
-			return errorf("Error reading source file %s: %v", args.Source, err)
+			return errorf("reading source file %s: %v", args.Source, err)
 		}
 	} else {
 		plantData = []byte(args.Content)
 	}
 	if len(plantData) == 0 {
-		return errorResult("Error: plant file is empty")
+		return errorResult("plant file is empty")
 	}
 	defer structs.ZeroBytes(plantData)
 
@@ -68,7 +68,7 @@ func smbTaintShares(args smbArgs) structs.CommandResult {
 	// Connect to target
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to connect to SMB target %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -77,7 +77,7 @@ func smbTaintShares(args smbArgs) structs.CommandResult {
 	shareNames, err := sc.session.ListSharenames()
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error listing shares on %s: %v", args.Host, err)
+		return errorf("listing shares on %s: %v", args.Host, err)
 	}
 
 	result := smbTaintResult{
@@ -112,7 +112,10 @@ func smbTaintShares(args smbArgs) structs.CommandResult {
 		}
 	}
 
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 

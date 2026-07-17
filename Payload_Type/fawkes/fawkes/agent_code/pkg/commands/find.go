@@ -51,7 +51,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		if params.MinSize > 0 || params.MaxSize > 0 || params.Newer > 0 || params.Older > 0 || params.Type != "" || params.Perm != "" || params.Owner != "" {
 			params.Pattern = "*"
 		} else {
-			return errorResult("Error: pattern is required")
+			return errorResult("pattern is required")
 		}
 	}
 	if params.MaxDepth <= 0 {
@@ -61,7 +61,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve the starting path
 	startPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	// Precompute time boundaries
@@ -89,7 +89,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	var accessErrors []string
 	const maxResults = 500
 
-	_ = filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
+	if walkErr := filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
@@ -175,8 +175,14 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 
 		return nil
-	})
+	}); walkErr != nil && len(matches) == 0 {
+		accessErrors = append(accessErrors, fmt.Sprintf("walk error: %v", walkErr))
+	}
 
+	return findFormatResults(matches, accessErrors, params, startPath, maxResults)
+}
+
+func findFormatResults(matches, accessErrors []string, params FindParams, startPath string, maxResults int) structs.CommandResult {
 	if len(matches) == 0 {
 		output := fmt.Sprintf("No files matching '%s' found in %s", params.Pattern, startPath)
 		output += findFilterSummary(params)

@@ -27,7 +27,7 @@ type iptablesArgs struct {
 
 func (c *IptablesCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: status, rules, nat, add, delete, flush")
+		return errorResult("parameters required. Actions: status, rules, nat, add, delete, flush")
 	}
 
 	var args iptablesArgs
@@ -205,7 +205,7 @@ func iptablesNAT() structs.CommandResult {
 
 func iptablesAdd(args iptablesArgs) structs.CommandResult {
 	if args.Rule == "" {
-		return errorResult("Error: rule parameter required (e.g., '-A INPUT -p tcp --dport 4444 -j ACCEPT')")
+		return errorResult("rule parameter required (e.g., '-A INPUT -p tcp --dport 4444 -j ACCEPT')")
 	}
 
 	// Split rule into args
@@ -218,7 +218,7 @@ func iptablesAdd(args iptablesArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return errorf("Error adding rule: %v\n%s", err, string(out))
+		return errorf("adding rule: %v\n%s", err, string(out))
 	}
 
 	return successf("Rule added: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out))
@@ -226,7 +226,7 @@ func iptablesAdd(args iptablesArgs) structs.CommandResult {
 
 func iptablesDelete(args iptablesArgs) structs.CommandResult {
 	if args.Rule == "" {
-		return errorResult("Error: rule parameter required (e.g., '-D INPUT -p tcp --dport 4444 -j ACCEPT')")
+		return errorResult("rule parameter required (e.g., '-D INPUT -p tcp --dport 4444 -j ACCEPT')")
 	}
 
 	parts := strings.Fields(args.Rule)
@@ -238,7 +238,7 @@ func iptablesDelete(args iptablesArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return errorf("Error deleting rule: %v\n%s", err, string(out))
+		return errorf("deleting rule: %v\n%s", err, string(out))
 	}
 
 	return successf("Rule deleted: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out))
@@ -258,7 +258,7 @@ func iptablesFlush(args iptablesArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return errorf("Error flushing rules: %v\n%s", err, string(out))
+		return errorf("flushing rules: %v\n%s", err, string(out))
 	}
 
 	target := "all chains"

@@ -28,7 +28,7 @@ func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
 	krb5Conf := buildKrb5Config(realm, args.Server)
 	cfg, err := krbconfig.NewFromString(krb5Conf)
 	if err != nil {
-		return errorf("Error creating Kerberos config: %v", err)
+		return errorf("creating Kerberos config: %v", err)
 	}
 
 	var entries []sprayEnumEntry
@@ -58,7 +58,7 @@ func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(data))

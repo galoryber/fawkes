@@ -66,6 +66,9 @@ func init() {
 				return response
 			}
 
+			createArtifact(processResponse.TaskData.Task.ID, "API Call",
+				"Token reversion to original identity (T1134)")
+
 			// Remove all tokens from callback token tracker
 			host := processResponse.TaskData.Callback.Host
 			_, err := mythicrpc.SendMythicRPCCallbackTokenRemove(mythicrpc.MythicRPCCallbackTokenRemoveMessage{

@@ -163,16 +163,10 @@ func regSaveCredentialHives(outputDir string) structs.CommandResult {
 		sb.WriteString("Offline extraction: secretsdump.py -sam sam.hiv -security security.hiv -system system.hiv LOCAL\n")
 	}
 
-	status := "success"
 	if saved == 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func resolveHive(hive string) (uintptr, error) {

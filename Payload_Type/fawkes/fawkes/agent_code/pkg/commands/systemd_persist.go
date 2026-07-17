@@ -33,7 +33,7 @@ type systemdPersistArgs struct {
 
 func (c *SystemdPersistCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: install, remove, list")
+		return errorResult("parameters required. Actions: install, remove, list")
 	}
 
 	var args systemdPersistArgs
@@ -76,15 +76,15 @@ func systemdUnitDir(system bool) (string, error) {
 
 func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name parameter required (unit name without .service suffix)")
+		return errorResult("name parameter required (unit name without .service suffix)")
 	}
 	if args.ExecStart == "" {
-		return errorResult("Error: exec_start parameter required (command to execute)")
+		return errorResult("exec_start parameter required (command to execute)")
 	}
 
 	unitDir, err := systemdUnitDir(args.System)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to determine systemd unit directory: %v", err)
 	}
 
 	desc := args.Description
@@ -118,7 +118,7 @@ func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 
 	servicePath := filepath.Join(unitDir, args.Name+".service")
 	if err := os.WriteFile(servicePath, []byte(sb.String()), 0644); err != nil {
-		return errorf("Error writing unit file: %v", err)
+		return errorf("writing unit file: %v", err)
 	}
 
 	var output strings.Builder
@@ -170,12 +170,12 @@ func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 
 func systemdRemove(args systemdPersistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: name parameter required")
+		return errorResult("name parameter required")
 	}
 
 	unitDir, err := systemdUnitDir(args.System)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to determine systemd unit directory: %v", err)
 	}
 
 	var sb strings.Builder
@@ -211,16 +211,10 @@ func systemdRemove(args systemdPersistArgs) structs.CommandResult {
 	}
 	sb.WriteString("daemon-reload")
 
-	status := "success"
 	if errors > 0 {
-		status = "error"
+		return errorResult(sb.String())
 	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func systemdList(args systemdPersistArgs) structs.CommandResult {

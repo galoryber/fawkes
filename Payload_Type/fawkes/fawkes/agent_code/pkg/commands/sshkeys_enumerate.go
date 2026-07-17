@@ -13,14 +13,14 @@ import (
 func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to locate .ssh directory for reading private keys: %v", err)
 	}
 
 	// If a specific path is given, just read that file
 	if args.Path != "" {
 		content, err := os.ReadFile(args.Path)
 		if err != nil {
-			return errorf("Error reading %s: %v", args.Path, err)
+			return errorf("reading %s: %v", args.Path, err)
 		}
 		result := structs.CommandResult{
 			Output:    fmt.Sprintf("=== %s ===\n%s", args.Path, string(content)),
@@ -60,7 +60,7 @@ func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to locate .ssh directory for SSH enumeration: %v", err)
 	}
 
 	var sb strings.Builder
@@ -165,6 +165,11 @@ func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 	// Windows-specific: PuTTY sessions, .ppk files, WSL distros, OpenSSH for Windows
 	if winExtra := sshKeysEnumerateWindows(); winExtra != "" {
 		sb.WriteString(winExtra)
+	}
+
+	// Unix-specific: SSH agent sockets, multi-user authorized_keys
+	if unixExtra := sshKeysEnumerateUnix(); unixExtra != "" {
+		sb.WriteString(unixExtra)
 	}
 
 	return successResult(sb.String())

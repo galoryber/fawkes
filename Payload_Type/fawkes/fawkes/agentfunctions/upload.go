@@ -192,7 +192,24 @@ func init() {
 			}
 			if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "uploaded") || strings.Contains(responseText, "wrote") {
 				remotePath, _ := processResponse.TaskData.Args.GetStringArg("remote_path")
+				host := processResponse.TaskData.Callback.Host
 				createArtifact(processResponse.TaskData.Task.ID, "File Write", fmt.Sprintf("[upload] Wrote file to %s", remotePath))
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[COLLECTION] Uploaded file to %s on %s", remotePath, host), true)
+				name := filepath.Base(remotePath)
+				parentPath := filepath.Dir(remotePath)
+				if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+					TaskID: processResponse.TaskData.Task.ID,
+					FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+						Host:       host,
+						IsFile:     true,
+						Name:       name,
+						ParentPath: parentPath,
+						Success:    true,
+					},
+				}); err != nil {
+					logging.LogError(err, "upload: failed to create file browser entry", "path", remotePath)
+				}
 			}
 			return response
 		},

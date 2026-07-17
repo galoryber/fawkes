@@ -20,7 +20,7 @@ func init() {
 		MitreAttackMappings: []string{"T1555.004", "T1555.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -62,6 +62,8 @@ func init() {
 			var msg string
 			if taskData.Callback.OS == "Linux" {
 				msg = fmt.Sprintf("OPSEC WARNING: Credential store enumeration (%s). Queries GNOME Keyring via secret-tool, KDE KWallet via kwalletcli, NetworkManager config files, and GNOME Online Accounts. Process spawning secret-tool/kwalletcli may be logged. Reading /etc/NetworkManager/system-connections/ requires root and leaves file access timestamps.", action)
+			} else if taskData.Callback.OS == "macOS" {
+				msg = fmt.Sprintf("OPSEC WARNING: macOS Keychain enumeration (%s). Runs 'security dump-keychain' to list credential items. Password retrieval (-action dump) may trigger macOS authorization prompts or Keychain access dialogs. WiFi password extraction requires root. Endpoint Security framework may log keychain access.", action)
 			} else {
 				msg = fmt.Sprintf("OPSEC WARNING: Credential Manager %s. Accesses Windows Credential Manager via CredEnumerate API to read stored credentials (web logins, RDP creds, network passwords). EDR may monitor Credential Manager access patterns.", action)
 				if action == "vault" {
@@ -80,6 +82,8 @@ func init() {
 			var msg string
 			if taskData.Callback.OS == "Linux" {
 				msg = "OPSEC AUDIT: Linux credential stores accessed. secret-tool and kwalletcli invocations may appear in process logs. NetworkManager connection files contain WiFi PSKs and VPN credentials in plaintext."
+			} else if taskData.Callback.OS == "macOS" {
+				msg = "OPSEC AUDIT: macOS Keychain accessed. security CLI invocations logged by Endpoint Security. Password retrieval may have triggered authorization prompts. WiFi credentials stored in System keychain require root access."
 			} else {
 				msg = "OPSEC AUDIT: Credential Manager accessed. Windows logs Credential Manager access in Event ID 5379/5381/5382. Defender Credential Guard (if enabled) may block access to certain credentials. Accessed credentials should be tested promptly and rotated by defenders."
 			}
@@ -110,6 +114,8 @@ func init() {
 			response.DisplayParams = &display
 			if taskData.Callback.OS == "Linux" {
 				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("secret-tool / kwalletcli credential enumeration — %s", action))
+			} else if taskData.Callback.OS == "macOS" {
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("security dump-keychain credential enumeration — %s", action))
 			} else if action == "vault" {
 				createArtifact(taskData.Task.ID, "API Call", "vaultcli.dll: VaultEnumerateVaults / VaultOpenVault / VaultEnumerateItems / VaultGetItem")
 			} else {
@@ -131,6 +137,9 @@ func init() {
 			if strings.Contains(responseText, "=== Linux Credential Stores") {
 				creds = parseCredmanLinuxBlocks(responseText)
 				source = "credman linux"
+			} else if strings.Contains(responseText, "=== macOS Credential Stores") {
+				creds = parseCredmanLinuxBlocks(responseText)
+				source = "credman macos"
 			} else if strings.Contains(responseText, "=== Windows Vault Enumeration") {
 				creds = parseCredmanVaultBlocks(responseText)
 				source = "credman vault"

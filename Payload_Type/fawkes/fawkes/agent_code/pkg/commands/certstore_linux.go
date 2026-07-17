@@ -184,7 +184,10 @@ func certstoreListLinux(store, filter string) structs.CommandResult {
 		})
 	}
 
-	jsonBytes, _ := json.Marshal(entries)
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("=== Linux Certificate Store (%d certificates) ===\n\n", len(entries)))
@@ -198,10 +201,7 @@ func certstoreListLinux(store, filter string) structs.CommandResult {
 			e.Thumbprint, e.Store, e.Path))
 	}
 
-	return structs.CommandResult{
-		Output: sb.String() + "\n" + string(jsonBytes),
-		Status: "success",
-	}
+	return successResult(sb.String() + "\n" + string(jsonBytes))
 }
 
 // certstoreExportLinux exports a certificate matching the filter as PEM.

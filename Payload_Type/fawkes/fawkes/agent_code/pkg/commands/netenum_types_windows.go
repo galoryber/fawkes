@@ -45,6 +45,6 @@ func netEnumWithTimeout(fn func() structs.CommandResult, timeout time.Duration) 
 	case result := <-ch:
 		return result
 	case <-time.After(timeout):
-		return errorf("Error: operation timed out after %s (host may be unreachable)", timeout)
+		return errorf("operation timed out after %s (host may be unreachable)", timeout)
 	}
 }

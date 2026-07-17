@@ -103,7 +103,7 @@ func darwinFirewallEnable(enable bool) structs.CommandResult {
 
 	out, err := execCmdTimeout(socketFilterFW, "--setglobalstate", state)
 	if err != nil {
-		return errorf("Error setting firewall state: %v\n%s", err, string(out))
+		return errorf("setting firewall state: %v\n%s", err, string(out))
 	}
 
 	return successf("%s macOS Application Firewall\n%s", label, strings.TrimSpace(string(out)))
@@ -112,13 +112,13 @@ func darwinFirewallEnable(enable bool) structs.CommandResult {
 // darwinFirewallAdd adds an application to the ALF and sets its allow/block policy.
 func darwinFirewallAdd(args firewallArgs) structs.CommandResult {
 	if args.Program == "" {
-		return errorResult("Error: program path is required for add action")
+		return errorResult("program path is required for add action")
 	}
 
 	// Add the application to the firewall
 	out, err := execCmdTimeout(socketFilterFW, "--add", args.Program)
 	if err != nil {
-		return errorf("Error adding application: %v\n%s", err, string(out))
+		return errorf("adding application: %v\n%s", err, string(out))
 	}
 
 	var sb strings.Builder
@@ -147,12 +147,12 @@ func darwinFirewallAdd(args firewallArgs) structs.CommandResult {
 // darwinFirewallDelete removes an application from the ALF.
 func darwinFirewallDelete(args firewallArgs) structs.CommandResult {
 	if args.Program == "" {
-		return errorResult("Error: program path is required for delete action")
+		return errorResult("program path is required for delete action")
 	}
 
 	out, err := execCmdTimeout(socketFilterFW, "--remove", args.Program)
 	if err != nil {
-		return errorf("Error removing application: %v\n%s", err, string(out))
+		return errorf("removing application: %v\n%s", err, string(out))
 	}
 
 	return successf("Removed: %s", strings.TrimSpace(string(out)))
@@ -189,7 +189,7 @@ func buildPfRule(args firewallArgs) string {
 func darwinPfAdd(args firewallArgs) structs.CommandResult {
 	anchor := args.Name
 	if anchor == "" {
-		anchor = "fawkes"
+		anchor = "com.apple.pfctl"
 	}
 
 	rule := buildPfRule(args)
@@ -218,7 +218,7 @@ func darwinPfAdd(args firewallArgs) structs.CommandResult {
 func darwinPfDelete(args firewallArgs) structs.CommandResult {
 	anchor := args.Name
 	if anchor == "" {
-		anchor = "fawkes"
+		anchor = "com.apple.pfctl"
 	}
 
 	out, err := execCmdTimeout("pfctl", "-a", anchor, "-F", "rules")
@@ -233,7 +233,7 @@ func darwinPfDelete(args firewallArgs) structs.CommandResult {
 func darwinPfList(args firewallArgs) structs.CommandResult {
 	anchor := args.Name
 	if anchor == "" {
-		anchor = "fawkes"
+		anchor = "com.apple.pfctl"
 	}
 
 	out, err := execCmdTimeout("pfctl", "-a", anchor, "-s", "rules")

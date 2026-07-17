@@ -42,7 +42,7 @@ type findAdminResult struct {
 
 func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -hosts <targets> -username <user> -password <pass>")
+		return errorResult("parameters required. Use -hosts <targets> -username <user> -password <pass>")
 	}
 
 	args, parseErr := unmarshalParams[findAdminArgs](task)
@@ -52,11 +52,11 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Hosts == "" {
-		return errorResult("Error: hosts parameter is required")
+		return errorResult("hosts parameter is required")
 	}
 
 	if args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: username and password (or hash) are required")
+		return errorResult("username and password (or hash) are required")
 	}
 
 	if args.Timeout <= 0 {
@@ -78,11 +78,11 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse host list (reuses parseHosts from port_scan.go)
 	hosts, err := parseHosts(args.Hosts)
 	if err != nil {
-		return errorf("Error parsing hosts: %v", err)
+		return errorf("parsing hosts: %v", err)
 	}
 
 	if len(hosts) == 0 {
-		return errorResult("Error: no valid hosts found")
+		return errorResult("no valid hosts found")
 	}
 
 	// Run parallel checks
@@ -134,7 +134,7 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 
 	data, err := json.Marshal(results)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 
 	return successResult(string(data))

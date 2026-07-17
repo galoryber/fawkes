@@ -229,8 +229,33 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		StepStdout:  configuringOutput,
 	})
 
-	// Compile the agent
-	result, compileErr := executeCompilation(command, payloadBuildMsg.PayloadUUID, garble)
+	// Compile the agent (with retry for intermittent c-shared linker failures).
+	// Go's linker for -buildmode=c-shared occasionally generates a corrupt
+	// export_file.def, causing "syntax error" from the mingw linker. This is
+	// non-deterministic and succeeds on retry.
+	maxAttempts := 1
+	if mode == "shared" || mode == "windows-shellcode" {
+		maxAttempts = 3
+	}
+	var result compileResult
+	var compileErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, compileErr = executeCompilation(command, payloadBuildMsg.PayloadUUID, garble)
+		if compileErr == nil {
+			break
+		}
+		if attempt < maxAttempts && strings.Contains(result.stderr, "export_file.def") {
+			fmt.Printf("[builder] c-shared linker failure (attempt %d/%d), retrying...\n", attempt, maxAttempts)
+			mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
+				PayloadUUID: payloadBuildMsg.PayloadUUID,
+				StepName:    "Compiling",
+				StepSuccess: false,
+				StepStdout:  fmt.Sprintf("Intermittent linker error (export_file.def), retrying (attempt %d/%d)...", attempt, maxAttempts),
+			})
+			continue
+		}
+		break
+	}
 	if compileErr != nil {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildMessage = "Compilation failed with errors"

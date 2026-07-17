@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -50,7 +49,7 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Hosts == "" {
-		return errorResult("Error: -hosts parameter required (IP, comma-separated IPs, or CIDR)")
+		return errorResult("-hosts parameter required (IP, comma-separated IPs, or CIDR)")
 	}
 
 	if args.Timeout <= 0 {
@@ -69,11 +68,11 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse hosts
 	hosts := lateralParseHosts(args.Hosts)
 	if len(hosts) == 0 {
-		return errorResult("Error: no valid hosts parsed from input")
+		return errorResult("no valid hosts parsed from input")
 	}
 
 	if len(hosts) > 256 {
-		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
+		return errorf("too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Check each host concurrently
@@ -164,7 +163,12 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	wg.Wait()
 
-	// Build JSON output
+	return lateralBuildOutput(results)
+}
+
+// lateralBuildOutput converts scan results into a JSON response with available/closed
+// ports and suggested lateral movement methods per host.
+func lateralBuildOutput(results []lateralTarget) structs.CommandResult {
 	var entries []lateralOutputEntry
 	order := []string{"SMB (445)", "WinRM-HTTP (5985)", "WinRM-HTTPS (5986)", "RDP (3389)", "RPC (135)", "SSH (22)", "WMI-DCOM (135)"}
 
@@ -184,7 +188,6 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 		}
 
-		// Suggest methods
 		if r, ok := target.Results["SMB (445)"]; ok && r.Available {
 			entry.Suggested = append(entry.Suggested, "psexec", "smb", "dcom")
 		}
@@ -208,7 +211,10 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return successResult("[]")
 	}
 
-	data, _ := json.Marshal(entries)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(data))
 }
 
@@ -256,30 +262,3 @@ func lateralIncIP(ip net.IP) {
 	}
 }
 
-// checkTCPPort tests if a TCP port is reachable within the given timeout.
-func checkTCPPort(ctx context.Context, host, port string, timeout time.Duration) string {
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-	}
-	dialCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", net.JoinHostPort(host, port))
-	if err != nil {
-		if isTimeout(err) {
-			return "timeout"
-		}
-		return fmt.Sprintf("closed: %v", err)
-	}
-	conn.Close()
-	return "open"
-}
-
-func isTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-	netErr, ok := err.(net.Error)
-	return ok && netErr.Timeout()
-}

@@ -39,11 +39,11 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	switch strings.ToLower(args.Action) {
 	case "dump":
 		if args.PID <= 0 {
-			return errorResult("Error: -pid is required for dump action")
+			return errorResult("-pid is required for dump action")
 		}
 		return procdumpLinux(task, args.PID)
 	case "lsass":
-		return errorResult("Error: lsass action is Windows-only. Use -action dump -pid <PID> on Linux.\nTip: Use -action search to find credential-holding processes.")
+		return errorResult("lsass action is Windows-only. Use -action dump -pid <PID> on Linux.\nTip: Use -action search to find credential-holding processes.")
 	case "search":
 		return procdumpSearch()
 	default:
@@ -131,7 +131,7 @@ func procdumpLinux(task structs.Task, pid int) structs.CommandResult {
 					memFile.Close()
 					dumpFile.Close()
 					secureRemove(dumpPath)
-					return errorf("Error writing dump: %v", writeErr)
+					return errorf("writing dump: %v", writeErr)
 				}
 				bytesWritten += int64(n)
 				regionRead = true
@@ -200,7 +200,7 @@ func procdumpLinux(task structs.Task, pid int) structs.CommandResult {
 func procdumpSearch() structs.CommandResult {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return errorf("Error reading /proc: %v", err)
+		return errorf("reading /proc: %v", err)
 	}
 
 	type procInfo struct {

@@ -453,7 +453,7 @@ func TestTicketRequestBadKey(t *testing.T) {
 		"key": "not_hex", "server": "dc01",
 	})
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	if result.Status != "error" || !strings.Contains(result.Output, "Error decoding key") {
+	if result.Status != "error" || !strings.Contains(result.Output, "decoding key") {
 		t.Errorf("expected key decode error, got: %s", result.Output)
 	}
 
@@ -491,7 +491,7 @@ func TestTicketRequestConnectionRefused(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error for connection refused, got: %s — %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Error connecting to KDC") && !strings.Contains(result.Output, "Error") {
+	if !strings.Contains(result.Output, "connecting to KDC") {
 		t.Errorf("expected connection error, got: %s", result.Output)
 	}
 }
@@ -594,7 +594,7 @@ func TestTicketS4UBadKey(t *testing.T) {
 		"key": "not_hex", "server": "dc01", "impersonate": "admin", "spn": "cifs/srv01",
 	})
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	if result.Status != "error" || !strings.Contains(result.Output, "Error decoding key") {
+	if result.Status != "error" || !strings.Contains(result.Output, "decoding key") {
 		t.Errorf("expected key decode error, got: %s", result.Output)
 	}
 
@@ -635,8 +635,8 @@ func TestTicketS4UConnectionRefused(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error for connection refused, got: %s — %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Error obtaining TGT") && !strings.Contains(result.Output, "Error") {
-		t.Errorf("expected connection error, got: %s", result.Output)
+	if !strings.Contains(result.Output, "obtaining TGT") {
+		t.Errorf("expected TGT error, got: %s", result.Output)
 	}
 }
 

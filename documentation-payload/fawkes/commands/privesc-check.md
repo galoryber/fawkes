@@ -18,11 +18,13 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
 | action | No | all | Check to perform (see platform-specific actions below) |
-| source | No | — | Path to PE file on target. dll-plant/dll-exports/hijack-execute: DLL to inspect. hijack-deploy: compiled proxy DLL path. |
+| source | No | — | Path to PE file on target. dll-plant/dll-exports/hijack-execute: DLL to inspect. hijack-deploy: compiled proxy DLL path. hijack-trigger (spawn): executable to launch. |
 | target_dir | No | — | Writable directory to plant DLL in (for dll-plant, hijack-deploy, hijack-cleanup) |
 | dll_name | No | — | Name for planted DLL, e.g. 'fveapi.dll' (for dll-plant, hijack-deploy, hijack-cleanup) |
 | timestomp | No | true | Match planted DLL timestamps to kernel32.dll (for dll-plant action only) |
 | shellcode | No | — | Shellcode file to embed in proxy DLL (for hijack-execute). Select from Mythic file store. |
+| trigger | No | — | How to trigger DLL loading after hijack-deploy. `restart`: stop and restart a Windows service. `spawn`: launch an executable. |
+| service_name | No | — | Service to restart for hijack-trigger (trigger=restart). Must be the exact Windows service name. |
 
 ### Shared Actions (All Platforms)
 
@@ -43,6 +45,7 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **dll-exports** — Enumerate the export table of any PE file (DLL or EXE) on disk. Lists all exported functions with ordinals, names, and forwarders. Generates a DEF file for proxy DLL creation. Use with `source` parameter.
 - **hijack-execute** — Automated proxy DLL factory. Reads target DLL exports on the remote host, then the server compiles a proxy DLL that forwards all exports to a renamed copy of the original while executing embedded shellcode via DllMain. Requires `source` (target DLL path) and `shellcode` (Mythic file) parameters. (T1574.001)
 - **hijack-deploy** — Deploy a compiled proxy DLL: renames the original DLL to `*_orig.dll` and places the proxy in its place. Requires `source` (proxy DLL path on target), `target_dir`, and `dll_name` parameters. Rolls back rename on failure.
+- **hijack-trigger** — Trigger DLL loading after hijack-deploy. Two modes: `restart` stops and restarts a Windows service (the service process reloads DLLs from its application directory), `spawn` launches an executable (DLL search order loads from the application directory first). Requires `trigger` parameter (`restart` or `spawn`), plus `service_name` for restart or `source` for spawn.
 - **hijack-cleanup** — Reverse a deployed DLL hijack: deletes the proxy DLL and restores the original from `*_orig.dll`. Requires `target_dir` and `dll_name` parameters. Use after engagement to clean up artifacts.
 - **service-registry** — Check for services with weak registry key permissions (WriteDACL, WriteOwner, ChangeConfig) that allow modifying the service binary path or configuration for privilege escalation (T1574.011)
 
@@ -108,7 +111,12 @@ upload -file_id proxy_version.dll -remote_path C:\Users\target\proxy_version.dll
 # Step 4: Deploy (rename original, place proxy)
 privesc-check -action hijack-deploy -source C:\Users\target\proxy_version.dll -target_dir C:\VulnerableApp\ -dll_name version.dll
 
-# Step 5: After engagement — clean up (delete proxy, restore original)
+# Step 5: Trigger the hijack — restart the service that loads the DLL
+privesc-check -action hijack-trigger -trigger restart -service_name VulnerableService
+# Or spawn the host process directly
+privesc-check -action hijack-trigger -trigger spawn -source C:\VulnerableApp\app.exe
+
+# Step 6: After engagement — clean up (delete proxy, restore original)
 privesc-check -action hijack-cleanup -target_dir C:\VulnerableApp\ -dll_name version.dll
 
 # Auto-escalate chain (enumerate → attempt escalation automatically)

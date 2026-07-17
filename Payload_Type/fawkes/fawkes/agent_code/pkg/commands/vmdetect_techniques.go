@@ -33,106 +33,31 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	var evidence []vmEvidence
 	detected := ""
 
-	// Check /sys/class/dmi/id/product_name
-	if data, err := os.ReadFile("/sys/class/dmi/id/product_name"); err == nil {
-		product := strings.TrimSpace(string(data))
-		structs.ZeroBytes(data)
-		productLower := strings.ToLower(product)
-		vm := ""
-		if strings.Contains(productLower, "virtualbox") {
-			vm = "VirtualBox"
-		} else if strings.Contains(productLower, "vmware") {
-			vm = "VMware"
-		} else if strings.Contains(productLower, "virtual machine") {
-			vm = "Hyper-V"
-		} else if strings.Contains(productLower, "kvm") || strings.Contains(productLower, "qemu") {
-			vm = "QEMU/KVM"
-		} else if strings.Contains(productLower, "xen") {
-			vm = "Xen"
-		} else if strings.Contains(productLower, "parallels") {
-			vm = "Parallels"
-		}
-		if vm != "" {
-			evidence = append(evidence, vmEvidence{"DMI product_name", "VM", fmt.Sprintf("%s → %s", product, vm)})
+	dmiChecks := []struct {
+		path, label, cleanLevel string
+		matchers                []vmMatcher
+	}{
+		{"/sys/class/dmi/id/product_name", "DMI product_name", "clean", []vmMatcher{
+			{"virtualbox", "VirtualBox"}, {"vmware", "VMware"}, {"virtual machine", "Hyper-V"},
+			{"kvm", "QEMU/KVM"}, {"qemu", "QEMU/KVM"}, {"xen", "Xen"}, {"parallels", "Parallels"},
+		}},
+		{"/sys/class/dmi/id/sys_vendor", "DMI sys_vendor", "clean", []vmMatcher{
+			{"vmware", "VMware"}, {"innotek", "VirtualBox"}, {"microsoft", "Hyper-V"},
+			{"qemu", "QEMU/KVM"}, {"xen", "Xen"}, {"parallels", "Parallels"}, {"amazon", "AWS"},
+		}},
+		{"/sys/class/dmi/id/bios_vendor", "DMI bios_vendor", "info", []vmMatcher{
+			{"innotek", "VirtualBox"}, {"seabios", "QEMU/KVM"}, {"xen", "Xen"}, {"phoenix", "VM (Phoenix BIOS)"},
+		}},
+		{"/proc/scsi/scsi", "SCSI devices", "", []vmMatcher{
+			{"vmware", "VMware"}, {"vbox", "VirtualBox"}, {"qemu", "QEMU/KVM"}, {"virtio", "QEMU/KVM"},
+		}},
+	}
+
+	for _, check := range dmiChecks {
+		ev, vm := vmCheckDMIFile(check.path, check.label, check.cleanLevel, check.matchers)
+		evidence = append(evidence, ev...)
+		if vm != "" && detected == "" {
 			detected = vm
-		} else {
-			evidence = append(evidence, vmEvidence{"DMI product_name", "clean", product})
-		}
-	}
-
-	// Check /sys/class/dmi/id/sys_vendor
-	if data, err := os.ReadFile("/sys/class/dmi/id/sys_vendor"); err == nil {
-		vendor := strings.TrimSpace(string(data))
-		structs.ZeroBytes(data)
-		vendorLower := strings.ToLower(vendor)
-		vendorVM := ""
-		if strings.Contains(vendorLower, "vmware") {
-			vendorVM = "VMware"
-		} else if strings.Contains(vendorLower, "innotek") {
-			vendorVM = "VirtualBox"
-		} else if strings.Contains(vendorLower, "microsoft") {
-			vendorVM = "Hyper-V"
-		} else if strings.Contains(vendorLower, "qemu") {
-			vendorVM = "QEMU/KVM"
-		} else if strings.Contains(vendorLower, "xen") {
-			vendorVM = "Xen"
-		} else if strings.Contains(vendorLower, "parallels") {
-			vendorVM = "Parallels"
-		} else if strings.Contains(vendorLower, "amazon") {
-			vendorVM = "AWS"
-		}
-		if vendorVM != "" {
-			evidence = append(evidence, vmEvidence{"DMI sys_vendor", "VM", vendor})
-			if detected == "" {
-				detected = vendorVM
-			}
-		} else {
-			evidence = append(evidence, vmEvidence{"DMI sys_vendor", "clean", vendor})
-		}
-	}
-
-	// Check /sys/class/dmi/id/bios_vendor
-	if data, err := os.ReadFile("/sys/class/dmi/id/bios_vendor"); err == nil {
-		bios := strings.TrimSpace(string(data))
-		structs.ZeroBytes(data)
-		biosLower := strings.ToLower(bios)
-		biosVM := ""
-		if strings.Contains(biosLower, "innotek") {
-			biosVM = "VirtualBox"
-		} else if strings.Contains(biosLower, "seabios") {
-			biosVM = "QEMU/KVM"
-		} else if strings.Contains(biosLower, "xen") {
-			biosVM = "Xen"
-		} else if strings.Contains(biosLower, "phoenix") {
-			biosVM = "VM (Phoenix BIOS)"
-		}
-		if biosVM != "" {
-			evidence = append(evidence, vmEvidence{"DMI bios_vendor", "VM", bios})
-			if detected == "" {
-				detected = biosVM
-			}
-		} else {
-			evidence = append(evidence, vmEvidence{"DMI bios_vendor", "info", bios})
-		}
-	}
-
-	// Check /proc/scsi/scsi for virtual disk
-	if data, err := os.ReadFile("/proc/scsi/scsi"); err == nil {
-		content := strings.ToLower(string(data))
-		structs.ZeroBytes(data)
-		scsiVM := ""
-		if strings.Contains(content, "vmware") {
-			scsiVM = "VMware"
-		} else if strings.Contains(content, "vbox") {
-			scsiVM = "VirtualBox"
-		} else if strings.Contains(content, "qemu") || strings.Contains(content, "virtio") {
-			scsiVM = "QEMU/KVM"
-		}
-		if scsiVM != "" {
-			evidence = append(evidence, vmEvidence{"SCSI devices", "VM", scsiVM + " virtual disk"})
-			if detected == "" {
-				detected = scsiVM
-			}
 		}
 	}
 
@@ -182,6 +107,36 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	}
 
 	return evidence, detected
+}
+
+type vmMatcher struct {
+	substr, vm string
+}
+
+func vmCheckDMIFile(path, label, cleanLevel string, matchers []vmMatcher) ([]vmEvidence, string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ""
+	}
+	value := strings.TrimSpace(string(data))
+	structs.ZeroBytes(data)
+	lower := strings.ToLower(value)
+
+	for _, m := range matchers {
+		if strings.Contains(lower, m.substr) {
+			var detail string
+			if label != "SCSI devices" {
+				detail = fmt.Sprintf("%s → %s", value, m.vm)
+			} else {
+				detail = m.vm + " virtual disk"
+			}
+			return []vmEvidence{{label, "VM", detail}}, m.vm
+		}
+	}
+	if cleanLevel != "" {
+		return []vmEvidence{{label, cleanLevel, value}}, ""
+	}
+	return nil, ""
 }
 
 // classifyHypervisorType maps /sys/hypervisor/type values to VM names.

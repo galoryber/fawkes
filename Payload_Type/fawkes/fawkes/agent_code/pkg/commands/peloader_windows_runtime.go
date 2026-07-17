@@ -89,7 +89,7 @@ func peLoaderExecThread(entryPoint uintptr, cmdLine string, timeout int) (string
 	)
 	if hThread == 0 {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("CreateThread failed: %w", lastErr)
+		return "", fmt.Errorf("thread creation failed: %w", lastErr)
 	}
 	defer syscall.CloseHandle(syscall.Handle(hThread))
 

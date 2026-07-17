@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -136,7 +135,10 @@ func getsystemCheckDarwin(currentIdentity string) structs.CommandResult {
 		"total":            len(vectors),
 	}
 
-	output, _ := json.MarshalIndent(result, "", "  ")
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 
@@ -145,7 +147,7 @@ func checkSudoNopasswdDarwin() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-l")
+	cmd := safeCmdContext(ctx, "sudo", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil
@@ -166,7 +168,7 @@ func checkSudoCachedDarwin() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "true")
+	cmd := safeCmdContext(ctx, "sudo", "-n", "true")
 	return cmd.Run() == nil
 }
 
@@ -180,7 +182,7 @@ func checkAdminGroup() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "dscl", ".", "-read", "/Groups/admin", "GroupMembership")
+	cmd := safeCmdContext(ctx, "dscl", ".", "-read", "/Groups/admin", "GroupMembership")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false
@@ -243,17 +245,17 @@ func getsystemSudoDarwin(oldIdentity string) structs.CommandResult {
 	if !checkSudoCachedDarwin() {
 		rules := checkSudoNopasswdDarwin()
 		if len(rules) == 0 {
-			return errorResult("Error: sudo requires a password and no NOPASSWD rules found. Try 'osascript' technique for elevation prompt.")
+			return errorResult("sudo requires a password and no NOPASSWD rules found. Try 'osascript' technique for elevation prompt.")
 		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "id")
+	cmd := safeCmdContext(ctx, "sudo", "-n", "id")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error: sudo -n id failed: %v\n%s", err, string(output))
+		return errorf("sudo -n id failed: %v\n%s", err, string(output))
 	}
 
 	selfPath, _ := os.Executable()
@@ -275,7 +277,7 @@ func getsystemOsascript(oldIdentity string) structs.CommandResult {
 	}
 
 	if !checkAdminGroup() {
-		return errorResult("Error: user is not in the admin group — osascript elevation prompt will fail")
+		return errorResult("user is not in the admin group — osascript elevation prompt will fail")
 	}
 
 	// Use osascript to run a privileged command via admin auth prompt
@@ -284,13 +286,13 @@ func getsystemOsascript(oldIdentity string) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second) // 2 min for user to respond
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
+	cmd := safeCmdContext(ctx, "osascript", "-e", script)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return errorResult("Error: elevation prompt timed out (120s)")
+			return errorResult("elevation prompt timed out (120s)")
 		}
-		return errorf("Error: osascript elevation failed: %v\n%s", err, string(output))
+		return errorf("osascript elevation failed: %v\n%s", err, string(output))
 	}
 
 	selfPath, _ := os.Executable()

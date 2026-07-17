@@ -42,7 +42,7 @@ func TestWatchDirNonexistentPath(t *testing.T) {
 	params, _ := json.Marshal(watchDirParams{Path: "/nonexistent/path/abc123"})
 	task := structs.NewTask("test-2", "watch-dir", string(params))
 	result := cmd.Execute(task)
-	if result.Status != "error" || !strings.Contains(result.Output, "Error accessing") {
+	if result.Status != "error" || !strings.Contains(result.Output, "accessing") {
 		t.Errorf("expected access error, got: %s", result.Output)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"testing"
+	"time"
 
 	"fawkes/pkg/commands"
 	fhttp "fawkes/pkg/http"
@@ -126,17 +127,21 @@ func TestSleepEncryptUniqueCiphertexts(t *testing.T) {
 
 func makeTestAgent() *structs.Agent {
 	return &structs.Agent{
-		PayloadUUID:   "550e8400-e29b-41d4-a716-446655440000",
-		Domain:        "CONTOSO.LOCAL",
-		Host:          "WORKSTATION-01",
-		User:          "admin",
-		InternalIP:    "10.0.0.50",
-		ExternalIP:    "203.0.113.10",
-		ProcessName:   "svchost.exe",
-		Description:   "550e8400",
-		SleepInterval: 30,
-		Jitter:        20,
-		PID:           1234,
+		PayloadUUID:       "550e8400-e29b-41d4-a716-446655440000",
+		Domain:            "CONTOSO.LOCAL",
+		Host:              "WORKSTATION-01",
+		User:              "admin",
+		InternalIP:        "10.0.0.50",
+		ExternalIP:        "203.0.113.10",
+		ProcessName:       "svchost.exe",
+		Description:       "550e8400",
+		SleepInterval:     30,
+		Jitter:            20,
+		JitterProfile:     "normal",
+		PID:               1234,
+		WorkingHoursStart: 540,
+		WorkingHoursEnd:   1020,
+		WorkingDays:       []int{1, 2, 3, 4, 5},
 	}
 }
 
@@ -189,6 +194,20 @@ func TestObfuscateSleepZerosAgentFields(t *testing.T) {
 		t.Error("Description not zeroed")
 	}
 
+	// Operational fields should be zeroed
+	if agent.JitterProfile != "" {
+		t.Error("JitterProfile not zeroed")
+	}
+	if agent.WorkingHoursStart != 0 {
+		t.Error("WorkingHoursStart not zeroed")
+	}
+	if agent.WorkingHoursEnd != 0 {
+		t.Error("WorkingHoursEnd not zeroed")
+	}
+	if agent.WorkingDays != nil {
+		t.Error("WorkingDays not zeroed")
+	}
+
 	// Non-sensitive fields should be untouched
 	if agent.SleepInterval != 30 {
 		t.Errorf("SleepInterval changed: got %d", agent.SleepInterval)
@@ -219,6 +238,11 @@ func TestObfuscateDeobfuscateRestoresAgentFields(t *testing.T) {
 	origExternalIP := agent.ExternalIP
 	origProcessName := agent.ProcessName
 	origDesc := agent.Description
+	origJitterProfile := agent.JitterProfile
+	origWorkingStart := agent.WorkingHoursStart
+	origWorkingEnd := agent.WorkingHoursEnd
+	origWorkingDays := make([]int, len(agent.WorkingDays))
+	copy(origWorkingDays, agent.WorkingDays)
 
 	c2 := profiles.Profile(makeTestHTTPProfile())
 
@@ -252,6 +276,24 @@ func TestObfuscateDeobfuscateRestoresAgentFields(t *testing.T) {
 	}
 	if agent.Description != origDesc {
 		t.Errorf("Description: got %q, want %q", agent.Description, origDesc)
+	}
+	if agent.JitterProfile != origJitterProfile {
+		t.Errorf("JitterProfile: got %q, want %q", agent.JitterProfile, origJitterProfile)
+	}
+	if agent.WorkingHoursStart != origWorkingStart {
+		t.Errorf("WorkingHoursStart: got %d, want %d", agent.WorkingHoursStart, origWorkingStart)
+	}
+	if agent.WorkingHoursEnd != origWorkingEnd {
+		t.Errorf("WorkingHoursEnd: got %d, want %d", agent.WorkingHoursEnd, origWorkingEnd)
+	}
+	if len(agent.WorkingDays) != len(origWorkingDays) {
+		t.Errorf("WorkingDays length: got %d, want %d", len(agent.WorkingDays), len(origWorkingDays))
+	} else {
+		for i, d := range agent.WorkingDays {
+			if d != origWorkingDays[i] {
+				t.Errorf("WorkingDays[%d]: got %d, want %d", i, d, origWorkingDays[i])
+			}
+		}
 	}
 }
 
@@ -379,6 +421,84 @@ func TestVaultKeyZeroedAfterRestore(t *testing.T) {
 	}
 	if vault.profileBlob != nil {
 		t.Error("profileBlob should be nil after deobfuscation")
+	}
+}
+
+func TestObfuscateZerosDefaultUserAgent(t *testing.T) {
+	agent := makeTestAgent()
+	c2 := profiles.Profile(makeTestHTTPProfile())
+
+	origUA := commands.DefaultUserAgent
+	commands.DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+	defer func() { commands.DefaultUserAgent = origUA }()
+
+	vault := obfuscateSleep(agent, c2)
+	if vault == nil {
+		t.Fatal("obfuscateSleep returned nil")
+	}
+
+	if commands.DefaultUserAgent != "" {
+		t.Error("DefaultUserAgent not zeroed during sleep")
+	}
+
+	deobfuscateSleep(vault, agent, c2)
+
+	if commands.DefaultUserAgent != "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" {
+		t.Errorf("DefaultUserAgent not restored: got %q", commands.DefaultUserAgent)
+	}
+}
+
+func TestObfuscateDeobfuscatePerformance(t *testing.T) {
+	agent := makeTestAgent()
+	c2 := profiles.Profile(makeTestHTTPProfile())
+
+	var totalObfuscate, totalDeobfuscate, totalGuard, totalUnguard int64
+	iterations := 100
+
+	for i := 0; i < iterations; i++ {
+		// Measure obfuscate
+		start := time.Now()
+		vault := obfuscateSleep(agent, c2)
+		obfTime := time.Since(start)
+		totalObfuscate += obfTime.Nanoseconds()
+
+		if vault == nil {
+			t.Fatal("obfuscateSleep returned nil")
+		}
+
+		// Measure guard
+		start = time.Now()
+		guard := guardSleepPages(vault)
+		guardTime := time.Since(start)
+		totalGuard += guardTime.Nanoseconds()
+
+		// Measure unguard
+		start = time.Now()
+		unguardSleepPages(guard, vault)
+		unguardTime := time.Since(start)
+		totalUnguard += unguardTime.Nanoseconds()
+
+		// Measure deobfuscate
+		start = time.Now()
+		deobfuscateSleep(vault, agent, c2)
+		deobfTime := time.Since(start)
+		totalDeobfuscate += deobfTime.Nanoseconds()
+	}
+
+	avgObf := time.Duration(totalObfuscate / int64(iterations))
+	avgDeobf := time.Duration(totalDeobfuscate / int64(iterations))
+	avgGuard := time.Duration(totalGuard / int64(iterations))
+	avgUnguard := time.Duration(totalUnguard / int64(iterations))
+	totalCycle := avgObf + avgGuard + avgUnguard + avgDeobf
+
+	t.Logf("Avg obfuscate:   %v", avgObf)
+	t.Logf("Avg guard:       %v", avgGuard)
+	t.Logf("Avg unguard:     %v", avgUnguard)
+	t.Logf("Avg deobfuscate: %v", avgDeobf)
+	t.Logf("Total cycle:     %v", totalCycle)
+
+	if totalCycle > 50*time.Millisecond {
+		t.Errorf("sleep mask cycle too slow: %v (must be < 50ms)", totalCycle)
 	}
 }
 

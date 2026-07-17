@@ -32,7 +32,7 @@ func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := getDiskFreeInfo()
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to retrieve disk space information: %v", err)
 	}
 
 	if len(entries) == 0 {
@@ -72,7 +72,7 @@ func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to marshal disk space results to JSON: %v", err)
 	}
 
 	return successResult(string(jsonBytes))

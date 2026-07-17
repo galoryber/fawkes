@@ -102,14 +102,14 @@ func vssWMIConnect() (*ole.IDispatch, *ole.IDispatch, func(), error) {
 func vssList() structs.CommandResult {
 	_, services, cleanup, err := vssWMIConnect()
 	if err != nil {
-		return errorf("Error connecting to WMI: %v", err)
+		return errorf("connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	resultSet, err := oleutil.CallMethod(services, "ExecQuery",
 		"SELECT ID, DeviceObject, VolumeName, InstallDate, OriginatingMachine, ServiceMachine FROM Win32_ShadowCopy")
 	if err != nil {
-		return errorf("Error querying shadow copies: %v", err)
+		return errorf("querying shadow copies: %v", err)
 	}
 	defer resultSet.Clear()
 
@@ -167,7 +167,7 @@ func vssList() structs.CommandResult {
 	})
 
 	if err != nil {
-		return errorf("Error enumerating shadow copies: %v\n%s", err, sb.String())
+		return errorf("enumerating shadow copies: %v\n%s", err, sb.String())
 	}
 
 	if count == 0 {

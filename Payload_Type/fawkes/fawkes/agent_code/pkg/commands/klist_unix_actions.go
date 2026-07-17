@@ -15,17 +15,17 @@ import (
 
 func klistImport(args klistArgs) structs.CommandResult {
 	if args.Ticket == "" {
-		return errorResult("Error: -ticket parameter required (base64-encoded kirbi or ccache data)")
+		return errorResult("-ticket parameter required (base64-encoded kirbi or ccache data)")
 	}
 
 	// Decode base64
 	data, err := base64.StdEncoding.DecodeString(args.Ticket)
 	if err != nil {
-		return errorf("Error decoding base64 ticket data: %v", err)
+		return errorf("decoding base64 ticket data: %v", err)
 	}
 
 	if len(data) < 4 {
-		return errorResult("Error: ticket data too short")
+		return errorResult("ticket data too short")
 	}
 
 	// Auto-detect format: ccache starts with 0x0503 or 0x0504, kirbi starts with 0x76 (APPLICATION 22)
@@ -33,7 +33,7 @@ func klistImport(args klistArgs) structs.CommandResult {
 	isKirbi := data[0] == 0x76
 
 	if !isCcache && !isKirbi {
-		return errorf("Error: unrecognized ticket format (first byte: 0x%02x). Expected ccache (0x0503/0x0504) or kirbi (0x76).", data[0])
+		return errorf("unrecognized ticket format (first byte: 0x%02x). Expected ccache (0x0503/0x0504) or kirbi (0x76).", data[0])
 	}
 
 	var ccacheData []byte
@@ -55,7 +55,7 @@ func klistImport(args klistArgs) structs.CommandResult {
 		// Let's try to parse the KRB-CRED and extract what we need
 		// Actually, the simplest and most reliable approach: if it's kirbi,
 		// tell the operator to use -format ccache with the ticket command instead.
-		return errorResult("Error: kirbi format detected. On Linux/macOS, use ccache format instead.\nRe-forge with: ticket -action forge ... -format ccache\nOr use impacket's ticketConverter.py to convert.")
+		return errorResult("kirbi format detected. On Linux/macOS, use ccache format instead.\nRe-forge with: ticket -action forge ... -format ccache\nOr use impacket's ticketConverter.py to convert.")
 	}
 
 	// Determine output path
@@ -66,7 +66,7 @@ func klistImport(args klistArgs) structs.CommandResult {
 
 	// Write ccache file
 	if err := os.WriteFile(ccachePath, ccacheData, 0600); err != nil {
-		return errorf("Error writing ccache to %s: %v", ccachePath, err)
+		return errorf("writing ccache to %s: %v", ccachePath, err)
 	}
 
 	// Set KRB5CCNAME environment variable
@@ -105,7 +105,7 @@ func klistList(args klistArgs) structs.CommandResult {
 		if os.IsNotExist(err) {
 			return successf("No ccache file found at %s\nNo Kerberos tickets cached for this user.", ccachePath)
 		}
-		return errorf("Error reading ccache %s: %v", ccachePath, err)
+		return errorf("reading ccache %s: %v", ccachePath, err)
 	}
 
 	_ = defPrincipal // principal info is available via ccache metadata
@@ -153,7 +153,7 @@ func klistList(args klistArgs) structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return errorf("Error marshaling output: %v", err)
+		return errorf("marshaling output: %v", err)
 	}
 	return successResult(string(data))
 }
@@ -166,7 +166,7 @@ func klistPurge(args klistArgs) structs.CommandResult {
 
 	secureRemove(ccachePath)
 	if _, err := os.Stat(ccachePath); err == nil {
-		return errorf("Error removing ccache %s: file still exists", ccachePath)
+		return errorf("removing ccache %s: file still exists", ccachePath)
 	}
 
 	return successf("Kerberos ccache purged: %s", ccachePath)
@@ -183,7 +183,7 @@ func klistDump(args klistArgs) structs.CommandResult {
 		if os.IsNotExist(err) {
 			return errorf("No ccache file at %s", ccachePath)
 		}
-		return errorf("Error reading ccache: %v", err)
+		return errorf("reading ccache: %v", err)
 	}
 	defer structs.ZeroBytes(data) // opsec: clear raw ccache credential data
 

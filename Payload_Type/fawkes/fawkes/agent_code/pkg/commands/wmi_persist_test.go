@@ -53,6 +53,14 @@ func TestWmiPersistInstallMissingCommand(t *testing.T) {
 	}
 }
 
+func TestWmiPersistInstallScriptMissingCommand(t *testing.T) {
+	cmd := &WmiPersistCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"install","name":"test","consumer_type":"script"}`})
+	if result.Status != "error" {
+		t.Error("script install without command/script should return error")
+	}
+}
+
 func TestWmiPersistRemoveMissingName(t *testing.T) {
 	cmd := &WmiPersistCommand{}
 	result := cmd.Execute(structs.Task{Params: `{"action":"remove"}`})

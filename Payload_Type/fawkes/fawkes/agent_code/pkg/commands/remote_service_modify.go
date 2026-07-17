@@ -18,10 +18,10 @@ const svcNoChange = 0xFFFFFFFF
 // to creating a new service (avoids Event ID 7045 for service creation).
 func remoteSvcModifyPath(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return errorResult("Error: -name is required for modify-path action")
+		return errorResult("-name is required for modify-path action")
 	}
 	if args.BinPath == "" {
-		return errorResult("Error: -binpath is required for modify-path action (the attacker payload path)")
+		return errorResult("-binpath is required for modify-path action (the attacker payload path)")
 	}
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)

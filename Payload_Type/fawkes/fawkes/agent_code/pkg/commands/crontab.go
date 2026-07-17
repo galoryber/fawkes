@@ -36,7 +36,7 @@ func (c *CrontabCommand) Execute(task structs.Task) structs.CommandResult {
 	var args crontabArgs
 
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use action: list, add, remove")
+		return errorResult("parameters required. Use action: list, add, remove")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -97,7 +97,7 @@ func crontabList(args crontabArgs) structs.CommandResult {
 		if strings.Contains(output, "no crontab") {
 			return successResult(output)
 		}
-		return errorf("Error listing crontab: %v\n%s", err, output)
+		return errorf("listing crontab: %v\n%s", err, output)
 	}
 
 	output := strings.TrimSpace(string(out))
@@ -141,7 +141,7 @@ func crontabReadSpool(username string) (string, error) {
 func crontabAdd(args crontabArgs) structs.CommandResult {
 	entry, err := buildCrontabEntry(args)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to build crontab entry: %v", err)
 	}
 
 	// Get existing crontab
@@ -167,7 +167,7 @@ func crontabAdd(args crontabArgs) structs.CommandResult {
 	cmd.Stdin = strings.NewReader(newCrontab)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error installing crontab: %v\n%s", err, string(out))
+		return errorf("installing crontab: %v\n%s", err, string(out))
 	}
 
 	return successf("Added cron entry:\n  %s", entry)
@@ -176,7 +176,7 @@ func crontabAdd(args crontabArgs) structs.CommandResult {
 // crontabRemove removes a cron job entry by matching text
 func crontabRemove(args crontabArgs) structs.CommandResult {
 	if args.Entry == "" && args.Program == "" {
-		return errorResult("Error: provide 'entry' (exact line) or 'program' (path substring) to identify which entry to remove")
+		return errorResult("provide 'entry' (exact line) or 'program' (path substring) to identify which entry to remove")
 	}
 
 	// Get existing crontab
@@ -187,7 +187,7 @@ func crontabRemove(args crontabArgs) structs.CommandResult {
 
 	existing, err := execCmdTimeoutOutput("crontab", cmdArgs...)
 	if err != nil {
-		return errorResult("Error: no crontab exists to remove entries from")
+		return errorResult("no crontab exists to remove entries from")
 	}
 
 	// Filter out matching lines
@@ -214,7 +214,7 @@ func crontabRemove(args crontabArgs) structs.CommandResult {
 	cmd.Stdin = strings.NewReader(newCrontab)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return errorf("Error installing updated crontab: %v\n%s", err, string(out))
+		return errorf("installing updated crontab: %v\n%s", err, string(out))
 	}
 
 	return successf("Removed %d cron entry(ies) matching '%s'", removedCount, matchStr)

@@ -22,7 +22,7 @@ function(task, responses){
                 rowStyle = {"backgroundColor": "rgba(255,165,0,0.08)"};
             } else if(line.includes("Error") || line.includes("[!]")){
                 rowStyle = {"backgroundColor": "rgba(255,0,0,0.08)"};
-            } else if(line.includes("__EventFilter") || line.includes("CommandLineEventConsumer")){
+            } else if(line.includes("__EventFilter") || line.includes("CommandLineEventConsumer") || line.includes("ActiveScriptEventConsumer")){
                 rowStyle = {"backgroundColor": "rgba(0,120,255,0.05)"};
             }
             rows.push({

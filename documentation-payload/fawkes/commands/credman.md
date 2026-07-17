@@ -20,6 +20,12 @@ Enumerate platform-native credential stores:
   - **NetworkManager** — saved WiFi PSKs, 802.1x credentials, VPN passwords from `/etc/NetworkManager/system-connections/`
   - **GNOME Online Accounts** — cloud service accounts from `~/.config/goa-1.0/accounts.conf`
 
+**macOS:**
+- `list` / `dump` — Enumerates macOS Keychain credential stores:
+  - **Login Keychain** — generic and internet passwords (application credentials, website logins)
+  - **System Keychain** — system-wide credentials
+  - **WiFi Passwords** — saved AirPort network passwords (requires root for password retrieval)
+
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
@@ -125,15 +131,45 @@ credman -action vault
 Summary: 2 vault(s), 1 item(s) total, 1 credential(s) registered to Mythic vault
 ```
 
+### Example Output — macOS (list)
+```
+=== macOS Credential Stores (4 entries) ===
+
+--- Generic Password (3 entries) ---
+  Label:    com.apple.continuity.encryption
+  Service:  com.apple.continuity.encryption
+  Account:  handoff-own-encryption-key
+  Secret:   [use -action dump to reveal]
+  Keychain: /Users/gary/Library/Keychains/login.keychain-db
+  Description: Handoff Encryption Key
+
+  Label:    BluetoothGlobal
+  Service:  BluetoothGlobal
+  Account:  Identity Root
+  Keychain: /Users/gary/Library/Keychains/login.keychain-db
+
+  Label:    TelephonyUtilities
+  Service:  TelephonyUtilities
+  Account:  registeredProviders
+  Keychain: /Users/gary/Library/Keychains/login.keychain-db
+
+--- WiFi (1 entries) ---
+  Label:    HomeNetwork
+  Service:  HomeNetwork
+  Type: Preferred wireless network
+```
+
 ## Notes
 
 - **Credential Vault registration**: All credentials with usernames are automatically reported to Mythic's Credentials store. `dump` registers cleartext passwords; `list` only registers metadata.
 - **Windows**: Requires interactive logon session for Vault decryption. SSH / non-interactive contexts show `[protected]`.
 - **Linux**: `secret-tool` requires a running keyring daemon (gnome-keyring-daemon or kwalletd). NetworkManager connections require root to read `/etc/NetworkManager/system-connections/`.
+- **macOS**: `dump` action uses `security dump-keychain -d` which may require the keychain to be unlocked. WiFi password retrieval (`security find-generic-password -g -D "AirPort network password"`) requires root. The `keychain` command provides more targeted lookups with filtering by service/account/server.
 - **OPSEC (Windows)**: vaultcli calls write to the vault audit log. EDRs monitoring Microsoft-Windows-VaultSvc ETW provider will surface every call.
 - **OPSEC (Linux)**: Spawns `secret-tool` / `kwalletcli` child processes visible in process logs. Reading NM config files leaves file access timestamps.
+- **OPSEC (macOS)**: Runs `security` CLI which is logged by Endpoint Security framework. Password retrieval may trigger authorization prompts visible to the user.
 
 ## MITRE ATT&CK Mapping
 
 - T1555.004 — Credentials from Password Stores: Windows Credential Manager
-- T1555.001 — Credentials from Password Stores: Keychain (Linux keyring equivalent)
+- T1555.001 — Credentials from Password Stores: Keychain

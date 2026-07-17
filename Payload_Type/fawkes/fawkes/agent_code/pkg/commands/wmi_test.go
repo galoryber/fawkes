@@ -42,7 +42,7 @@ func TestWmiCommand_InvalidJSON(t *testing.T) {
 	if result.Status != "error" {
 		t.Error("expected error for invalid JSON")
 	}
-	if !strings.Contains(result.Output, "Error parsing") {
+	if !strings.Contains(result.Output, "parsing") {
 		t.Errorf("expected parsing error, got '%s'", result.Output)
 	}
 }

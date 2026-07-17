@@ -40,12 +40,12 @@ func (c *GetPrivsCommand) Execute(task structs.Task) structs.CommandResult {
 		return listPrivileges()
 	case "enable":
 		if params.Privilege == "" {
-			return errorResult("Error: 'privilege' parameter required for enable action")
+			return errorResult("'privilege' parameter required for enable action")
 		}
 		return adjustPrivilege(params.Privilege, true)
 	case "disable":
 		if params.Privilege == "" {
-			return errorResult("Error: 'privilege' parameter required for disable action")
+			return errorResult("'privilege' parameter required for disable action")
 		}
 		return adjustPrivilege(params.Privilege, false)
 	case "strip":
@@ -91,7 +91,7 @@ func listPrivileges() structs.CommandResult {
 
 	data, err := json.Marshal(output)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(data))

@@ -43,7 +43,7 @@ type sprayResult struct {
 
 func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action kerberos -server <DC> -domain <DOMAIN> -users <user1\\nuser2> -password <pass>")
+		return errorResult("parameters required. Use -action kerberos -server <DC> -domain <DOMAIN> -users <user1\\nuser2> -password <pass>")
 	}
 
 	args, parseErr := unmarshalParams[sprayArgs](task)
@@ -58,19 +58,19 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Validate required params — enumerate doesn't need password
 	if args.Server == "" || args.Domain == "" || args.Users == "" {
-		return errorResult("Error: server, domain, and users are required")
+		return errorResult("server, domain, and users are required")
 	}
 	if args.Action != "enumerate" && args.Password == "" && args.Hash == "" {
-		return errorResult("Error: password (or hash for SMB) is required for spray actions (not required for enumerate)")
+		return errorResult("password (or hash for SMB) is required for spray actions (not required for enumerate)")
 	}
 	if args.Hash != "" && args.Action != "smb" {
-		return errorResult("Error: hash-based spray is only supported for SMB action")
+		return errorResult("hash-based spray is only supported for SMB action")
 	}
 
 	// Parse user list
 	users := parseSprayUsers(args.Users)
 	if len(users) == 0 {
-		return errorResult("Error: no valid usernames provided")
+		return errorResult("no valid usernames provided")
 	}
 
 	// Clamp jitter
@@ -124,7 +124,7 @@ func sprayDelay(args sprayArgs) {
 func sprayFormatResults(action string, args sprayArgs, users []string, results []sprayResult) structs.CommandResult {
 	data, err := json.Marshal(results)
 	if err != nil {
-		return errorf("Error marshaling results: %v", err)
+		return errorf("marshaling results: %v", err)
 	}
 
 	return successResult(string(data))
@@ -137,7 +137,7 @@ func sprayKerberos(args sprayArgs, users []string) structs.CommandResult {
 	krb5Conf := buildKrb5Config(realm, args.Server)
 	cfg, err := krbconfig.NewFromString(krb5Conf)
 	if err != nil {
-		return errorf("Error creating Kerberos config: %v", err)
+		return errorf("creating Kerberos config: %v", err)
 	}
 
 	results := make([]sprayResult, 0, len(users))

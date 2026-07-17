@@ -181,6 +181,12 @@ func init() {
 			}
 			action, _ := processResponse.TaskData.Args.GetStringArg("action")
 
+			if action == "enumerate" {
+				createArtifact(processResponse.TaskData.Task.ID, "File Open",
+					"SSH enumeration: config, known_hosts, authorized_keys, agent sockets (T1552.004)")
+				return response
+			}
+
 			// Register successful try-keys / auto-move authentications as credentials
 			if action == "try-keys" || action == "auto-move" {
 				username, _ := processResponse.TaskData.Args.GetStringArg("username")

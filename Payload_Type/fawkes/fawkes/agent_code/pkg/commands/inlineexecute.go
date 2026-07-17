@@ -29,6 +29,7 @@ type InlineExecuteParams struct {
 	BOFB64     string   `json:"bof_b64"`     // Base64-encoded BOF bytes
 	EntryPoint string   `json:"entry_point"` // Entry point function name
 	Arguments  []string `json:"arguments"`   // Arguments in format: ["zvalue", "i80"]
+	Timeout    int      `json:"timeout"`     // Execution timeout in seconds (0 = default 30s)
 }
 
 // Execute executes the inline-execute command
@@ -41,17 +42,17 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 
 	// Validate BOF data
 	if params.BOFB64 == "" {
-		return errorResult("Error: No BOF data provided")
+		return errorResult("No BOF data provided")
 	}
 
 	// Decode the base64-encoded BOF
 	bofBytes, err := base64.StdEncoding.DecodeString(params.BOFB64)
 	if err != nil {
-		return errorf("Error decoding BOF data: %v", err)
+		return errorf("decoding BOF data: %v", err)
 	}
 
 	if len(bofBytes) == 0 {
-		return errorResult("Error: BOF data is empty")
+		return errorResult("BOF data is empty")
 	}
 
 	// Pack the arguments using our custom PackArgs (fixes GC issues in goffloader)
@@ -59,7 +60,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	if len(params.Arguments) > 0 {
 		argBytes, err = PackArgs(params.Arguments)
 		if err != nil {
-			return errorf("Error packing BOF arguments: %v", err)
+			return errorf("packing BOF arguments: %v", err)
 		}
 	}
 
@@ -69,7 +70,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		entryPoint = "go"
 	}
 
-	bofOutput, err := LoadAndRunBOF(bofBytes, argBytes, entryPoint)
+	bofOutput, err := LoadAndRunBOF(bofBytes, argBytes, entryPoint, params.Timeout)
 
 	// Check for execution errors
 	if err != nil {

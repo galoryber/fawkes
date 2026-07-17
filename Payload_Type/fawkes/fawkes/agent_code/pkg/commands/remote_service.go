@@ -186,12 +186,15 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	params, _ := json.Marshal(svcctlParams{
+	params, err := json.Marshal(svcctlParams{
 		Name:        args.Name,
 		DisplayName: args.DisplayName,
 		BinPath:     args.BinPath,
 		StartType:   args.StartType,
 	})
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 
 	output, err := rpcViaSubprocess(rpcHelperRequest{
 		Operation: op,
@@ -204,12 +207,12 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 		Params:    params,
 	})
 	if err != nil {
-		return errorf("Error: %v", err)
+		return errorf("remote service RPC call to %s failed: %v", args.Server, err)
 	}
 
 	var result svcctlResult
 	if err := json.Unmarshal(output, &result); err != nil {
-		return errorf("Error parsing result: %v", err)
+		return errorf("parsing result: %v", err)
 	}
 	return successResult(result.Text)
 }

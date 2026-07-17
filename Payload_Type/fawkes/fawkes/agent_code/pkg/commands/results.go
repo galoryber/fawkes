@@ -48,10 +48,10 @@ func successf(format string, args ...interface{}) structs.CommandResult {
 // Returns a zero-value CommandResult on success (caller should continue).
 func parseArgs(params string, target interface{}) (structs.CommandResult, bool) {
 	if params == "" {
-		return errorResult("Error: parameters required"), false
+		return errorResult("parameters required"), false
 	}
 	if err := json.Unmarshal([]byte(params), target); err != nil {
-		return errorf("Error parsing parameters: %v", err), false
+		return errorf("parsing parameters: %v", err), false
 	}
 	return structs.CommandResult{}, true
 }

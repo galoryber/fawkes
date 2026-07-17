@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"log"
 	"sync"
 
 	"fawkes/pkg/structs"
@@ -23,8 +22,6 @@ var (
 
 // Initialize sets up all available commands
 func Initialize() {
-	log.Printf("init handlers")
-
 	// Register cross-platform commands
 	RegisterCommand(&CatCommand{})
 	RegisterCommand(&CdCommand{})
@@ -143,8 +140,6 @@ func Initialize() {
 
 	// Register platform-specific commands
 	registerPlatformCommands()
-
-	log.Printf("loaded %d handlers", len(commandRegistry))
 }
 
 // RegisterCommand registers a command with the command registry
