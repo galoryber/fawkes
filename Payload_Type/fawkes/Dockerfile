@@ -31,6 +31,10 @@ RUN git clone https://github.com/monoxgas/sRDI /opt/sRDI && \
 
 COPY [".", "."]
 
+# Install mingw wrapper that fixes intermittent corrupt export_file.def in c-shared builds
+COPY mingw-wrapper.sh /usr/local/bin/mingw-wrapper.sh
+RUN chmod +x /usr/local/bin/mingw-wrapper.sh
+
 # Install go-winres and garble using the locally-installed Go 1.26.3.
 # GOTOOLCHAIN=local ensures no toolchain download into GOMODCACHE.
 RUN go install github.com/tc-hib/go-winres@latest && \

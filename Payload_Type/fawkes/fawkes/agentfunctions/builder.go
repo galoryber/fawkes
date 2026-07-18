@@ -229,10 +229,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		StepStdout:  configuringOutput,
 	})
 
-	// Compile the agent (with retry for intermittent c-shared linker failures).
-	// Go's linker for -buildmode=c-shared occasionally generates a corrupt
-	// export_file.def, causing "syntax error" from the mingw linker. This is
-	// non-deterministic and succeeds on retry.
+	// Compile the agent with retry for c-shared linker failures. The CC wrapper
+	// (mingw-wrapper.sh) fixes corrupt export_file.def in most cases; retries
+	// are defense-in-depth for edge cases the wrapper doesn't catch.
 	maxAttempts := 1
 	if mode == "shared" || mode == "windows-shellcode" {
 		maxAttempts = 3
