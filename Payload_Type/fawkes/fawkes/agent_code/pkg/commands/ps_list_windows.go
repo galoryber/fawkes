@@ -16,11 +16,9 @@ import (
 // exe path) via Windows API calls that can hang on protected processes.
 const perProcessTimeout = 2 * time.Second
 
-// getProcessList enumerates processes using a single CreateToolhelp32Snapshot.
-// By default, only PID/PPID/Name are returned from the snapshot (fast, atomic,
-// does not trigger Windows Defender RADAR). Per-process handle queries (username,
-// exe path) are only performed when a user filter is specified (Verbose mode)
-// to avoid RADAR_PRE_LEAK_64 detection from mass OpenProcess calls.
+// getProcessList enumerates processes using CreateToolhelp32Snapshot, then
+// queries per-process attributes (username, exe path, integrity) via handle
+// operations. Use -user to filter by owner, -verbose for start times.
 func getProcessList(args PsArgs) ([]ProcessInfo, error) {
 	// Take a single process snapshot — fast and atomic
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
@@ -39,7 +37,7 @@ func getProcessList(args PsArgs) ([]ProcessInfo, error) {
 
 	filterLower := strings.ToLower(args.Filter)
 	userFilterLower := strings.ToLower(args.User)
-	needPerProcess := args.User != "" || args.Verbose
+	needPerProcess := true
 	var processes []ProcessInfo
 
 	for {
