@@ -611,10 +611,12 @@ func TestConstructBuildCommand_Shellcode(t *testing.T) {
 	if !strings.HasSuffix(result.payloadName, ".dll") {
 		t.Errorf("shellcode payloadName should end in .dll, got %q", result.payloadName)
 	}
-	// Shellcode mode must not duplicate CC= (c-shared block already sets it)
-	ccCount := strings.Count(result.command, "CC=x86_64-w64-mingw32-gcc")
-	if ccCount != 1 {
-		t.Errorf("expected exactly 1 CC= assignment for shellcode mode, got %d: %s", ccCount, result.command)
+	// Shellcode mode uses the mingw wrapper to fix corrupt export_file.def
+	if !strings.Contains(result.command, "CC=/usr/local/bin/mingw-wrapper.sh") {
+		t.Errorf("expected CC=/usr/local/bin/mingw-wrapper.sh for shellcode mode: %s", result.command)
+	}
+	if !strings.Contains(result.command, "fawkes_exports.def") {
+		t.Errorf("expected fawkes_exports.def setup for shellcode mode: %s", result.command)
 	}
 }
 

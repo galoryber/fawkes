@@ -51,7 +51,7 @@ pre = "<b>2. </b>"
 - Process Injection
     * [apc-injection](/agents/fawkes/commands/apc-injection/)
     * [hollow](/agents/fawkes/commands/hollow/)
-    * [module-stomping](/agents/fawkes/commands/module-stomping/)
+    * [module-stomp](/agents/fawkes/commands/module-stomp/)
     * [opus-injection](/agents/fawkes/commands/opus-injection/)
     * [poolparty-injection](/agents/fawkes/commands/poolparty-injection/)
     * [ptrace-inject](/agents/fawkes/commands/ptrace-inject/)

@@ -108,6 +108,11 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			pid, _ := parsePIDFromArg(taskData)
 
+			if (action == "" || action == "lsass") && pid > 0 {
+				action = "dump"
+				_ = taskData.Args.SetArgValue("action", "dump")
+			}
+
 			var displayMsg string
 			switch action {
 			case "dump":

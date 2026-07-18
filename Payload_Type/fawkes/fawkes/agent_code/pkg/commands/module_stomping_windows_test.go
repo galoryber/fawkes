@@ -14,8 +14,8 @@ import (
 
 func TestModuleStompingCommand_Name(t *testing.T) {
 	cmd := &ModuleStompingCommand{}
-	if cmd.Name() != "module-stomping" {
-		t.Errorf("expected 'module-stomping', got %q", cmd.Name())
+	if cmd.Name() != "module-stomp" {
+		t.Errorf("expected 'module-stomp', got %q", cmd.Name())
 	}
 }
 

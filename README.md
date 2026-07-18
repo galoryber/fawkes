@@ -127,7 +127,7 @@ ls | `ls [path]` | List files and folders with owner/group and timestamps. File 
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-action impersonate\|spawn\|auto-verify -command <cmd>]` | **(Windows only)** Create a token from credentials: impersonate it, spawn a process, or **auto-verify** (impersonate then whoami + getprivs chain) (T1134.002).
 masquerade | `masquerade -source <file> -technique <type> [-disguise <value>] [-in_place]` | File masquerading and hiding — disguise files (double ext, RtLO, space, process match) or hide from enumeration (hide/unhide). Windows: +H/+S attributes. Linux: dot-prefix. macOS: UF_HIDDEN + dot-prefix (T1036, T1564.001).
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
-module-stomping | `module-stomping -pid <PID> [-dll_name <DLL>]` | **(Windows only)** Inject shellcode by stomping a legitimate DLL's .text section. Shellcode executes from signed DLL address space, bypassing private-memory detection (T1055.001).
+module-stomp | `module-stomp -pid <PID> [-dll_name <DLL>]` | **(Windows only)** Inject shellcode by stomping a legitimate DLL's .text section. Shellcode executes from signed DLL address space, bypassing private-memory detection (T1055.001).
 modules | `modules [-pid <PID>] [-filter <name>]` | List loaded modules/DLLs/libraries in a process with optional name filtering. Cross-platform (T1057).
 mem-scan | `mem-scan -pid <PID> -pattern <string> [-hex] [-max_results <n>] [-context_bytes <n>]` | Search process memory for byte patterns with hex dump output. Windows: VirtualQueryEx/ReadProcessMemory. Linux: /proc/pid/maps+mem. macOS: mach_vm_region/mach_vm_read (self-scan only). Supports string and hex patterns. Cross-platform (T1005, T1057).
 mount | `mount [-filter <substring>] [-fstype <type>]` | List mounted filesystems with device, mount point, type, and options. Supports filtering by name or filesystem type. Cross-platform (T1082).
@@ -369,7 +369,7 @@ Tracked artifact types:
 | Process Create | run, powershell, spawn, argue |
 | API Call | net-enum, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, syscalls, firewall, dcom, vss (create/delete), psexec |
 | Process Kill | kill |
-| Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection, module-stomping, thread-hijack |
+| Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection, module-stomp, thread-hijack |
 | File Write | upload, cp, mv |
 | File Create | mkdir |
 | File Delete | rm |

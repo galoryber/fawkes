@@ -46,7 +46,11 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		args.Action = "lsass"
+		if args.PID > 0 {
+			args.Action = "dump"
+		} else {
+			args.Action = "lsass"
+		}
 	}
 
 	// Enable SeDebugPrivilege on both process and thread tokens
@@ -95,7 +99,11 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			errMsg += "\n  - Insufficient privileges (need SYSTEM + SeDebugPrivilege)"
 			errMsg += "\nTip: Try 'getsystem' first, or dump a non-PPL process with -action dump -pid <PID>"
 		} else {
-			errMsg += "\nEnsure you have admin privileges and SeDebugPrivilege."
+			errMsg += "\nPossible causes:"
+			errMsg += "\n  - Process may have already exited"
+			errMsg += "\n  - Process belongs to a different user (need SeDebugPrivilege)"
+			errMsg += "\n  - Security product is blocking process access"
+			errMsg += "\nNote: Dumping your own processes does not require admin."
 		}
 		return errorResult(errMsg)
 	}

@@ -56,7 +56,13 @@ func constructBuildCommand(cfg buildCommandConfig) buildCommandResult {
 		if cfg.targetOs == "darwin" {
 			command += "CC=o64-clang CXX=o64-clang++ "
 		} else if cfg.targetOs == "windows" {
-			command += "CC=x86_64-w64-mingw32-gcc "
+			defContent := `EXPORTS\n    Run\n    Fire\n    VoidFunc`
+			if dllExports, err := cfg.buildParams.GetStringArg("dll_exports"); err == nil && dllExports == "full" {
+				defContent = `EXPORTS\n    Run\n    Fire\n    VoidFunc\n    DllRegisterServer\n    DllUnregisterServer\n    DllCanUnloadNow\n    DllGetClassObject\n    ServiceMain`
+			}
+			defCmd := fmt.Sprintf("echo -e '%s' > /tmp/fawkes_exports.def; ", defContent)
+			command = strings.Replace(command, "CGO_ENABLED=", defCmd+"CGO_ENABLED=", 1)
+			command += "CC=/usr/local/bin/mingw-wrapper.sh "
 		} else {
 			if goarch == "arm64" {
 				command += "CC=aarch64-linux-gnu-gcc "

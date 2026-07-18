@@ -79,7 +79,7 @@ thread-hijack -shellcode_b64 <base64> -pid 1234 -tid 5678
 - Thread suspension is brief — context is modified and resumed quickly
 - Shellcode allocated in private memory (RX) — standard memory scanning can detect it
 - Using indirect syscalls hides NtOpenProcess, NtOpenThread, and context manipulation calls
-- Consider pairing with module-stomping for the memory allocation if private RX detection is a concern
+- Consider pairing with module-stomp for the memory allocation if private RX detection is a concern
 
 ### macOS
 - Requires root privileges — `task_for_pid` is restricted by macOS security
