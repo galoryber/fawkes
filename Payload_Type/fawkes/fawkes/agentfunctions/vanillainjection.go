@@ -199,7 +199,7 @@ func init() {
 				msg = fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %s. "+
 					"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
 					"the most detectable injection pattern. Most EDR products hook these APIs. "+
-					"Consider threadless-inject or module-stomping for lower detection risk.", pid)
+					"Consider threadless-inject or module-stomp for lower detection risk.", pid)
 			}
 			if action == "migrate" {
 				msg += fmt.Sprintf("\n\nMIGRATION WARNING: This will inject a new agent instance into PID %s "+

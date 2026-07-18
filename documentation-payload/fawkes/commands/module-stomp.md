@@ -1,5 +1,5 @@
 +++
-title = "module-stomping"
+title = "module-stomp"
 chapter = false
 weight = 103
 hidden = false
@@ -57,10 +57,10 @@ Use the Mythic UI popup to select shellcode, target PID, and optionally a differ
 
 ```
 # Via API/CLI with base64 shellcode
-module-stomping -shellcode_b64 <base64> -pid 1234
+module-stomp -shellcode_b64 <base64> -pid 1234
 
 # With custom sacrificial DLL
-module-stomping -shellcode_b64 <base64> -pid 1234 -dll_name msftedit.dll
+module-stomp -shellcode_b64 <base64> -pid 1234 -dll_name msftedit.dll
 ```
 
 ## Opsec Considerations

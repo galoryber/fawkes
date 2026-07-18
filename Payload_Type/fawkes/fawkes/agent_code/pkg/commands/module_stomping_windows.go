@@ -27,11 +27,11 @@ var (
 	procLoadLibraryWStomp = kernel32.NewProc("LoadLibraryW")
 )
 
-// ModuleStompingCommand implements the module-stomping command.
+// ModuleStompingCommand implements the module-stomp command.
 type ModuleStompingCommand struct{}
 
 func (c *ModuleStompingCommand) Name() string {
-	return "module-stomping"
+	return "module-stomp"
 }
 
 func (c *ModuleStompingCommand) Description() string {

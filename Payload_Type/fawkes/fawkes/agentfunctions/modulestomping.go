@@ -14,9 +14,9 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "module-stomping",
+		Name:                "module-stomp",
 		Description:         "Inject shellcode by overwriting a legitimate DLL's .text section in a remote process. Shellcode executes from signed DLL address space, bypassing private-memory detection.",
-		HelpString:          "module-stomping",
+		HelpString:          "module-stomp",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.001"}, // Process Injection: DLL Injection
 		SupportedUIFeatures: []string{"process_browser:inject"},
@@ -250,7 +250,7 @@ func init() {
 				if l > 200 {
 					l = 200
 				}
-				createArtifact(processResponse.TaskData.Task.ID, "Process Injection", fmt.Sprintf("[module-stomping] %s", responseText[:l]))
+				createArtifact(processResponse.TaskData.Task.ID, "Process Injection", fmt.Sprintf("[module-stomp] %s", responseText[:l]))
 			}
 			return response
 		},
