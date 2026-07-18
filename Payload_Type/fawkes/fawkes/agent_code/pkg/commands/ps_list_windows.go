@@ -188,11 +188,14 @@ func getProcessIntegrityLevel(handle windows.Handle) int {
 		return 0
 	}
 
-	til := (*windows.Tokengroups)(unsafe.Pointer(&buf[0]))
-	if til.GroupCount == 0 {
+	type tokenMandatoryLabel struct {
+		Label windows.SIDAndAttributes
+	}
+	til := (*tokenMandatoryLabel)(unsafe.Pointer(&buf[0]))
+	sid := til.Label.Sid
+	if sid == nil {
 		return 0
 	}
-	sid := til.Groups[0].Sid
 	subAuthCount := int(sid.SubAuthorityCount())
 	if subAuthCount == 0 {
 		return 0
