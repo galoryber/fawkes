@@ -16,7 +16,6 @@ function(task, responses){
         let sizeMatch = combined.match(/(\d+)\s*bytes/);
         let success = combined.includes("successfully") || combined.includes("[+]");
         let failed = combined.includes("failed") || combined.includes("Error:");
-        let dotnetMatch = combined.match(/\.NET assembly/i);
         let timeoutMatch = combined.match(/timed out after (\d+)s/);
 
         let headers = [
@@ -27,14 +26,13 @@ function(task, responses){
         let statusColor = failed ? "#f44336" : (success ? "#4CAF50" : "#FF9800");
         let statusBg = failed ? "rgba(244,67,54,0.1)" : (success ? "rgba(76,175,80,0.1)" : "rgba(255,152,0,0.1)");
         let rows = [
-            {"Property": {"plaintext": "Technique"}, "Value": {"plaintext": "Inline Execute", "cellStyle": {"fontWeight": "bold"}}, "rowStyle": {}},
+            {"Property": {"plaintext": "Technique"}, "Value": {"plaintext": "Inline Execute (BOF)", "cellStyle": {"fontWeight": "bold"}}, "rowStyle": {}},
             {"Property": {"plaintext": "Status"}, "Value": {"plaintext": status, "cellStyle": {"fontWeight": "bold", "color": statusColor}}, "rowStyle": {"backgroundColor": statusBg}},
         ];
         if(sizeMatch) rows.push({"Property": {"plaintext": "Payload Size"}, "Value": {"plaintext": sizeMatch[1] + " bytes"}, "rowStyle": {}});
-        if(dotnetMatch) rows.push({"Property": {"plaintext": "Type"}, "Value": {"plaintext": ".NET Assembly", "cellStyle": {"color": "#2196F3"}}, "rowStyle": {}});
         if(timeoutMatch) rows.push({"Property": {"plaintext": "Timeout"}, "Value": {"plaintext": timeoutMatch[1] + "s", "cellStyle": {"color": "#FF9800"}}, "rowStyle": {}});
 
-        // Extract stdout output (everything after the status lines)
+        // Extract BOF output and errors
         let lines = combined.split("\n");
         let outputLines = [];
         let errorLines = [];
@@ -52,14 +50,23 @@ function(task, responses){
         }
         let execOutput = outputLines.join("\n").trim();
         let execErrors = errorLines.join("\n").trim();
-        if(execOutput){
-            rows.push({"Property": {"plaintext": "Output"}, "Value": {"plaintext": execOutput, "copyIcon": true, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.85em", "whiteSpace": "pre-wrap"}}, "rowStyle": {}});
-        }
+
+        // Show output as plaintext (visible and scrollable), not in a table cell
+        let output = "";
+        if(execOutput) output += execOutput;
         if(execErrors){
-            rows.push({"Property": {"plaintext": "Errors"}, "Value": {"plaintext": execErrors, "copyIcon": true, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.85em", "whiteSpace": "pre-wrap", "color": "#f44336"}}, "rowStyle": {"backgroundColor": "rgba(244,67,54,0.05)"}});
+            if(output) output += "\n\n--- ERRORS ---\n";
+            output += execErrors;
         }
 
-        return {"table": [{"headers": headers, "rows": rows, "title": "BOF execution"}]};
+        if(output){
+            return {
+                "table": [{"headers": headers, "rows": rows, "title": "BOF Execution"}],
+                "plaintext": output
+            };
+        }
+
+        return {"table": [{"headers": headers, "rows": rows, "title": "BOF Execution"}]};
     } catch(error) {
         let combined = "";
         for(let i = 0; i < responses.length; i++){
