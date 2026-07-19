@@ -247,23 +247,84 @@ Fawkes supports [Mythic Forge](https://github.com/MythicAgents/forge) command au
 | [SharpCollection](https://github.com/Flangvik/SharpCollection) | .NET assemblies | `inline-assembly` | Seatbelt, SharpUp, Rubeus, Certify, SharpHound, SharpDPAPI |
 | [Sliver Armory](https://github.com/MythicAgents/forge) | BOF/COFF files | `inline-execute` | SA-whoami, SA-adcs-enum, SA-ldapsearch, SA-nanodump |
 
-**Quick start:**
+### Setup (New Install)
+
+**Step 1: Install Forge**
 
 ```bash
-# Install Forge on your Mythic server
 cd /path/to/Mythic
 sudo ./mythic-cli install github https://github.com/MythicAgents/forge
+```
+
+**Step 2: Add Fawkes to Forge's payload type support**
+
+Edit `InstalledServices/forge/payload_type_support.json` and add the Fawkes entry to the JSON array:
+
+```json
+{
+    "agent": "fawkes",
+    "bof_command": "inline-execute",
+    "bof_file_parameter_name": "bof_file",
+    "bof_argument_array_parameter_name": "coff_arguments",
+    "bof_entrypoint_parameter_name": "function_name",
+    "inline_assembly_command": "inline-assembly",
+    "inline_assembly_file_parameter_name": "assembly_file",
+    "inline_assembly_argument_parameter_name": "assembly_arguments",
+    "execute_assembly_command": "",
+    "execute_assembly_file_parameter_name": "",
+    "execute_assembly_argument_parameter_name": "",
+    "assembly_default_execution_method": "inline_assembly"
+}
+```
+
+This maps Forge's generic parameter interface to Fawkes's specific command names and parameter names. The field mapping:
+- `bof_command` → Fawkes's `inline-execute` command (BOF/COFF execution)
+- `inline_assembly_command` → Fawkes's `inline-assembly` command (.NET assembly execution)
+- `execute_assembly_command` → empty (Fawkes uses inline-assembly for all .NET execution)
+- Parameter names must match exactly what Fawkes's agentfunctions define in the "Forge" parameter group
+
+**Step 3: Rebuild and restart**
+
+```bash
+sudo ./mythic-cli build forge
+sudo ./mythic-cli restart forge
 sudo ./mythic-cli restart fawkes
 ```
 
-Once installed, Forge commands appear alongside Fawkes's base commands in any callback's task interface. Select a tool, fill in the parameters, and execute — Fawkes handles parameter conversion and routing automatically.
+**Step 4: Register tool sources**
 
-**Usage tips:**
-- For .NET tools (SharpCollection), run `start-clr` first to initialize the CLR and optionally patch AMSI
+Open the Mythic UI and use the `forge_register` command (available on any callback) to register tool sources. Common sources:
+
+| Source | Type | What it provides |
+|--------|------|-----------------|
+| Rubeus | .NET assembly | Kerberos attacks (kerberoasting, ticket forging, delegation) |
+| Seatbelt | .NET assembly | Host security survey (privileges, credentials, configs) |
+| Certify | .NET assembly | AD Certificate Services enumeration and abuse |
+| SharpHound | .NET assembly | BloodHound data collection |
+| SharpUp | .NET assembly | Local privilege escalation checks |
+| SharpView | .NET assembly | Active Directory enumeration (PowerView port) |
+| nanodump | BOF | LSASS memory dumping via MiniDumpWriteDump |
+| credman | BOF | Windows Credential Manager harvesting |
+
+To register a source, run `forge_register` with `commandName` set to the plain source name (e.g., `Rubeus`, not `forge_net_Rubeus`) and `remove` set to `false`.
+
+After registration, Forge downloads the tool binaries and creates augmented commands (e.g., `forge_net_Rubeus`, `forge_bof_nanodump`) that appear in the callback's command list.
+
+**Step 5: Verify**
+
+Existing callbacks automatically see Forge commands — no new payload needed. Test by running a registered tool:
+1. Run `autopatch` or `start-clr` first (AMSI patching for .NET tools)
+2. Select a Forge command (e.g., `forge_net_Seatbelt`)
+3. Enter arguments (e.g., `-group=system`)
+4. Execute — Forge translates the command to `inline-assembly` with the embedded tool binary
+
+### Usage Tips
+
+- For .NET tools (SharpCollection), run `start-clr` with autopatch first to initialize the CLR and patch AMSI — without this, Windows Defender may block assembly execution
 - For BOF tools (Sliver Armory), ensure BOFs are compiled for x64
-- No special build parameters are needed — Forge support is built in
-
-For detailed setup instructions, parameter format reference, and troubleshooting, see the full documentation under **Installed Services → Fawkes → Forge Command Augmentation** in the Mythic UI.
+- No special build parameters are needed — Forge support is built into Fawkes's `inline-execute` and `inline-assembly` commands via the "Forge" parameter group
+- Forge commands work on existing callbacks without rebuilding the agent
+- When issuing Forge commands via the API, include `payload_type: "forge"` in the `createTask` mutation — without this, Mythic only searches the callback's own payload type
 
 ## Injection Techniques
 
