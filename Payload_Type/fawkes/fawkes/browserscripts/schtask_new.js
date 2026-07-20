@@ -23,9 +23,14 @@ function(task, responses){
         let headers = [
             {"plaintext": "actions", "type": "button", "width": 90, "disableSort": true},
             {"plaintext": "name", "type": "string", "fillWidth": true},
-            {"plaintext": "state", "type": "string", "width": 90},
-            {"plaintext": "enabled", "type": "string", "width": 70},
-            {"plaintext": "next_run_time", "type": "string", "width": 180},
+            {"plaintext": "run_as", "type": "string", "width": 140},
+            {"plaintext": "task_to_run", "type": "string", "width": 260},
+            {"plaintext": "author", "type": "string", "width": 130},
+            {"plaintext": "state", "type": "string", "width": 80},
+            {"plaintext": "last_result", "type": "string", "width": 80},
+            {"plaintext": "last_run", "type": "string", "width": 140},
+            {"plaintext": "logon_mode", "type": "string", "width": 130},
+            {"plaintext": "enabled", "type": "string", "width": 60},
         ];
         let rows = [];
         for(let j = 0; j < data.length; j++){
@@ -34,6 +39,38 @@ function(task, responses){
             if(stateColors[e.state]){
                 rowStyle = {"backgroundColor": stateColors[e.state]};
             }
+
+            // Highlight privileged run-as accounts in red
+            let runAs = e.run_as_user || "";
+            let runAsStyle = {};
+            let runAsLower = runAs.toLowerCase();
+            if(runAsLower === "system" || runAsLower.includes("\\system") ||
+               runAsLower === "local service" || runAsLower === "network service"){
+                runAsStyle = {"fontWeight": "bold", "color": "#f44336"};
+            }
+
+            // Highlight user-writable paths in orange (privesc: replace binary)
+            let taskToRun = e.task_to_run || "";
+            let taskStyle = {};
+            let taskLower = taskToRun.toLowerCase();
+            if(taskLower.includes("\\users\\") || taskLower.includes("\\programdata\\") ||
+               taskLower.includes("\\temp\\") || taskLower.includes("\\tmp\\") ||
+               taskLower.includes("\\appdata\\")){
+                taskStyle = {"color": "#FF9800", "fontWeight": "bold"};
+            }
+
+            // Highlight non-zero last result (broken tasks = potential targets)
+            let lastResult = e.last_result || "";
+            let resultStyle = {};
+            if(lastResult && lastResult !== "0" && lastResult !== "N/A"){
+                resultStyle = {"color": "#FF9800"};
+            }
+
+            // Build tooltip with extra details (start_in, comment)
+            let nameTooltip = e.name;
+            if(e.start_in) nameTooltip += "\nStart In: " + e.start_in;
+            if(e.comment) nameTooltip += "\nComment: " + e.comment;
+
             rows.push({
                 "actions": {
                     "button": {
@@ -42,12 +79,11 @@ function(task, responses){
                         "startIcon": "settings",
                         "value": [
                             {
-                                "name": "Delete Task",
+                                "name": "Query Details",
                                 "type": "task",
                                 "ui_feature": "schtask",
-                                "startIcon": "delete",
-                                "getConfirmation": true,
-                                "parameters": {"action": "delete", "name": e.name},
+                                "startIcon": "search",
+                                "parameters": {"action": "query", "name": e.name},
                             },
                             {
                                 "name": "Run Now",
@@ -63,13 +99,26 @@ function(task, responses){
                                 "startIcon": e.enabled === "true" ? "stop" : "play",
                                 "parameters": {"action": e.enabled === "true" ? "disable" : "enable", "name": e.name},
                             },
+                            {
+                                "name": "Delete Task",
+                                "type": "task",
+                                "ui_feature": "schtask",
+                                "startIcon": "delete",
+                                "getConfirmation": true,
+                                "parameters": {"action": "delete", "name": e.name},
+                            },
                         ]
                     }
                 },
                 "name": {"plaintext": e.name, "copyIcon": true},
+                "run_as": {"plaintext": runAs, "cellStyle": runAsStyle},
+                "task_to_run": {"plaintext": taskToRun, "cellStyle": taskStyle, "copyIcon": true},
+                "author": {"plaintext": e.author || ""},
                 "state": {"plaintext": e.state},
+                "last_result": {"plaintext": lastResult, "cellStyle": resultStyle},
+                "last_run": {"plaintext": e.last_run_time || ""},
+                "logon_mode": {"plaintext": e.logon_mode || ""},
                 "enabled": {"plaintext": e.enabled},
-                "next_run_time": {"plaintext": e.next_run_time || ""},
                 "rowStyle": rowStyle,
             });
         }

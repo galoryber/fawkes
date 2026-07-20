@@ -16,7 +16,6 @@ function(task, responses){
         let sizeMatch = combined.match(/(\d+)\s*bytes/);
         let success = combined.includes("successfully") || combined.includes("[+]");
         let failed = combined.includes("failed") || combined.includes("Error:");
-        let dotnetMatch = combined.match(/\.NET assembly/i);
         let timeoutMatch = combined.match(/timed out after (\d+)s/);
 
         let headers = [
@@ -31,27 +30,57 @@ function(task, responses){
             {"Property": {"plaintext": "Status"}, "Value": {"plaintext": status, "cellStyle": {"fontWeight": "bold", "color": statusColor}}, "rowStyle": {"backgroundColor": statusBg}},
         ];
         if(sizeMatch) rows.push({"Property": {"plaintext": "Payload Size"}, "Value": {"plaintext": sizeMatch[1] + " bytes"}, "rowStyle": {}});
-        if(dotnetMatch) rows.push({"Property": {"plaintext": "Type"}, "Value": {"plaintext": ".NET Assembly", "cellStyle": {"color": "#2196F3"}}, "rowStyle": {}});
         if(timeoutMatch) rows.push({"Property": {"plaintext": "Timeout"}, "Value": {"plaintext": timeoutMatch[1] + "s", "cellStyle": {"color": "#FF9800"}}, "rowStyle": {}});
 
-        // Extract stdout output (everything after the status lines)
-        let lines = combined.split("\n");
-        let outputLines = [];
-        let pastHeader = false;
-        for(let i = 0; i < lines.length; i++){
-            if(pastHeader){
-                outputLines.push(lines[i]);
-            } else if(lines[i].match(/^\[\+\]/) || lines[i].match(/^\[!\]/)){
-                pastHeader = true;
-                // Check if there's content after this line
-            }
+        // Extract STDOUT and STDERR sections
+        let stdoutContent = "";
+        let stderrContent = "";
+        let stdoutIdx = combined.indexOf("=== STDOUT ===");
+        let stderrIdx = combined.indexOf("=== STDERR ===");
+
+        if(stdoutIdx >= 0){
+            let start = combined.indexOf("\n", stdoutIdx) + 1;
+            let end = stderrIdx >= 0 ? stderrIdx : combined.length;
+            stdoutContent = combined.substring(start, end).trim();
         }
-        let execOutput = outputLines.join("\n").trim();
-        if(execOutput){
-            rows.push({"Property": {"plaintext": "Output"}, "Value": {"plaintext": execOutput, "copyIcon": true, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.85em", "whiteSpace": "pre-wrap"}}, "rowStyle": {}});
+        if(stderrIdx >= 0){
+            let start = combined.indexOf("\n", stderrIdx) + 1;
+            stderrContent = combined.substring(start).trim();
         }
 
-        return {"table": [{"headers": headers, "rows": rows, "title": "Assembly execution"}]};
+        // Build plaintext output with assembly output prominently displayed
+        let output = "";
+        if(stdoutContent){
+            output += stdoutContent;
+        }
+        if(stderrContent){
+            if(output) output += "\n\n--- STDERR ---\n";
+            output += stderrContent;
+        }
+
+        // If no STDOUT/STDERR markers found, extract everything after status lines
+        if(!output){
+            let lines = combined.split("\n");
+            let outputLines = [];
+            let foundEnd = false;
+            for(let i = 0; i < lines.length; i++){
+                if(foundEnd){
+                    outputLines.push(lines[i]);
+                } else if(lines[i].match(/Assembly executed/) || lines[i].match(/Assembly invocation/)){
+                    foundEnd = true;
+                }
+            }
+            output = outputLines.join("\n").trim();
+        }
+
+        if(output){
+            return {
+                "table": [{"headers": headers, "rows": rows, "title": "Assembly Execution"}],
+                "plaintext": output
+            };
+        }
+
+        return {"table": [{"headers": headers, "rows": rows, "title": "Assembly Execution"}]};
     } catch(error) {
         let combined = "";
         for(let i = 0; i < responses.length; i++){

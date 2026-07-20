@@ -153,7 +153,18 @@ func ScanTarget(target knownTarget) patchScanResult {
 
 	result.CurrentBytes = fmt.Sprintf("%X", buffer)
 
-	// Check if already patched (starts with known patch bytes)
+	// Check if already patched with C3 Jump (JMP short or JMP near at prologue)
+	if buffer[0] == 0xEB || buffer[0] == 0xE9 {
+		result.AlreadyPatched = true
+		if buffer[0] == 0xEB {
+			result.MatchedPattern = "c3-jump (short JMP)"
+		} else {
+			result.MatchedPattern = "c3-jump (near JMP)"
+		}
+		return result
+	}
+
+	// Check if already patched (starts with known byte-overwrite strategy bytes)
 	for _, strat := range patchStrategies {
 		if len(buffer) >= len(strat.Bytes) {
 			match := true

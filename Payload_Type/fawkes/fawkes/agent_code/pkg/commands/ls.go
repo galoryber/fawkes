@@ -52,19 +52,12 @@ func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Execute ls
 	result := performLs(args.Path)
 
-	// Format response based on file browser flag
-	if args.FileBrowser {
-		// Return JSON for file browser
-		jsonBytes, err := json.Marshal(result)
-		if err != nil {
-			return errorf("Failed to marshal ls result: %v", err)
-		}
-
-		return successResult(string(jsonBytes))
+	jsonBytes, err := json.Marshal(result)
+	if err != nil {
+		return errorf("Failed to marshal ls result: %v", err)
 	}
 
-	// Return formatted text output
-	return successResult(formatLsOutput(result))
+	return successResult(string(jsonBytes))
 }
 
 func performLs(path string) structs.FileListing {
