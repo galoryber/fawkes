@@ -42,7 +42,7 @@ func init() {
 				DefaultValue:  "xor-ret",
 				Description:   "Byte-overwrite strategy: xor-ret (returns 0/S_OK), ret (immediate return), nop-ret (NOP+NOP+RET), mov-ret (returns 1/TRUE)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, UIModalPosition: 2, GroupName: "Byte Overwrite"},
+					{ParameterIsRequired: true, UIModalPosition: 2, GroupName: "Byte Overwrite"},
 				},
 			},
 			{
