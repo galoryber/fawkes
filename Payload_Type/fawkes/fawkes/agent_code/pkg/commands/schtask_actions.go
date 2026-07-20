@@ -213,43 +213,89 @@ type schtaskListEntry struct {
 	Name        string `json:"name"`
 	State       string `json:"state"`
 	NextRunTime string `json:"next_run_time,omitempty"`
+	Author      string `json:"author,omitempty"`
+	RunAsUser   string `json:"run_as_user,omitempty"`
+	TaskToRun   string `json:"task_to_run,omitempty"`
+	StartIn     string `json:"start_in,omitempty"`
+	LastRunTime string `json:"last_run_time,omitempty"`
+	LastResult  string `json:"last_result,omitempty"`
+	LogonMode   string `json:"logon_mode,omitempty"`
+	Enabled     string `json:"enabled,omitempty"`
+	Comment     string `json:"comment,omitempty"`
 }
 
 func schtaskList(filter string) structs.CommandResult {
-	// Use schtasks.exe /query /fo CSV — reliable across all Windows versions.
+	// Use schtasks.exe /query /fo CSV /v — verbose mode includes Author,
+	// Run As User, and Task To Run which are critical for privesc analysis.
 	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
-	out, err := execCmdTimeout("schtasks.exe", "/query", "/fo", "CSV", "/nh")
+	out, err := execCmdTimeout("schtasks.exe", "/query", "/fo", "CSV", "/v")
 	if err != nil {
 		return errorf("running schtasks.exe: %v\n%s", err, string(out))
 	}
 
 	filterLower := strings.ToLower(filter)
 	var entries []schtaskListEntry
+
+	// Verbose CSV columns (header row present with /v):
+	// 0:HostName, 1:TaskName, 2:Next Run Time, 3:Status, 4:Logon Mode,
+	// 5:Last Run Time, 6:Last Result, 7:Author, 8:Task To Run, 9:Start In, ...
+	// 14:Run As User, ...
 	reader := csv.NewReader(strings.NewReader(string(out)))
+	reader.LazyQuotes = true
+	headerSkipped := false
 	for {
 		record, err := reader.Read()
 		if err != nil {
 			break
 		}
-		if len(record) < 3 {
+		if len(record) < 15 {
 			continue
 		}
-		// CSV fields: TaskName, Next Run Time, Status
-		name := strings.TrimSpace(record[0])
-		if name == "" || name == "TaskName" || name == "INFO:" {
+
+		name := strings.TrimSpace(record[1])
+		if !headerSkipped {
+			if name == "TaskName" {
+				headerSkipped = true
+			}
 			continue
 		}
-		// Apply filter on task name
+		if name == "" || name == "INFO:" {
+			continue
+		}
 		if filterLower != "" && !strings.Contains(strings.ToLower(name), filterLower) {
 			continue
 		}
-		nextRun := strings.TrimSpace(record[1])
-		status := strings.TrimSpace(record[2])
+
+		enabled := "true"
+		if len(record) > 11 && strings.EqualFold(strings.TrimSpace(record[11]), "Disabled") {
+			enabled = "false"
+		}
+
+		startIn := strings.TrimSpace(record[9])
+		if startIn == "N/A" {
+			startIn = ""
+		}
+		comment := ""
+		if len(record) > 10 {
+			comment = strings.TrimSpace(record[10])
+			if comment == "N/A" {
+				comment = ""
+			}
+		}
 
 		entries = append(entries, schtaskListEntry{
 			Name:        name,
-			State:       status,
-			NextRunTime: nextRun,
+			State:       strings.TrimSpace(record[3]),
+			NextRunTime: strings.TrimSpace(record[2]),
+			Author:      strings.TrimSpace(record[7]),
+			RunAsUser:   strings.TrimSpace(record[14]),
+			TaskToRun:   strings.TrimSpace(record[8]),
+			StartIn:     startIn,
+			LastRunTime: strings.TrimSpace(record[5]),
+			LastResult:  strings.TrimSpace(record[6]),
+			LogonMode:   strings.TrimSpace(record[4]),
+			Enabled:     enabled,
+			Comment:     comment,
 		})
 	}
 
