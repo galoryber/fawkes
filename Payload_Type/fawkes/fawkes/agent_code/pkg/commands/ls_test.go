@@ -25,8 +25,12 @@ func TestLsDefaultsToCurrentDir(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Contents of directory") {
-		t.Errorf("expected directory listing output, got %q", result.Output)
+	var listing structs.FileListing
+	if err := json.Unmarshal([]byte(result.Output), &listing); err != nil {
+		t.Fatalf("output should be valid JSON: %v", err)
+	}
+	if !listing.Success {
+		t.Error("expected listing.Success=true for current directory")
 	}
 }
 
@@ -77,12 +81,16 @@ func TestLsNonexistentDir(t *testing.T) {
 	task := structs.NewTask("t", "ls", "")
 	task.Params = "/nonexistent/directory"
 	result := cmd.Execute(task)
-	// ls returns success with Success=false in the output
+	// ls returns success with Success=false in the JSON output
 	if result.Status != "success" {
 		t.Errorf("expected success status, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "Failed") {
-		t.Error("output should indicate failure for nonexistent directory")
+	var listing structs.FileListing
+	if err := json.Unmarshal([]byte(result.Output), &listing); err != nil {
+		t.Fatalf("output should be valid JSON: %v", err)
+	}
+	if listing.Success {
+		t.Error("expected listing.Success=false for nonexistent directory")
 	}
 }
 

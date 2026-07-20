@@ -62,12 +62,16 @@ func TestLsCommand_Execute(t *testing.T) {
 	t.Run("nonexistent path", func(t *testing.T) {
 		task := structs.Task{Params: "/nonexistent/path/xyz"}
 		result := cmd.Execute(task)
-		// ls on nonexistent path still returns "success" status but with Success=false in output
+		// ls on nonexistent path still returns "success" status but with Success=false in JSON output
 		if result.Status != "success" {
 			t.Errorf("expected success status, got %q", result.Status)
 		}
-		if !strings.Contains(result.Output, "Failed to list") {
-			t.Errorf("output should indicate failure, got: %s", result.Output)
+		var listing structs.FileListing
+		if err := json.Unmarshal([]byte(result.Output), &listing); err != nil {
+			t.Fatalf("output should be valid JSON: %v", err)
+		}
+		if listing.Success {
+			t.Errorf("expected listing.Success=false for nonexistent path")
 		}
 	})
 
