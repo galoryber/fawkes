@@ -496,12 +496,12 @@ function(task, responses){
                             },
                             {
                                 name: "Access Control Entries",
-                                type: "table",
-                                title: "Viewing Acess Control Lists for " + entry["name"],
+                                type: Array.isArray(entry["permissions"]) ? "table" : "dictionary",
+                                title: "Viewing Access Control Lists for " + entry["name"],
                                 leftColumnTitle: "acls",
                                 rightColumnTitle: "Values",
                                 startIcon: "list",
-                                value: {
+                                value: Array.isArray(entry["permissions"]) ? {
                                     headers: [
                                         {
                                             plaintext: "account",
@@ -535,6 +535,8 @@ function(task, responses){
                                             plaintext: permValue["is_inherited"].toString(),
                                         }
                                     })),
+                                } : {
+                                    "Permissions": entry["permissions"] || "N/A",
                                 },
                             },
                             {
@@ -572,32 +574,37 @@ function(task, responses){
             try {
                 data = JSON.parse(responses[i]);
             } catch(error) {
-                console.log(error);
-               const combined = responses.reduce( (prev, cur) => {
+                const combined = responses.reduce( (prev, cur) => {
                     return prev + cur;
                 }, "");
                 return {'plaintext': combined};
             }
 
-            let ls_path = "";
-            if(data["parent_path"] === ""){
-                ls_path = data["name"];
-            }
-            else if(data["parent_path"].endsWith("\\")){
-                ls_path = data["parent_path"] + data["name"];
-            }else{
-                ls_path = data["parent_path"] + "\\" + data["name"];
+            if (data["success"] === false) {
+                let failPath = (data["parent_path"] || "") + (data["name"] || "");
+                return {'plaintext': "Failed to list directory: " + failPath};
             }
 
-            //formattedResponse.title = "Contents of " + ls_path;
+            let parentPath = data["parent_path"] || "";
+            let name = data["name"] || "";
+            let ls_path = "";
+            if (parentPath === "") {
+                ls_path = name;
+            } else if (parentPath.endsWith("\\") || parentPath.endsWith("/")) {
+                ls_path = parentPath + name;
+            } else {
+                let sep = parentPath.includes("/") ? "/" : "\\";
+                ls_path = parentPath + sep + name;
+            }
+
+            let files = data["files"] || [];
 
             if (data["is_file"]) {
                 data["full_name"] = ls_path;
                 formattedResponse.rows.push(createFormattedRow(data, data));
             } else {
-                console.log("Length: " + data["files"].length);
                 formattedResponse.rows = formattedResponse.rows.concat(
-                    data["files"].map((entry) => createFormattedRow(data, entry))
+                    files.map((entry) => createFormattedRow(data, entry))
                 );
             }
         }
