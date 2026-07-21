@@ -496,12 +496,12 @@ function(task, responses){
                             },
                             {
                                 name: "Access Control Entries",
-                                type: "table",
-                                title: "Viewing Acess Control Lists for " + entry["name"],
+                                type: Array.isArray(entry["permissions"]) ? "table" : "dictionary",
+                                title: "Viewing Access Control Lists for " + entry["name"],
                                 leftColumnTitle: "acls",
                                 rightColumnTitle: "Values",
                                 startIcon: "list",
-                                value: {
+                                value: Array.isArray(entry["permissions"]) ? {
                                     headers: [
                                         {
                                             plaintext: "account",
@@ -535,6 +535,8 @@ function(task, responses){
                                             plaintext: permValue["is_inherited"].toString(),
                                         }
                                     })),
+                                } : {
+                                    "Permissions": entry["permissions"] || "N/A",
                                 },
                             },
                             {
